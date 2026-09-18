@@ -26,6 +26,7 @@ export * from "./feedback.js";
 export * from "./goal-loop.js";
 export * from "./governance.js";
 export * from "./hooks.js";
+export * from "./hindsight.js";
 export * from "./flow.js";
 export * from "./integrity.js";
 export * from "./mcp.js";

@@ -159,7 +159,7 @@ rl.on("line", (line) => {
     send({ method: "item/reasoning/summaryTextDelta", params: { threadId, turnId: "turn-" + turn, itemId: "r", summaryIndex: 0, delta: "checking " + turn } });
     send({ method: "item/agentMessage/delta", params: { threadId, turnId: "turn-" + turn, itemId: "m", delta: "ok" + turn } });
     send({ method: "item/completed", params: { item: { type: "agentMessage", id: "m", text: "ok" + turn }, threadId, turnId: "turn-" + turn } });
-    send({ method: "thread/tokenUsage/updated", params: { threadId, turnId: "turn-" + turn, tokenUsage: { last: { inputTokens: 10 + turn, cachedInputTokens: turn === 1 ? 0 : 10, outputTokens: 1 } } } });
+    send({ method: "thread/tokenUsage/updated", params: { threadId, turnId: "turn-" + turn, tokenUsage: { last: { inputTokens: 10 + turn, cachedInputTokens: turn === 1 ? 0 : 10, outputTokens: 1, reasoningOutputTokens: 7 } } } });
     send({ method: "turn/completed", params: { threadId, turn: { id: "turn-" + turn, status: "completed" } } });
   }
 });
@@ -185,14 +185,19 @@ rl.on("line", (line) => {
       onReasoningDelta: (delta) => reasoning.push(delta),
     });
     assert.equal(first.status, "completed");
+    assert.equal(first.dispatchState, "dispatched");
+    assert.equal(first.turnId, "turn-1");
     assert.equal(first.finalMessage, "ok1");
     assert.equal(typeof first.firstDeltaMs, "number");
     assert.equal(second.finalMessage, "ok2");
+    assert.equal(second.dispatchState, "dispatched");
+    assert.equal(second.turnId, "turn-2");
     assert.equal(second.threadId, "thread-1");
     assert.equal(typeof second.firstDeltaMs, "number");
     assert.deepEqual(deltas, ["ok1", "ok2"]);
     assert.deepEqual(reasoning, ["checking 1", "checking 2"]);
     assert.equal(second.tokenUsage?.cachedInputTokens, 10);
+    assert.equal(second.tokenUsage?.reasoningOutputTokens, 7);
     assert.equal(first.timings?.cacheState, "miss");
     assert.equal(first.timings?.threadOpenState, "started");
     assert.equal(typeof first.timings?.startupMs, "number");
@@ -483,6 +488,8 @@ rl.on("line", (line) => {
 
     assert.equal(result.status, "failed");
     assert.equal(result.hadActivity, true);
+    assert.equal(result.dispatchState, "dispatched");
+    assert.equal(result.turnId, "turn-hang");
     assert.equal(result.fallbackEligible, false);
     assert.match(result.errorMessage ?? "", /timed out/i);
   } finally {
@@ -517,6 +524,7 @@ rl.on("line", (line) => {
 
     assert.equal(result.status, "failed");
     assert.equal(result.hadActivity, true);
+    assert.equal(result.dispatchState, "unknown");
     assert.equal(result.fallbackEligible, false);
   } finally {
     clearCodexAppServerSessions();
@@ -808,6 +816,7 @@ rl.on("line", (line) => {
   }
 });
 `, "utf8");
+
   await chmod(fake, 0o755);
   try {
     const events: string[] = [];
@@ -825,6 +834,94 @@ rl.on("line", (line) => {
     assert.ok(events.includes("item/started"), "item lifecycle is forwarded");
     assert.deepEqual(requests, ["item/commandExecution/requestApproval"]);
     assert.equal(result.finalMessage, "decision:accept", "the handler's answer reached the server");
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer: child events stay raw and cannot complete or pollute the parent turn", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-app-server-child-filter-"));
+  const fake = join(dir, "codex-fake-child-filter.mjs");
+  await writeFile(fake, [
+    "#!/usr/bin/env node",
+    "import readline from \"node:readline\";",
+    "const rl = readline.createInterface({ input: process.stdin });",
+    "function send(msg) { process.stdout.write(JSON.stringify(msg) + \"\\n\"); }",
+    "rl.on(\"line\", (line) => {",
+    "  const msg = JSON.parse(line);",
+    "  if (msg.method === \"initialize\") send({ id: msg.id, result: { userAgent: \"fake\" } });",
+    "  else if (msg.method === \"thread/start\") send({ id: msg.id, result: { thread: { id: \"parent-thread\" } } });",
+    "  else if (msg.method === \"turn/start\") {",
+    "    send({ id: msg.id, result: { turn: { id: \"parent-turn\", status: \"inProgress\" } } });",
+    "    send({ method: \"item/agentMessage/delta\", params: { threadId: \"child-a\", turnId: \"child-turn\", delta: \"child text\" } });",
+    "    send({ method: \"item/reasoning/summaryTextDelta\", params: { threadId: \"child-b\", turnId: \"child-turn-b\", delta: \"child reasoning\" } });",
+    "    send({ method: \"thread/tokenUsage/updated\", params: { threadId: \"child-a\", turnId: \"child-turn\", tokenUsage: { last: { inputTokens: 900, outputTokens: 901 } } } });",
+    "    send({ method: \"turn/completed\", params: { threadId: \"child-a\", turn: { id: \"child-turn\", status: \"failed\", error: { message: \"child failed\" } } } });",
+    "    send({ method: \"item/agentMessage/delta\", params: { threadId: \"parent-thread\", turnId: \"parent-turn\", delta: \"parent text\" } });",
+    "    send({ method: \"thread/tokenUsage/updated\", params: { threadId: \"parent-thread\", turnId: \"parent-turn\", tokenUsage: { last: { inputTokens: 12, outputTokens: 4 } } } });",
+    "    send({ method: \"item/completed\", params: { threadId: \"parent-thread\", turnId: \"parent-turn\", item: { type: \"agentMessage\", id: \"parent-message\", text: \"parent text\" } } });",
+    "    send({ method: \"turn/completed\", params: { threadId: \"parent-thread\", turn: { id: \"parent-turn\", status: \"completed\" } } });",
+    "  }",
+    "});",
+  ].join("\n"), "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const deltas: string[] = []; const reasoning: string[] = []; const events: string[] = [];
+    const result = await runCodexAppServer({ prompt: "parent task", cwd: dir, command: fake, cacheKey: "child-filter", onDelta: (delta) => deltas.push(delta), onReasoningDelta: (delta) => reasoning.push(delta), onEvent: (method, params) => { if (params.threadId !== "parent-thread") events.push(method + ":" + String(params.threadId ?? "")); } });
+    assert.equal(result.status, "completed");
+    assert.equal(result.finalMessage, "parent text");
+    assert.deepEqual(deltas, ["parent text"]);
+    assert.deepEqual(reasoning, []);
+    assert.equal(result.tokenUsage?.inputTokens, 12);
+    assert.equal(result.tokenUsage?.outputTokens, 4);
+    assert.ok(events.includes("item/agentMessage/delta:child-a"));
+    assert.ok(events.includes("turn/completed:child-a"));
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer: keepAlive observes child work and routes approval after parent completion", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-app-server-observer-"));
+  const fake = join(dir, "codex-fake-observer.mjs");
+  await writeFile(fake, [
+    "#!/usr/bin/env node",
+    "import readline from \"node:readline\";",
+    "const rl = readline.createInterface({ input: process.stdin });",
+    "function send(msg) { process.stdout.write(JSON.stringify(msg) + \"\\n\"); }",
+    "rl.on(\"line\", (line) => {",
+    "  const msg = JSON.parse(line);",
+    "  if (msg.method === \"initialize\") send({ id: msg.id, result: { userAgent: \"fake\" } });",
+    "  else if (msg.method === \"thread/start\") send({ id: msg.id, result: { thread: { id: \"parent-thread\" } } });",
+    "  else if (msg.method === \"turn/start\") {",
+    "    send({ id: msg.id, result: { turn: { id: \"parent-turn\", status: \"inProgress\" } } });",
+    "    send({ method: \"item/agentMessage/delta\", params: { threadId: \"parent-thread\", turnId: \"parent-turn\", delta: \"parent\" } });",
+    "    send({ method: \"turn/completed\", params: { threadId: \"parent-thread\", turn: { id: \"parent-turn\", status: \"completed\" } } });",
+    "    setTimeout(() => send({ method: \"thread/status/changed\", params: { threadId: \"child-thread\", status: { type: \"active\" } } }), 20);",
+    "    setTimeout(() => send({ id: 91, method: \"item/commandExecution/requestApproval\", params: { threadId: \"child-thread\", turnId: \"child-turn\", itemId: \"child-command\", command: \"echo child\" } }), 30);",
+    "  } else if (msg.id === 91) {",
+    "    send({ method: \"item/agentMessage/delta\", params: { threadId: \"child-thread\", turnId: \"child-turn\", delta: \"child approval:\" + msg.result.decision } });",
+    "    send({ method: \"turn/completed\", params: { threadId: \"child-thread\", turn: { id: \"child-turn\", status: \"completed\" } } });",
+    "  }",
+    "});",
+  ].join("\n"), "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const observed: string[] = []; const requests: string[] = []; const parentDeltas: string[] = [];
+    const result = await runCodexAppServer({ prompt: "parent", cwd: dir, command: fake, cacheKey: "after-parent", onDelta: (delta) => parentDeltas.push(delta), onEvent: (method, params) => { if (params.threadId === "child-thread") observed.push(method); }, onRequest: async (method) => { requests.push(method); return { decision: "accept" }; } });
+    assert.equal(result.status, "completed");
+    assert.deepEqual(parentDeltas, ["parent"]);
+    await new Promise((resolve) => setTimeout(resolve, 140));
+    assert.ok(observed.includes("thread/status/changed"));
+    assert.ok(observed.includes("item/commandExecution/requestApproval"));
+    assert.ok(observed.includes("item/agentMessage/delta"));
+    assert.deepEqual(requests, ["item/commandExecution/requestApproval"]);
+    clearCodexAppServerConversation("after-parent");
+    const count = observed.length;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(observed.length, count, "conversation cleanup stops persistent observation");
   } finally {
     clearCodexAppServerSessions();
     await rm(dir, { recursive: true, force: true });

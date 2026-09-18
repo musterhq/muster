@@ -1,7 +1,7 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { dataDir, readJsonFile } from "./store.js";
+import { dataDir } from "./store.js";
+import { SchedulerStore } from "./scheduler-store.js";
 
 export interface ScheduleJob {
   readonly id: string;
@@ -32,6 +32,7 @@ function parseField(field: string, min: number, max: number): Set<number> | "any
   if (field === "*") return "any";
   const values = new Set<number>();
   for (const part of field.split(",")) {
+    if (!/^(?:\*|\d+(?:-\d+)?)(?:\/\d+)?$/.test(part)) throw new Error(`Invalid cron value: ${part}`);
     const [rangePart, stepPart] = part.split("/");
     const step = stepPart ? Number.parseInt(stepPart, 10) : 1;
     if (!Number.isFinite(step) || step < 1) throw new Error(`Invalid cron step: ${part}`);
@@ -102,16 +103,10 @@ export function computeNextRun(cron: string, from: Date): Date {
   throw new Error(`Cron "${cron}" has no matching time within a year.`);
 }
 
-async function readJobs(cwd: string): Promise<ScheduleJob[]> {
-  // Missing file -> no jobs yet; corrupt file -> throw so the corruption is
-  // visible instead of silently dropping every schedule.
-  return readJsonFile<ScheduleJob[]>(schedulesPath(cwd), []);
-}
-
-async function writeJobs(jobs: ScheduleJob[], cwd: string): Promise<void> {
-  const path = schedulesPath(cwd);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(jobs, null, 2));
+function openStore(cwd: string): SchedulerStore {
+  // Opening migrates a legacy schedules.json once, atomically; the JSON file
+  // is kept untouched as the backup. Corrupt/malformed JSON throws here.
+  return SchedulerStore.open(cwd, schedulesPath(cwd), parseCron);
 }
 
 export async function addSchedule(cron: string, prompt: string, options: { profile?: string; cwd?: string; flowId?: string; now?: Date } = {}): Promise<ScheduleJob> {
@@ -127,22 +122,19 @@ export async function addSchedule(cron: string, prompt: string, options: { profi
     createdAt: createdAt.toISOString(),
     nextRunAt: computeNextRun(cron, createdAt).toISOString(),
   };
-  const jobs = await readJobs(cwd);
-  jobs.push(job);
-  await writeJobs(jobs, cwd);
+  const store = openStore(cwd);
+  try { store.insertJob(job); } finally { store.close(); }
   return job;
 }
 
 export async function listSchedules(cwd = process.cwd()): Promise<ScheduleJob[]> {
-  return readJobs(cwd);
+  const store = openStore(cwd);
+  try { return store.listJobs(); } finally { store.close(); }
 }
 
 export async function removeSchedule(id: string, cwd = process.cwd()): Promise<boolean> {
-  const jobs = await readJobs(cwd);
-  const next = jobs.filter((job) => job.id !== id);
-  if (next.length === jobs.length) return false;
-  await writeJobs(next, cwd);
-  return true;
+  const store = openStore(cwd);
+  try { return store.removeJob(id); } finally { store.close(); }
 }
 
 export interface DueJobRun {
@@ -155,11 +147,15 @@ export interface DueJobRun {
 /**
  * Executes every job that is DUE (nextRunAt <= now) — not merely "the current
  * minute matches" — so a missed tick (host asleep, a skipped cron minute, a
- * restart) is caught the next time this runs rather than lost. Each due job's
- * nextRunAt is advanced to its next FUTURE occurrence and PERSISTED before any
- * runner executes: that gives at-most-once (a crash or an overlapping run-due
- * invocation can't double-fire) and collapses a backlog to one occurrence (no
- * burst). There is no daemon: invoke from external cron
+ * restart) is caught the next time this runs rather than lost. Claiming is a
+ * single synchronous SQLite transaction: each due job's nextRunAt is advanced
+ * to its next FUTURE occurrence and a "running" receipt persisted BEFORE any
+ * runner is awaited — at-most-once per occurrence even under concurrent
+ * run-due invocations, and a backlog collapses to one occurrence (no burst).
+ * A job whose previous run is still in flight is skipped (even at the next
+ * minute). After a crash/restart its unresolved receipt is marked
+ * interrupted (outcome unknown) and never implicitly replayed. There is no
+ * daemon: invoke from external cron
  * (e.g. `* * * * * cd <repo> && pnpm hc schedule run-due`).
  */
 export async function runDueSchedules(
@@ -168,40 +164,28 @@ export async function runDueSchedules(
 ): Promise<DueJobRun[]> {
   const cwd = options.cwd ?? process.cwd();
   const now = options.now ?? new Date();
-  const jobs = await readJobs(cwd);
-  const results: DueJobRun[] = [];
+  const store = openStore(cwd);
+  let claims: ReturnType<SchedulerStore["claimDue"]>;
+  try { claims = store.claimDue(now, computeNextRun); } finally { store.close(); }
+  const { claimed, skipped } = claims;
+  const resolveRun: SchedulerStore["resolveRun"] = (claim, result, at) => {
+    const resultStore = openStore(cwd);
+    try { resultStore.resolveRun(claim, result, at); } finally { resultStore.close(); }
+  };
+  const results: DueJobRun[] = skipped.map(({ job, detail }) => ({ job, status: "skipped", detail }));
 
-  // Phase 1: select due jobs and advance their nextRunAt past `now`, then
-  // persist BEFORE running anything (the at-most-once barrier).
-  const due: number[] = [];
-  for (let index = 0; index < jobs.length; index += 1) {
-    const job = jobs[index];
-    if (job.disabled) {
-      results.push({ job, status: "skipped", detail: "disabled" });
-      continue;
-    }
-    // Legacy jobs (created before nextRunAt) derive it from their last run/creation.
-    const nextRunAt = job.nextRunAt
-      ? new Date(job.nextRunAt)
-      : computeNextRun(job.cron, new Date(job.lastRunAt ?? job.createdAt));
-    if (nextRunAt > now) continue; // not due yet
-    jobs[index] = { ...job, nextRunAt: computeNextRun(job.cron, now).toISOString() };
-    due.push(index);
-  }
-  if (due.length) await writeJobs(jobs, cwd);
-
-  // Phase 2: run each due job (advance already persisted, so no double-fire).
-  for (const index of due) {
-    const job = jobs[index];
+  // Claims are committed; run each and resolve ONLY that claim's receipt and
+  // job row — a concurrent add/remove is never overwritten.
+  for (const claim of claimed) {
     try {
-      const result = await runner(job);
-      jobs[index] = { ...job, lastRunAt: now.toISOString(), lastRunId: result.runId, lastStatus: result.status };
-      results.push({ job: jobs[index], runId: result.runId, status: result.status });
+      const result = await runner(claim.job);
+      resolveRun(claim, result, now);
+      results.push({ job: claim.job, runId: result.runId, status: result.status });
     } catch (error) {
-      jobs[index] = { ...job, lastRunAt: now.toISOString(), lastStatus: "failed" };
-      results.push({ job: jobs[index], status: "failed", detail: error instanceof Error ? error.message : String(error) });
+      const detail = error instanceof Error ? error.message : String(error);
+      resolveRun(claim, { status: "failed", detail }, now);
+      results.push({ job: claim.job, status: "failed", detail });
     }
   }
-  if (due.length) await writeJobs(jobs, cwd);
   return results;
 }
