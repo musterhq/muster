@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { buildCodexArgs, parseCodexEvents, runCodex } from "../src/codex.js";
-import { buildCodexAppServerArgs, clearCodexAppServerConversation, clearCodexAppServerSessions, interruptActiveCodexTurn, readGatewayCodexWarmThreadCount, runCodexAppServer } from "../src/codex-app-server.js";
+import { buildCodexAppServerArgs, clearCodexAppServerConversation, clearCodexAppServerSessions, CODEX_RUN_LIFECYCLE_VERSION, interruptActiveCodexTurn, readGatewayCodexWarmThreadCount, runCodexAppServer } from "../src/codex-app-server.js";
 import { codexMcpDisableOverrides } from "../src/run.js";
 
 test("runCodex marks an unavailable CLI as safe for governed fallback", async () => {
@@ -523,9 +523,125 @@ rl.on("line", (line) => {
     });
 
     assert.equal(result.status, "failed");
-    assert.equal(result.hadActivity, true);
+    assert.equal(result.hadActivity, false, "a lost acknowledgement is not activity evidence");
     assert.equal(result.dispatchState, "unknown");
     assert.equal(result.fallbackEligible, false);
+    assert.equal(result.failure, undefined, "a process exit is uncertain but is not mislabeled as a timeout");
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer lifecycle: explicit admission rejection is definitely pre-dispatch", async () => {
+  assert.equal(CODEX_RUN_LIFECYCLE_VERSION, 1);
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-admission-rejected-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: "thread-admission" } } });
+  else if (msg.method === "turn/start") send({ id: msg.id, error: { code: -32000, message: "Hybrow OmniRoute: unexpected status 503 Service Unavailable: Chat admission capacity is temporarily unavailable. Retry shortly.", data: { statusCode: 503, request_id: "req-admission" } } });
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const result = await runCodexAppServer({
+      prompt: "continue the task",
+      cwd: dir,
+      command: fake,
+      cacheKey: "admission-rejected",
+      budgets: { idleMs: 180_000, requestMs: 100, turnMs: 14_400_000 },
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.dispatchState, "not-dispatched");
+    assert.equal(result.hadActivity, false);
+    assert.equal(result.failure?.kind, "rpc-rejected");
+    assert.equal(result.failure?.method, "turn/start");
+    assert.equal(result.failure?.statusCode, 503);
+    assert.equal(result.failure?.requestId, "req-admission");
+    assert.equal(result.turnId, undefined);
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer lifecycle: lost turn/start acknowledgement respects the request budget and stays uncertain", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-request-budget-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: "thread-request-budget" } } });
+  else if (msg.method === "turn/start") setTimeout(() => send({ id: msg.id, result: { turn: { id: "turn-late-ack", status: "inProgress" } } }), 200);
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const result = await runCodexAppServer({
+      prompt: "do not replay this request",
+      cwd: dir,
+      command: fake,
+      cacheKey: "request-budget",
+      budgets: { idleMs: 180_000, requestMs: 40, turnMs: 14_400_000 },
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.dispatchState, "unknown", "a lost acknowledgement may follow provider acceptance");
+    assert.equal(result.fallbackEligible, false);
+    assert.equal(result.failure?.kind, "request-timeout");
+    assert.equal(result.failure?.method, "turn/start");
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer lifecycle: independent turn ceiling permits activity past idle budget", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-independent-budgets-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+let stream;
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: "thread-budget" } } });
+  else if (msg.method === "turn/start") {
+    send({ id: msg.id, result: { turn: { id: "turn-budget", status: "inProgress" } } });
+    stream = setInterval(() => send({ method: "item/agentMessage/delta", params: { threadId: "thread-budget", turnId: "turn-budget", delta: "still working" } }), 8);
+  } else if (msg.method === "turn/interrupt") send({ id: msg.id, result: {} });
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const accepted: Array<{ threadId: string; turnId: string; dispatchState: "dispatched" }> = [];
+    const result = await runCodexAppServer({
+      prompt: "work for a while",
+      cwd: dir,
+      command: fake,
+      cacheKey: "independent-budgets",
+      timeoutMs: 20,
+      budgets: { idleMs: 120, requestMs: 100, turnMs: 95 },
+      onTurnAccepted: (identity) => accepted.push(identity),
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(result.dispatchState, "dispatched");
+    assert.equal(result.turnId, "turn-budget");
+    assert.equal(result.failure, undefined, "a local turn ceiling does not misreport a pre-dispatch RPC rejection");
+    assert.equal(accepted.length, 1);
+    assert.deepEqual(accepted[0], { threadId: "thread-budget", turnId: "turn-budget", dispatchState: "dispatched" });
+    assert.match(result.errorMessage ?? "", /absolute ceiling of 95ms/i);
   } finally {
     clearCodexAppServerSessions();
     await rm(dir, { recursive: true, force: true });

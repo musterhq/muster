@@ -5,6 +5,15 @@ import { readFile } from "node:fs/promises";
 import { join as pathJoin } from "node:path";
 import { tmpdir } from "node:os";
 
+/** Lifecycle contract consumed by Agent Mode. Keep it opt-in for older callers. */
+export const CODEX_RUN_LIFECYCLE_VERSION = 1;
+
+export interface CodexAppServerBudgets {
+  readonly idleMs: number;
+  readonly requestMs: number;
+  readonly turnMs: number;
+}
+
 export interface CodexAppServerRunInput {
   readonly prompt: string;
   readonly cwd: string;
@@ -19,6 +28,12 @@ export interface CodexAppServerRunInput {
   readonly networkAccess?: boolean;
   readonly env?: Record<string, string>;
   readonly timeoutMs?: number;
+  /** Independent lifecycle budgets; omitted callers retain legacy timeout behavior. */
+  readonly budgets?: CodexAppServerBudgets;
+  /** Cancellation is scoped to this run and never implies remote completion. */
+  readonly signal?: AbortSignal;
+  readonly onThreadReady?: (threadId: string) => void;
+  readonly onTurnAccepted?: (identity: { readonly threadId: string; readonly turnId: string; readonly dispatchState: "dispatched" }) => void;
   readonly command?: string;
   /** Native Codex config overrides supplied by the governed host. */
   readonly configOverrides?: readonly string[];
@@ -82,6 +97,13 @@ export interface CodexAppServerRunResult {
   /** Whether turn/start was accepted by the provider. A dispatched turn is never retried automatically. */
   readonly dispatchState: "not-dispatched" | "dispatched" | "unknown";
   readonly turnId?: string;
+  readonly failure?: {
+    readonly kind: "rpc-rejected" | "request-timeout" | "aborted";
+    readonly method?: string;
+    readonly statusCode?: number;
+    readonly retryAfterMs?: number;
+    readonly requestId?: string;
+  };
   /** A cold app-server failure may safely fall back; an active turn may not be replayed. */
   readonly fallbackEligible?: boolean;
   readonly hadActivity?: boolean;
@@ -98,6 +120,23 @@ interface PendingRequest {
   readonly resolve: (value: Record<string, unknown>) => void;
   readonly reject: (error: Error) => void;
   readonly timer: NodeJS.Timeout;
+}
+
+class CodexRpcError extends Error {
+  constructor(
+    message: string,
+    readonly method: string,
+    readonly code?: number,
+    readonly data?: Record<string, unknown>,
+  ) { super(message); this.name = "CodexRpcError"; }
+}
+
+class CodexRunError extends Error {
+  constructor(
+    message: string,
+    readonly dispatchState: CodexAppServerRunResult["dispatchState"],
+    readonly failure?: CodexAppServerRunResult["failure"],
+  ) { super(message); this.name = "CodexRunError"; }
 }
 
 interface CachedSession {
@@ -270,6 +309,8 @@ export function clearCodexAppServerConversation(conversationKey: string, transpo
 
 export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<CodexAppServerRunResult> {
   if (!input.prompt.trim()) throw new Error("Codex prompt is required.");
+  validateLifecycleBudgets(input.budgets);
+  if (input.signal?.aborted) return coldFailure(new CodexRunError("Codex turn was cancelled before dispatch.", "not-dispatched", { kind: "aborted" }), Date.now());
   if (!(input.configOverrides ?? []).some((value) => /^model_reasoning_summary\s*=/.test(value))) {
     // Request provider-approved summaries for the transcript without changing
     // ~/.codex/config.toml. Models that emit no summary remain silent.
@@ -303,6 +344,7 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
     await lease.session.client.stopObservation();
     lease.session.client.setObserver({ ...(input.onEvent ? { onEvent: input.onEvent } : {}), ...(input.onRequest ? { onRequest: input.onRequest } : {}) });
   }
+  input.onThreadReady?.(lease.session.threadId);
 
   let queueMs = 0;
   let firstDeltaAt: number | undefined;
@@ -316,6 +358,7 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
       lease.session.threadId = await lease.session.client.startThread(input.cwd);
       effectiveThreadOpenMs += Date.now() - threadOpenStartedAt;
       effectiveThreadOpenState = "started";
+      input.onThreadReady?.(lease.session.threadId);
     }
     const turn = await lease.session.client.runTurn({
       threadId: lease.session.threadId,
@@ -325,6 +368,9 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
       ...(input.images?.length ? { images: input.images } : {}),
       ...(input.collaborationMode ? { collaborationMode: input.collaborationMode } : {}),
       timeoutMs: input.timeoutMs ?? 180_000,
+      ...(input.budgets ? { budgets: input.budgets } : {}),
+      ...(input.signal ? { signal: input.signal } : {}),
+      onTurnAccepted: (identity) => { providerActivity = true; input.onTurnAccepted?.(identity); },
       onDelta: (text) => {
         providerActivity = true;
         firstDeltaAt ??= Date.now();
@@ -354,8 +400,9 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
         effectiveThreadOpenState,
       ),
       errorMessage: turn.errorMessage,
-      dispatchState: turn.turnId ? "dispatched" : providerActivity ? "dispatched" : "not-dispatched",
+      dispatchState: turn.turnId ? "dispatched" : turn.failure?.kind === "rpc-rejected" || turn.failure?.kind === "aborted" ? "not-dispatched" : providerActivity ? "dispatched" : "unknown",
       ...(turn.turnId ? { turnId: turn.turnId } : {}),
+      ...(turn.failure ? { failure: turn.failure } : {}),
       fallbackEligible: turn.errorMessage ? !providerActivity : false,
       hadActivity: providerActivity,
       tokenUsage: turn.tokenUsage,
@@ -382,9 +429,10 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
           effectiveThreadOpenState,
         ),
         errorMessage: error instanceof Error ? error.message : String(error),
-        dispatchState: lease.session.client.dispatchedTurnId() ? "dispatched" : providerActivity ? "unknown" : "not-dispatched",
+        dispatchState: lease.session.client.dispatchedTurnId() ? "dispatched" : error instanceof CodexRunError ? error.dispatchState : providerActivity ? "unknown" : "unknown",
         ...(lease.session.client.dispatchedTurnId() ? { turnId: lease.session.client.dispatchedTurnId() } : {}),
-        fallbackEligible: !providerActivity,
+        ...(error instanceof CodexRunError && error.failure ? { failure: error.failure } : {}),
+        fallbackEligible: !providerActivity && (error instanceof CodexRunError ? error.dispatchState === "not-dispatched" : false),
         hadActivity: providerActivity,
       };
     });
@@ -397,8 +445,35 @@ function coldFailure(error: unknown, started: number): CodexAppServerRunResult {
     durationMs: Date.now() - started,
     errorMessage: error instanceof Error ? error.message : String(error),
     dispatchState: "not-dispatched",
+    ...(error instanceof CodexRunError && error.failure ? { failure: error.failure } : {}),
     fallbackEligible: true,
     hadActivity: false,
+  };
+}
+
+function validateLifecycleBudgets(budgets: CodexAppServerBudgets | undefined): void {
+  if (!budgets) return;
+  for (const [name, value] of Object.entries(budgets)) {
+    if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) {
+      throw new Error(`Codex ${name} must be a positive finite millisecond budget no greater than 2147483647.`);
+    }
+  }
+}
+
+function rpcFailure(error: CodexRpcError): NonNullable<CodexAppServerRunResult["failure"]> {
+  const source = `${error.message} ${JSON.stringify(error.data ?? {})}`;
+  const statusCode = numberValue(error.data?.statusCode)
+    ?? numberValue(error.data?.status_code)
+    ?? (Number(source.match(/\b(?:HTTP\s*)?(429|503)\b/i)?.[1]) || undefined);
+  const retryRaw = error.data?.retryAfterMs ?? error.data?.retry_after_ms;
+  const retryAfterMs = typeof retryRaw === "number" && Number.isFinite(retryRaw) && retryRaw >= 0 ? Math.floor(retryRaw) : undefined;
+  const requestId = stringValue(error.data?.requestId) ?? stringValue(error.data?.request_id) ?? stringValue(error.data?.requestID);
+  return {
+    kind: "rpc-rejected",
+    method: error.method,
+    ...(statusCode ? { statusCode } : {}),
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    ...(requestId ? { requestId } : {}),
   };
 }
 
@@ -824,6 +899,9 @@ class CodexAppServerClient {
     readonly prompt: string;
     readonly applicationContext?: string;
     readonly timeoutMs: number;
+    readonly budgets?: CodexAppServerBudgets;
+    readonly signal?: AbortSignal;
+    readonly onTurnAccepted?: CodexAppServerRunInput["onTurnAccepted"];
     readonly onDelta?: (text: string) => void;
     readonly onReasoningDelta?: (text: string) => void;
     readonly onActivity?: () => void;
@@ -837,16 +915,20 @@ class CodexAppServerClient {
     readonly firstDeltaMs?: number;
     readonly errorMessage?: string;
     readonly turnId?: string;
+    readonly failure?: CodexAppServerRunResult["failure"];
     readonly tokenUsage?: CodexAppServerRunResult["tokenUsage"];
   }> {
     const started = Date.now();
     // A prior completed turn must not make a later pre-dispatch failure look
     // replayable. This marker belongs to the current turn attempt only.
     this.lastDispatchedTurnId = undefined;
-    // Dispatch is the replay boundary: a lost acknowledgement does not prove
-    // that the provider rejected the turn or skipped its tool calls.
-    input.onActivity?.();
-    const turnStart = await this.request("turn/start", {
+    if (input.signal?.aborted) {
+      return { finalMessage: "", errorMessage: "Codex turn was cancelled before dispatch.", failure: { kind: "aborted" } };
+    }
+    const requestMs = input.budgets?.requestMs ?? 15_000;
+    let turnStart: Record<string, unknown>;
+    try {
+      turnStart = await this.request("turn/start", {
       threadId: input.threadId,
       input: [{ type: "text", text: input.prompt }, ...(input.images ?? []).map((path) => ({ type: "localImage", path }))],
       ...(input.approvalPolicy ? { approvalPolicy: input.approvalPolicy } : {}),
@@ -861,9 +943,30 @@ class CodexAppServerClient {
             },
           }
         : {}),
-    }, 15_000);
+      }, requestMs);
+    } catch (error) {
+      // A JSON-RPC error response is a confirmed rejection. A timeout, pipe
+      // close, or malformed response remains uncertain and must never replay.
+      if (error instanceof CodexRpcError) {
+        return { finalMessage: "", errorMessage: error.message, failure: rpcFailure(error) };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new CodexRunError(
+        message,
+        "unknown",
+        /timed out/i.test(message) ? { kind: "request-timeout", method: "turn/start" } : undefined,
+      );
+    }
     const turnId = stringValue(asRecord(turnStart.turn).id);
-    if (turnId) { this.activeTurn = { threadId: input.threadId, turnId }; this.lastDispatchedTurnId = turnId; }
+    if (turnId) {
+      this.activeTurn = { threadId: input.threadId, turnId };
+      this.lastDispatchedTurnId = turnId;
+      input.onTurnAccepted?.({ threadId: input.threadId, turnId, dispatchState: "dispatched" });
+    } else {
+      // The server returned a successful response but omitted identity; treat
+      // it as accepted/uncertain, never as permission to replay.
+      throw new CodexRunError("Codex app-server accepted turn/start without a turn identity.", "unknown");
+    }
     let finalMessage = "";
     let firstDeltaMs: number | undefined;
     let tokenUsage: CodexAppServerRunResult["tokenUsage"] | undefined;
@@ -882,12 +985,22 @@ class CodexAppServerClient {
     // over a 45-turn resumed thread legitimately outlives a "simple" budget).
     // A hung provider still dies after timeoutMs of silence, and an absolute
     // ceiling guards against a notification-spamming runaway turn.
-    const absoluteCeilingMs = Math.max(input.timeoutMs * 8, 15 * 60_000);
+    const idleMs = input.budgets?.idleMs ?? input.timeoutMs;
+    const absoluteCeilingMs = input.budgets?.turnMs ?? Math.max(input.timeoutMs * 8, 15 * 60_000);
     let lastNotificationAt = Date.now();
+    let interruptSent = false;
+    const requestInterrupt = () => {
+      if (interruptSent || !turnId || !this.isAlive()) return;
+      interruptSent = true;
+      void this.request("turn/interrupt", { threadId: input.threadId, turnId }, requestMs).catch(() => undefined);
+    };
+    const onAbort = () => requestInterrupt();
+    input.signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      while (Date.now() - lastNotificationAt < input.timeoutMs) {
+      while (Date.now() - lastNotificationAt < idleMs && Date.now() - started < absoluteCeilingMs) {
+        if (input.signal?.aborted) requestInterrupt();
         if (Date.now() - started >= absoluteCeilingMs) {
-          throw new Error(this.formatError(`codex app-server turn exceeded the absolute ceiling of ${absoluteCeilingMs}ms`));
+          throw new CodexRunError(this.formatError(`codex app-server turn exceeded the absolute ceiling of ${absoluteCeilingMs}ms`), "dispatched");
         }
         if (!this.isAlive()) throw new Error(this.formatError("codex app-server exited during turn"));
         const message = await this.takeNotification(250);
@@ -956,11 +1069,21 @@ class CodexAppServerClient {
           if (status && status !== "completed" && status !== "interrupted") {
             return { finalMessage, firstDeltaMs, turnId, errorMessage: stringValue(error.message) ?? `codex turn ended with status ${status}`, tokenUsage };
           }
+          if (input.signal?.aborted) {
+            return { finalMessage, firstDeltaMs, turnId, errorMessage: "Codex turn was interrupted.", failure: { kind: "aborted" }, tokenUsage };
+          }
           return { finalMessage, firstDeltaMs, turnId, tokenUsage };
         }
       }
-      throw new Error(this.formatError(`codex app-server turn timed out: silent for ${input.timeoutMs}ms with no notifications`));
+      if (input.signal?.aborted) {
+        throw new CodexRunError("Codex turn was interrupted locally; provider terminal status was not observed.", "dispatched", { kind: "aborted" });
+      }
+      if (Date.now() - started >= absoluteCeilingMs) {
+        throw new CodexRunError(this.formatError(`codex app-server turn exceeded the absolute ceiling of ${absoluteCeilingMs}ms`), "dispatched");
+      }
+      throw new CodexRunError(this.formatError(`codex app-server turn timed out: silent for ${idleMs}ms with no notifications`), "dispatched");
     } finally {
+      input.signal?.removeEventListener("abort", onAbort);
       if (this.activeTurn?.threadId === input.threadId && this.activeTurn.turnId === turnId) this.activeTurn = undefined;
     }
   }
@@ -1009,7 +1132,12 @@ class CodexAppServerClient {
         clearTimeout(pending.timer);
         const error = asRecord(message.error);
         if (Object.keys(error).length) {
-          pending.reject(new Error(stringValue(error.message) ?? `codex app-server ${pending.method} failed`));
+          pending.reject(new CodexRpcError(
+            stringValue(error.message) ?? `codex app-server ${pending.method} failed`,
+            pending.method,
+            numberValue(error.code),
+            asRecord(error.data),
+          ));
         } else {
           pending.resolve(asRecord(message.result));
         }
