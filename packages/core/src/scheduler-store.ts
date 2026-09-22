@@ -199,7 +199,9 @@ export class SchedulerStore {
     const db = new DatabaseSync(path);
     try {
       chmodSync(path, 0o600);
-      db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+      // busy_timeout is connection-local and must be active before the lock-taking WAL pragma.
+      db.exec("PRAGMA busy_timeout = 5000;");
+      db.exec("PRAGMA journal_mode = WAL;");
       db.exec(SCHEMA);
       const store = new SchedulerStore(db, legacyJsonPath, validateCron);
       store.migrateLegacyJson();
