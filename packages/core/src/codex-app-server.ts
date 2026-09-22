@@ -338,14 +338,6 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
     }
   }
 
-  if (keepAlive) {
-    // A queued observer must yield the notification stream before this
-    // conversation starts another typed parent turn.
-    await lease.session.client.stopObservation();
-    lease.session.client.setObserver({ ...(input.onEvent ? { onEvent: input.onEvent } : {}), ...(input.onRequest ? { onRequest: input.onRequest } : {}) });
-  }
-  input.onThreadReady?.(lease.session.threadId);
-
   let queueMs = 0;
   let firstDeltaAt: number | undefined;
   let providerActivity = false;
@@ -353,6 +345,15 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
   let effectiveThreadOpenState: CodexAppServerTimings["threadOpenState"] = lease.cacheState === "hit" ? "cached" : lease.threadOpenState;
   return await runExclusive(lease.session, async (measuredQueueMs) => {
     queueMs = measuredQueueMs;
+    if (keepAlive) {
+      // A turn queued behind another one must take ownership only after it
+      // acquires the session queue. Stopping observation before queuing lets
+      // the preceding turn restart the observer and consume the queued turn's
+      // notifications before this run can read them.
+      await lease.session.client.stopObservation();
+      lease.session.client.setObserver({ ...(input.onEvent ? { onEvent: input.onEvent } : {}), ...(input.onRequest ? { onRequest: input.onRequest } : {}) });
+    }
+    input.onThreadReady?.(lease.session.threadId);
     if (input.rotateThread && lease.cacheState === "hit") {
       const threadOpenStartedAt = Date.now();
       lease.session.threadId = await lease.session.client.startThread(input.cwd);
