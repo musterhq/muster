@@ -5,8 +5,20 @@ MIT-licensed, written in TypeScript, and stores sessions, memory and the token
 ledger locally.
 
 Website: https://themuster.dev/
-Repository: https://github.com/Dkm0315/muster
+Repository: https://github.com/musterhq/muster
 License: MIT
+
+## Muster Agent (desktop app)
+
+Muster Agent is a free agentic development client — an AI coding agent desktop
+app — for macOS (Apple silicon), Windows 10/11 and Linux (AppImage, deb). It runs
+Claude Code, Codex, OpenCode, OpenAI-compatible gateways and local models
+(Ollama, LM Studio) side by side, with long-term memory, Docker-backed sandboxed
+computers, live diffs with Keep/Undo, a terminal, a browser and git history.
+
+Download: https://themuster.dev/download.html
+Releases: https://github.com/musterhq/muster-code/releases/latest
+Repository: https://github.com/musterhq/muster-code
 
 ## What makes it different
 
@@ -78,4 +90,4 @@ each Codex release rather than assumed permanent.
 - What is an agent harness?: https://themuster.dev/guide-agent-harness.html
 - MCP agent harness with token visibility: https://themuster.dev/guide-mcp-agent-harness.html
 - Frappe AI with DocType-aware retrieval: https://themuster.dev/guide-frappe-ai.html
-- GitHub: https://github.com/Dkm0315/muster
+- GitHub: https://github.com/musterhq/muster
