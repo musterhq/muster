@@ -2,6 +2,7 @@ import "./style.css";
 import { initMotion } from "./motion";
 import { initCardTilt } from "./tilt";
 import { initTerminal } from "./terminal";
+import { initAgentApp } from "./agent-app";
 import { initTheme, onThemeChange, probeLiquidGlassRefraction } from "./theme";
 import type { HeroMeshHandle } from "./hero-mesh";
 
@@ -19,6 +20,9 @@ initCardTilt();
 
 // ---------- terminal replica: type the commands, reveal output on scroll ----------
 initTerminal();
+
+// ---------- Muster Agent: one-click OS download + 3D demo video stage ----------
+initAgentApp();
 
 // ---------- copy buttons ----------
 for (const button of document.querySelectorAll<HTMLButtonElement>(".copy-btn")) {

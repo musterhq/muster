@@ -35,7 +35,8 @@ export default defineConfig({
         musterVsQm: resolve(__dirname, "muster-vs-qm.html"),
         resumeCodexSessions: resolve(__dirname, "resume-codex-sessions.html"),
         onboarding: resolve(__dirname, "onboarding.html"),
-        spatial: resolve(__dirname, "spatial.html")
+        spatial: resolve(__dirname, "spatial.html"),
+        download: resolve(__dirname, "download.html")
       }
     }
   }

@@ -1831,3 +1831,140 @@ main::before {
   color: var(--ink);
 }
 .hero-cards { display: none; }
+
+/* ============================================================
+   MUSTER AGENT DESKTOP APP — download band + 3D video stage
+   ============================================================ */
+.agent-app {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(32px, 6vw, 72px);
+  align-items: center;
+}
+.agent-app h2 { margin-top: 6px; }
+.download-primary { margin: 26px 0 16px; }
+.btn-download {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 26px;
+}
+.btn-download .dl-label { font-size: 16px; }
+.btn-download .dl-meta { font-family: var(--mono); font-size: 11.5px; font-weight: 500; opacity: 0.8; }
+.download-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.download-grid a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--lg-fill);
+  color: var(--ink);
+  transition: border-color 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+.download-grid a:hover { border-color: var(--primary); transform: translateY(-1px); }
+.download-grid b { font-size: var(--t-label); font-weight: 600; }
+.download-grid span { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+.download-grid li.is-yours a { border-color: var(--primary); }
+.download-foot { margin-top: 14px; font-size: var(--t-sm); color: var(--ink-faint); }
+.download-foot a { color: var(--ink-dim); text-decoration: underline; text-underline-offset: 3px; }
+
+.agent-stage {
+  --rx: 0deg; --ry: -6deg; --lift: 0px; --spread: 1;
+  position: relative;
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+  display: grid;
+  place-items: center;
+  padding: 24px 0 48px;
+  min-height: 560px;
+}
+.agent-rig {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: translateY(var(--lift)) rotateX(var(--rx)) rotateY(var(--ry));
+  will-change: transform;
+}
+.agent-device {
+  position: relative;
+  width: min(300px, 70vw);
+  aspect-ratio: 9 / 16;
+  border-radius: 30px;
+  padding: 9px;
+  background: linear-gradient(145deg, #2a2440, #0e0b1a 60%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 40px 80px -30px rgba(40, 20, 110, 0.55),
+    0 18px 40px -20px rgba(0, 0, 0, 0.5);
+}
+.agent-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 22px;
+  background: #0e0b1a;
+}
+.device-glare {
+  position: absolute;
+  inset: 9px;
+  border-radius: 22px;
+  pointer-events: none;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.16), transparent 38%);
+  mix-blend-mode: screen;
+}
+.agent-orbit { position: absolute; inset: 0 -60%; pointer-events: none; transform-style: preserve-3d; z-index: 1; }
+.orbit-chip {
+  position: absolute;
+  left: calc(50% + var(--x) * var(--spread));
+  top: var(--y);
+  white-space: nowrap;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--lg-fill-strong);
+  border: 1px solid var(--lg-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  transform: translateX(-50%) translateZ(calc(var(--z) * var(--spread)));
+  opacity: calc(0.25 + 0.75 * var(--spread));
+}
+.agent-shadow {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: 60%;
+  height: 28px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(40, 20, 110, 0.32), transparent);
+  filter: blur(6px);
+}
+[data-theme="dark"] .orbit-chip { background: rgba(28, 22, 52, 0.72); }
+[data-theme="dark"] .download-grid a { background: rgba(255, 255, 255, 0.04); }
+
+@media (max-width: 1024px) {
+  .agent-app { grid-template-columns: minmax(0, 1fr); }
+  .agent-stage { min-height: 0; }
+}
+@media (max-width: 600px) {
+  .download-grid { grid-template-columns: minmax(0, 1fr); }
+  .orbit-chip { font-size: 10.5px; padding: 5px 9px; }
+  .agent-app { overflow-x: clip; }
+  .orbit-chip:nth-child(odd) { --x: -18% !important; }
+  .orbit-chip:nth-child(even) { --x: 18% !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-rig { transform: none; }
+}

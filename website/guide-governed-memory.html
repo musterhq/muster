@@ -16,7 +16,7 @@
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div><div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
-  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/assets/brand/muster-logo.png" alt="Muster" /></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a><a href="/agent-harness.html">Agent harness</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/Dkm0315/muster" rel="noopener">GitHub</a></nav></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/assets/brand/muster-logo.png" alt="Muster" /></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a><a href="/agent-harness.html">Agent harness</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
   <main>
     <section class="hero"><div class="hero-inner"><p class="kicker hero-step">guide · agent memory</p><h1 class="hero-step">Building an AI agent with memory that does not leak.</h1><p class="sub hero-step">The longer an agent runs, the more memory helps. The same memory also becomes a risk unless scope is explicit — which tenant, workspace, user, role, and session a fact belongs to, enforced at retrieval rather than trusted at write time.</p></div></section>
     <section class="band" data-reveal>
@@ -43,7 +43,7 @@
       <p class="sec-sub reveal-child">Finally, memory should be testable. If a leakage bug is found, it should become a regression fixture: this user should not recall that tenant's fact, this session-only note should not appear after reset, and this promoted memory should be visible only in the intended scope. That is why governed memory belongs in the harness. The model may use the memory, but the harness must prove the boundary.</p>
       <p class="sec-sub reveal-child">Good memory UX is also part of governance. Users should be able to name sessions, inspect what was remembered, search memory directly, and understand why a fact was recalled. Operators should be able to reset, promote, or remove memory without editing raw files. When a conversation starts, a named history gives the agent a cleaner reference point than a vague global transcript. That improves personalization while making the interface easier to trust.</p>
       <p class="sec-sub reveal-child">The strongest memory systems will combine fast indexed retrieval with policy-aware filtering and optional reranking. The first filter should be scope: do not rank what the user is not allowed to see. Then retrieve candidates efficiently. Then, if needed, rerank a small set. This keeps memory fast as it grows and prevents the common failure where a clever retriever finds a fact that should never have entered the candidate pool.</p>
-      <p class="proof-link reveal-child"><a href="/docs.html">Read the docs -></a> <a href="https://github.com/Dkm0315/muster/blob/main/benchmark/RESULTS.md" rel="noopener">See token benchmark -></a></p>
+      <p class="proof-link reveal-child"><a href="/docs.html">Read the docs -></a> <a href="https://github.com/musterhq/muster/blob/main/benchmark/RESULTS.md" rel="noopener">See token benchmark -></a></p>
     </section>
   </main>
 </body>
