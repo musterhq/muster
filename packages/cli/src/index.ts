@@ -153,6 +153,10 @@ import {
   saveConfig,
   formatMemoryScope,
   parseMemoryScope,
+  createHindsightClient,
+  resolveHindsightConfig,
+  HindsightConfigError,
+  HINDSIGHT_URL_ENV,
   planRun,
   promoteMemory,
   runClaudeCode,
@@ -301,7 +305,7 @@ const execFileAsync = promisify(execFile);
 import { createServer } from "node:http";
 import { createInterface, emitKeypressEvents, type Interface } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
-import type { BackendEcosystem, CapabilityPluginPolicy, ChatMessage, EvidenceRecord, FeedbackValue, FlowRunEvent, FlowRunState, FlowToolRegistry, McpServerConfig, MemoryScope, MessageRow, MigrationSource, RunOutcome, SessionRow } from "@musterhq/core";
+import type { BackendEcosystem, CapabilityPluginPolicy, ChatMessage, EvidenceRecord, FeedbackValue, FlowRunEvent, FlowRunState, FlowToolRegistry, HindsightConfig, McpServerConfig, MemoryScope, MessageRow, MigrationSource, RunOutcome, SessionRow } from "@musterhq/core";
 import type { GatewayConfig, PairedIdentity } from "@musterhq/gateway";
 
 const originalEmitWarning = process.emitWarning.bind(process);
@@ -9012,7 +9016,64 @@ async function memory(args: string[]): Promise<void> {
     printMemoryObject(object);
     return;
   }
-  throw new Error("Usage: muster memory <add|search|status|doctor|providers|plan|promote>");
+  if (subcommand === "hindsight") {
+    await memoryHindsight(args.slice(1));
+    return;
+  }
+  throw new Error("Usage: muster memory <add|search|status|doctor|providers|plan|promote|hindsight>");
+}
+
+async function memoryHindsight(args: string[]): Promise<void> {
+  const action = args[0];
+  const usage = 'Usage: muster memory hindsight <status|retain|recall|reflect> --scope user:me [--allow-global] (retain: --content "..." --provenance <src> [--tag t]; recall/reflect: --query "...")';
+  if (action === "status") {
+    let config: HindsightConfig;
+    try {
+      config = resolveHindsightConfig();
+    } catch (error) {
+      if (error instanceof HindsightConfigError) {
+        console.log("hindsight status=not_configured");
+        console.log(`next=set ${HINDSIGHT_URL_ENV} to a local Hindsight API base URL to opt in`);
+        return;
+      }
+      throw error;
+    }
+    console.log(`hindsight status=configured url=${config.baseUrl} timeout_ms=${config.timeoutMs} auth=${config.apiKey ? "bearer" : "none"}`);
+    return;
+  }
+  if (action !== "retain" && action !== "recall" && action !== "reflect") throw new Error(usage);
+  const scopes = readFlags(args, "--scope").map(parseMemoryScope);
+  if (scopes.length !== 1) throw new Error("hindsight requires exactly one --scope (bank is derived from it)");
+  const scope = scopes[0];
+  const auth = { scope, allowedScopes: scopes, allowGlobal: args.includes("--allow-global") };
+  const client = createHindsightClient();
+  if (action === "retain") {
+    const content = readFlag(args, "--content");
+    const provenance = readFlags(args, "--provenance");
+    if (!content || !provenance.length) throw new Error(usage);
+    const result = await client.retain({
+      ...auth,
+      items: [{ content, tags: readFlags(args, "--tag"), context: readFlag(args, "--context") }],
+      provenance,
+    });
+    console.log(`hindsight_retain bank=${result.bankId} success=${result.success} items=${result.itemsCount} async=${result.isAsync}`);
+    return;
+  }
+  const query = readFlag(args, "--query");
+  if (!query) throw new Error(usage);
+  const budgetRaw = readFlag(args, "--budget");
+  const budget = budgetRaw === "low" || budgetRaw === "mid" || budgetRaw === "high" ? budgetRaw : undefined;
+  if (action === "recall") {
+    const result = await client.recall({ ...auth, query, budget });
+    console.log(`hindsight_recall bank=${result.bankId} results=${result.results.length}`);
+    for (const entry of result.results.slice(0, 20)) {
+      console.log(`- [${entry.type ?? "memory"}${entry.score !== undefined ? ` ${entry.score.toFixed(3)}` : ""}] ${entry.text}`);
+    }
+    return;
+  }
+  const result = await client.reflect({ ...auth, query, budget });
+  console.log(`hindsight_reflect bank=${result.bankId}`);
+  console.log(result.text);
 }
 
 function memoryProviderCatalog(): BuiltinPluginCatalogEntry[] {

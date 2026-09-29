@@ -116,3 +116,62 @@ test("missing schedules.json yields no jobs; a corrupt one throws instead of sil
   await writeFile(path, "{ this is not valid json");
   await assert.rejects(() => listSchedules(corruptCwd), /Corrupt JSON/);
 });
+
+test("two concurrent runDueSchedules invocations fire a due job exactly once; overlap is skipped even at the next minute", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-sched-race-"));
+  await addSchedule("* * * * *", "raced", { cwd, now: new Date("2026-06-10T09:40:00") });
+
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let runnerCalls = 0;
+  const runner = async () => {
+    runnerCalls += 1;
+    await gate;
+    return { runId: "run_race", status: "completed" as const };
+  };
+
+  const now = new Date("2026-06-10T09:41:00");
+  const first = runDueSchedules(runner, { now, cwd });
+  const second = runDueSchedules(runner, { now, cwd });
+
+  // While the winner's runner is still blocked, the NEXT minute must not
+  // start an overlapping run — it is skipped, not queued.
+  const nextMinute = await runDueSchedules(runner, { now: new Date("2026-06-10T09:42:00"), cwd });
+  assert.equal(runnerCalls, 1, "only one invocation claimed the occurrence");
+  assert.equal(nextMinute[0]?.status, "skipped");
+  assert.match(nextMinute[0]?.detail ?? "", /still in progress/);
+
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  const statuses = [...a, ...b].map((r) => r.status).sort();
+  assert.deepEqual(statuses, ["completed"], "loser saw nothing due");
+
+  // Once the prior run resolved, the following minute fires normally again.
+  const after = await runDueSchedules(async () => ({ runId: "run_2", status: "completed" as const }), { now: new Date("2026-06-10T09:43:00"), cwd });
+  assert.equal(after[0]?.status, "completed");
+});
+
+test("add/remove while a runner is in flight is never overwritten by the run result", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-sched-concurrent-mut-"));
+  const doomed = await addSchedule("* * * * *", "doomed", { cwd, now: new Date("2026-06-10T09:40:00") });
+
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const running = runDueSchedules(async () => {
+    await gate;
+    return { runId: "run_doomed", status: "completed" as const };
+  }, { now: new Date("2026-06-10T09:41:00"), cwd });
+
+  // Mutate while the runner is blocked: the result write must touch only the
+  // claimed job's row, so these survive intact.
+  const added = await addSchedule("0 12 * * *", "added mid-run", { cwd, now: new Date("2026-06-10T09:41:10") });
+  assert.equal(await removeSchedule(doomed.id, cwd), true);
+
+  release();
+  const results = await running;
+  assert.equal(results[0]?.status, "completed", "in-flight run still resolves");
+
+  const jobs = await listSchedules(cwd);
+  assert.deepEqual(jobs.map((job) => job.id), [added.id], "removal held; added job survived the result write");
+  assert.equal(jobs[0].lastRunAt, undefined, "result never bled onto the concurrently added job");
+});
