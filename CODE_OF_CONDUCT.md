@@ -62,8 +62,8 @@ Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement by using GitHub's
 private vulnerability reporting for this repository (Security tab, "Report a
 vulnerability") and marking the report as a Code of Conduct concern, or by
-contacting the maintainers listed in `.github/CODEOWNERS` through their GitHub
-profiles. All complaints will be reviewed and investigated promptly and fairly.
+contacting the maintainer, @Dkm0315, through their GitHub
+profile. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
