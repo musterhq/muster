@@ -16,7 +16,7 @@
     "prepublishOnly": "rm -rf dist && tsc -p tsconfig.json && node scripts/ensure-bin-mode.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "^0.79.1",
+    "@earendil-works/pi-tui": "^0.87.1",
     "@musterhq/core": "workspace:*",
     "@musterhq/gateway": "workspace:*",
     "qrcode-terminal": "^0.12.0"
