@@ -2,7 +2,9 @@
 
 Recommended settings (a repository admin applies these under Settings > Branches):
 
-- Require a pull request before merging, with at least one approving review (CODEOWNERS review on).
+- Require a pull request before merging. Do not require code-owner review: the only maintainer, @Dkm0315, cannot
+  approve their own PRs, so a required review would force an admin bypass on every merge. Add a required-approvals
+  rule only once there is a second maintainer. `.github/CODEOWNERS` exists only to request reviews automatically.
 - Require status checks to pass, and require branches to be up to date.
 - Block force pushes and deletion of `main`.
 
