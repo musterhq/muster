@@ -8,6 +8,9 @@ name: npm doctor
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Run the JS actions on the Node 24 runtime instead of the deprecated Node 20.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

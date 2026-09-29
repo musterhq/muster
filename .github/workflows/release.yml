@@ -8,9 +8,13 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 # Run the JS actions on the Node 24 runtime instead of the deprecated Node 20.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  VERSION: ${{ inputs.version }}
 
 jobs:
   release:
@@ -47,17 +51,17 @@ jobs:
         run: |
           git config user.name "muster-release"
           git config user.email "release@muster.local"
-          if git ls-remote --exit-code --tags origin "refs/tags/v${{ inputs.version }}" >/dev/null; then
-            echo "Tag v${{ inputs.version }} already exists; reusing it."
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "Tag v$VERSION already exists; reusing it."
           else
-            git tag "v${{ inputs.version }}"
-            git push origin "v${{ inputs.version }}"
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
           fi
 
       - name: Set versions
         run: |
           for pkg in packages/core packages/cli packages/gateway packages/surface; do
-            (cd "$pkg" && npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version)
+            (cd "$pkg" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
           done
 
       - name: Build
@@ -69,9 +73,9 @@ jobs:
             index($0, "## [" version "]") == 1 { found=1; print; next }
             found && /^## \[/ { exit }
             found { print }
-          ' version="${{ inputs.version }}" CHANGELOG.md > RELEASE_NOTES.md
-          if ! grep -q "^## \\[${{ inputs.version }}\\]" RELEASE_NOTES.md; then
-            echo "CHANGELOG.md is missing a release section for ${{ inputs.version }}" >&2
+          ' version="$VERSION" CHANGELOG.md > RELEASE_NOTES.md
+          if ! grep -q "^## \\[$VERSION\\]" RELEASE_NOTES.md; then
+            echo "CHANGELOG.md is missing a release section for $VERSION" >&2
             exit 1
           fi
 

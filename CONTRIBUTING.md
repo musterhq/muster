@@ -1,6 +1,6 @@
 # Contributing to Muster
 
-Muster is a governed agent harness. Contributions are welcome — start small.
+Muster is a governed agent harness. Contributions are welcome — start small. Muster is one project with [Muster Agent](https://github.com/musterhq/muster-code), the free desktop app built on this core. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ground rules
 - **Tests in the same PR.** `pnpm typecheck && pnpm test` must pass before review. A feature without tests is not done.
@@ -22,3 +22,44 @@ pnpm hc demo          # provisions a throwaway workspace + stub model, runs the 
 - `docs/SDLC_KANBAN.md` — what's done and what's ready.
 
 Good first issues are labeled `good first issue`. Open an issue before large changes so we can align on approach.
+
+## Contribution terms
+Contributions are accepted under the repository's [MIT license](LICENSE) (inbound = outbound). There is no CLA and no DCO sign-off.
+
+## Build, typecheck and test
+Node 24 and pnpm 10 (`corepack enable`) are required.
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck        # builds capability-packs/frappe, core and gateway, then typechecks cli and ui
+pnpm test             # frappe pack tests, then every workspace package
+pnpm build
+pnpm --filter @musterhq/core test      # one package while iterating
+pnpm test:evidence                     # evidence scripts
+```
+CI (`Muster CI`, job `validate`) also needs `tmux` for the PTY/TUI evidence run: `qa run pty_tui`.
+
+## Branches and pull requests
+1. Open an issue first for anything larger than a small fix.
+2. Fork or branch from the latest `main` (`type/short-topic`, e.g. `fix/gateway-retry`).
+3. One concern per PR, tests in the same PR, add a `CHANGELOG.md` line under `[Unreleased]` for user-visible changes.
+4. Fill in the pull request template (summary, how tested, screenshots for UI).
+5. `main` requires a PR and the `validate` check (see [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md)); a maintainer merges.
+
+## Commit style
+Short imperative subject (about 72 characters or less) with an optional area prefix, as in the history: `core: steerActiveCodexTurn ...`, `website: ...`. Explain the why in the body. Reference issues with `Fixes #123` / `Refs #123`.
+
+## Releases
+Maintainers release `@musterhq/cli` (with `core`, `gateway`, `surface`) to npm: update `CHANGELOG.md` with a `## [x.y.z]` section, then run the **Muster Release** workflow from the Actions tab with the version. It validates, tags `vX.Y.Z`, publishes to npm and creates the GitHub Release from the changelog. Do not bump versions in regular PRs.
+
+## Good first contributions
+- Capability packs: tests for the 31 packs that have none, new packs (`capability-packs/`)
+- Provider adapters and latency benchmarks
+- MCP setup workflows and auth-failure tests
+- Frappe/ERPNext packs, eval fixtures and retrieval tests
+- Docs, examples, demo recordings and screenshots
+- TUI interaction tests and browser automation examples
+
+Labels: `good first issue`, `help wanted`; `type:bug|feature|docs|chore`; `area:core|cli|gateway|packs|mcp|frappe|website`.
+
+## Security
+Do not file public issues for vulnerabilities; see [SECURITY.md](SECURITY.md).

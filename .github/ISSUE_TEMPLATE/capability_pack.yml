@@ -1,0 +1,33 @@
+name: Capability pack or provider adapter
+description: Propose a new capability pack, provider adapter, MCP workflow or Frappe pack
+labels: ["type:feature", "area:packs", "needs-triage"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Pack or adapter name
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [capability pack, provider adapter, MCP workflow, Frappe pack, channel adapter]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What it does and which service or API it wraps
+    validations:
+      required: true
+  - type: textarea
+    id: auth
+    attributes:
+      label: Auth, permissions and egress it needs
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to build this myself

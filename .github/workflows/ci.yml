@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 # Run the JS actions (checkout, setup-node, pnpm) on the Node 24 runtime instead
 # of the deprecated Node 20.
 env:
