@@ -341,6 +341,8 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
   let queueMs = 0;
   let firstDeltaAt: number | undefined;
   let providerActivity = false;
+  let turnSent = false;
+  const currentTurnId = () => (turnSent ? lease.session.client.dispatchedTurnId() : undefined);
   let effectiveThreadOpenMs = lease.threadOpenMs;
   let effectiveThreadOpenState: CodexAppServerTimings["threadOpenState"] = lease.cacheState === "hit" ? "cached" : lease.threadOpenState;
   return await runExclusive(lease.session, async (measuredQueueMs) => {
@@ -361,31 +363,38 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
       effectiveThreadOpenState = "started";
       input.onThreadReady?.(lease.session.threadId);
     }
-    const turn = await lease.session.client.runTurn({
-      threadId: lease.session.threadId,
-      prompt: input.prompt,
-      applicationContext: input.applicationContext,
-      ...(input.approvalPolicy ? { approvalPolicy: input.approvalPolicy } : {}),
-      ...(input.images?.length ? { images: input.images } : {}),
-      ...(input.collaborationMode ? { collaborationMode: input.collaborationMode } : {}),
-      timeoutMs: input.timeoutMs ?? 180_000,
-      ...(input.budgets ? { budgets: input.budgets } : {}),
-      ...(input.signal ? { signal: input.signal } : {}),
-      onTurnAccepted: (identity) => { providerActivity = true; input.onTurnAccepted?.(identity); },
-      onDelta: (text) => {
-        providerActivity = true;
-        firstDeltaAt ??= Date.now();
-        input.onDelta?.(text);
-      },
-      onReasoningDelta: (text) => {
-        providerActivity = true;
-        input.onReasoningDelta?.(text);
-      },
-      onActivity: () => { providerActivity = true; },
-      ...(input.onEvent ? { onEvent: (method: string, params: Record<string, unknown>) => { providerActivity = true; input.onEvent?.(method, params); } } : {}),
-      ...(input.onRequest ? { onRequest: input.onRequest } : {}),
-    });
-    if (keepAlive) await lease.session.client.startObservation();
+    let turn: Awaited<ReturnType<typeof lease.session.client.runTurn>>;
+    turnSent = true;
+    try {
+      turn = await lease.session.client.runTurn({
+        threadId: lease.session.threadId,
+        prompt: input.prompt,
+        applicationContext: input.applicationContext,
+        ...(input.approvalPolicy ? { approvalPolicy: input.approvalPolicy } : {}),
+        ...(input.images?.length ? { images: input.images } : {}),
+        ...(input.collaborationMode ? { collaborationMode: input.collaborationMode } : {}),
+        timeoutMs: input.timeoutMs ?? 180_000,
+        ...(input.budgets ? { budgets: input.budgets } : {}),
+        ...(input.signal ? { signal: input.signal } : {}),
+        onTurnAccepted: (identity) => { providerActivity = true; input.onTurnAccepted?.(identity); },
+        onDelta: (text) => {
+          providerActivity = true;
+          firstDeltaAt ??= Date.now();
+          input.onDelta?.(text);
+        },
+        onReasoningDelta: (text) => {
+          providerActivity = true;
+          input.onReasoningDelta?.(text);
+        },
+        onActivity: () => { providerActivity = true; },
+        ...(input.onEvent ? { onEvent: (method: string, params: Record<string, unknown>) => { providerActivity = true; input.onEvent?.(method, params); } } : {}),
+        ...(input.onRequest ? { onRequest: input.onRequest } : {}),
+      });
+    } finally {
+      // Even a failed turn must resume observation so notifications between
+      // turns are not dropped and server requests keep being answered.
+      if (keepAlive) await lease.session.client.startObservation();
+    }
     const requestToFirstDeltaMs = firstDeltaAt === undefined ? undefined : firstDeltaAt - started;
     const result = {
       status: turn.errorMessage ? "failed" : "completed",
@@ -430,10 +439,16 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
           effectiveThreadOpenState,
         ),
         errorMessage: error instanceof Error ? error.message : String(error),
-        dispatchState: lease.session.client.dispatchedTurnId() ? "dispatched" : error instanceof CodexRunError ? error.dispatchState : providerActivity ? "unknown" : "unknown",
-        ...(lease.session.client.dispatchedTurnId() ? { turnId: lease.session.client.dispatchedTurnId() } : {}),
+        dispatchState: currentTurnId() ? "dispatched" : error instanceof CodexRunError ? error.dispatchState : "unknown",
+        ...(currentTurnId() ? { turnId: currentTurnId() } : {}),
         ...(error instanceof CodexRunError && error.failure ? { failure: error.failure } : {}),
-        fallbackEligible: !providerActivity && (error instanceof CodexRunError ? error.dispatchState === "not-dispatched" : false),
+        // A CodexRunError carries an explicit dispatch classification: only a
+        // confirmed pre-dispatch failure may fall back, so a lost turn/start
+        // acknowledgement is never replayed. Plain errors (thread open, or the
+        // app-server exiting before turn/start) keep the historical rule: they
+        // are eligible while no provider activity or turn identity was seen.
+        fallbackEligible: !providerActivity && !currentTurnId()
+          && (error instanceof CodexRunError ? error.dispatchState === "not-dispatched" : true),
         hadActivity: providerActivity,
       };
     });
@@ -964,9 +979,13 @@ class CodexAppServerClient {
       this.lastDispatchedTurnId = turnId;
       input.onTurnAccepted?.({ threadId: input.threadId, turnId, dispatchState: "dispatched" });
     } else {
-      // The server returned a successful response but omitted identity; treat
-      // it as accepted/uncertain, never as permission to replay.
-      throw new CodexRunError("Codex app-server accepted turn/start without a turn identity.", "unknown");
+      // Lifecycle callers need the identity to interrupt and to report a
+      // safe dispatch state, so a successful response that omits it is
+      // uncertain and must never be replayed. Legacy callers (no budgets)
+      // keep the historical behaviour of reading notifications regardless.
+      if (input.budgets) {
+        throw new CodexRunError("Codex app-server accepted turn/start without a turn identity.", "unknown");
+      }
     }
     let finalMessage = "";
     let firstDeltaMs: number | undefined;

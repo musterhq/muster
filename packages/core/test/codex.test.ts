@@ -1043,3 +1043,70 @@ test("runCodexAppServer: keepAlive observes child work and routes approval after
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("runCodexAppServer legacy callers: a turn/start response without turn.id keeps reading notifications", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-legacy-no-turn-id-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: "thread-legacy" } } });
+  else if (msg.method === "turn/start") {
+    send({ id: msg.id, result: { turn: { status: "inProgress" } } });
+    send({ method: "item/completed", params: { threadId: "thread-legacy", item: { type: "agentMessage", text: "legacy ok" } } });
+    send({ method: "turn/completed", params: { threadId: "thread-legacy", turn: { status: "completed" } } });
+  }
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const result = await runCodexAppServer({ prompt: "hi", cwd: dir, command: fake, cacheKey: "legacy-no-turn-id", timeoutMs: 2_000 });
+    assert.equal(result.status, "completed");
+    assert.equal(result.finalMessage, "legacy ok");
+    // Lifecycle callers opt into the strict identity requirement.
+    const strict = await runCodexAppServer({ prompt: "hi", cwd: dir, command: fake, cacheKey: "strict-no-turn-id", budgets: { idleMs: 2_000, requestMs: 2_000, turnMs: 10_000 } });
+    assert.equal(strict.status, "failed");
+    assert.equal(strict.dispatchState, "unknown");
+    assert.equal(strict.fallbackEligible, false);
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runCodexAppServer legacy callers: a plain error before turn/start stays fallback-eligible", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-legacy-prestart-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+let threads = 0;
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") {
+    threads += 1;
+    if (threads === 1) send({ id: msg.id, result: { thread: { id: "thread-1" } } });
+    else process.exit(9);
+  }
+  else if (msg.method === "turn/start") send({ id: msg.id, result: { turn: { id: "t1" } } }), send({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "t1", status: "completed" } } });
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const first = await runCodexAppServer({ prompt: "one", cwd: dir, command: fake, cacheKey: "legacy-prestart", timeoutMs: 2_000 });
+    assert.equal(first.status, "completed");
+    const second = await runCodexAppServer({ prompt: "two", cwd: dir, command: fake, cacheKey: "legacy-prestart", timeoutMs: 2_000, rotateThread: true });
+    assert.equal(second.status, "failed");
+    assert.equal(second.hadActivity, false);
+    assert.equal(second.fallbackEligible, true, "no turn was ever sent, so replaying on another provider is safe");
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

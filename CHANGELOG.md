@@ -6,6 +6,15 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+- Codex app-server lifecycle budgets (`CODEX_RUN_LIFECYCLE_VERSION`): independent request, idle, and absolute turn budgets, cancellation, thread/turn identity callbacks, and a `dispatchState` classification on run results. Callers that omit `budgets` keep the previous behaviour.
+- Hindsight client (`core/src/hindsight.ts`) and a SQLite-backed durable scheduler store with one-shot import of legacy `schedules.json`.
+
+### Fixed
+- Scheduler database startup no longer fails with `SQLITE_BUSY` when several processes open a fresh database at once (`busy_timeout` is now set before the WAL pragma).
+- A lost `turn/start` acknowledgement (timeout or app-server exit) is no longer fallback-eligible, so a turn the provider may have accepted is never replayed. This is an intended behaviour change for all callers.
+- Keep-alive sessions resume notification observation even when a turn throws.
+
 ## [0.1.11] - 2026-07-08
 
 Muster 0.1.11 is the Frappe-aware interaction release. It adds a lightweight,

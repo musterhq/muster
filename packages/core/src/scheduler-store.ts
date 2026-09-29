@@ -180,6 +180,29 @@ function validateLegacyJobs(parsed: unknown, path: string, validateCron: (cron: 
   });
 }
 
+/**
+ * Switching a fresh database from the default rollback journal to WAL needs an
+ * exclusive lock, and SQLite can report SQLITE_BUSY for that transition without
+ * consulting busy_timeout when another connection is mid-initialisation. Once
+ * any connection has switched, the mode persists in the file, so a bounded
+ * retry converges quickly.
+ */
+function enableWal(db: DatabaseSync): void {
+  const deadline = Date.now() + 10_000;
+  for (let delayMs = 5; ; delayMs = Math.min(delayMs * 2, 100)) {
+    try {
+      const row = db.prepare("PRAGMA journal_mode").get() as Row | undefined;
+      if (String(row?.journal_mode).toLowerCase() === "wal") return;
+      db.exec("PRAGMA journal_mode = WAL;");
+      return;
+    } catch (error) {
+      const code = (error as { errcode?: number }).errcode;
+      if ((code !== 5 && code !== 6) || Date.now() >= deadline) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs + Math.floor(Math.random() * delayMs));
+    }
+  }
+}
+
 export class SchedulerStore {
   private constructor(
     private readonly db: DatabaseSync,
@@ -201,7 +224,7 @@ export class SchedulerStore {
       chmodSync(path, 0o600);
       // busy_timeout is connection-local and must be active before the lock-taking WAL pragma.
       db.exec("PRAGMA busy_timeout = 5000;");
-      db.exec("PRAGMA journal_mode = WAL;");
+      enableWal(db);
       db.exec(SCHEMA);
       const store = new SchedulerStore(db, legacyJsonPath, validateCron);
       store.migrateLegacyJson();
