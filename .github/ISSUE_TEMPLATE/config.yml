@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/musterhq/muster/security/advisories/new
+    about: Report security issues privately, not as a public issue.
+  - name: Muster Agent (desktop app) issues
+    url: https://github.com/musterhq/muster-code/issues/new/choose
+    about: Problems with the desktop app belong in musterhq/muster-code.

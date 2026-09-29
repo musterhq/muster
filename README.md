@@ -363,7 +363,7 @@ Muster is pre-1.0. Core governance paths are implemented and tested; public APIs
 | Frappe/ERPNext | Implemented as a capability pack with docs/live-context setup, module/doc resources, Frappe tools, retrieval eval fixtures, and web-framework checks. The deepest vertical in the repo by a wide margin. |
 | Gateway/channels | Framework and setup packs exist for Telegram, Slack, Discord, WhatsApp, Google Chat, Teams, and web. Production hardening depends on real provider credentials and webhook setup. |
 | Latency | Timings are collected but there is no CI gate yet. A first-token budget (p95 < 2.0s warm, < 4.0s cold) is queued. |
-| Dashboard/web UI | Basic status/export/start surfaces exist. A full dashboard/desktop app is not done. |
+| Dashboard/web UI | Basic status/export/start surfaces exist in this repo. The desktop app is [Muster Agent](https://github.com/musterhq/muster-code), a free desktop app for macOS, Windows and Linux built on the Muster core. |
 
 ## Roadmap
 

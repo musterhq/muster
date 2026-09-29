@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the Muster CLI or core is broken
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Muster version
+      description: Output of `muster --version`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node version
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [core, cli, gateway, capability pack, mcp, frappe, website, other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Remove secrets and tokens before pasting.
+      render: shell
