@@ -23,7 +23,7 @@
   "dependencies": {
     "@musterhq/core": "workspace:*",
     "@whiskeysockets/baileys": "6.7.24",
-    "playwright": "1.54.1",
+    "playwright": "1.63.0",
     "qrcode-terminal": "0.12.0"
   },
   "description": "Muster surface gateway: one governed envelope for Telegram, Slack, Discord, WhatsApp, Teams, and web.",
