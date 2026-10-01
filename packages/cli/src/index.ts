@@ -43,6 +43,7 @@ import {
   type EffortValue,
   type ModelProvider,
 } from "./model-catalog.js";
+import { runServerDelegate, SERVER_USAGE_LINES } from "./server-delegate.js";
 import { loadConfiguredGatewayPacks, startConfiguredFrappeIndexing } from "./gateway-registry.js";
 import {
   openSessionStore,
@@ -329,7 +330,7 @@ const SHELL_COMMANDS = [
   "episodes", "feedback", "candidates", "eval", "capability", "roster", "artifacts", "plugins", "mcp", "dashboard",
   "context", "latency", "memory", "goal", "tui", "provider", "runtime", "qa", "pi", "state", "migrate", "sessions",
   "skills", "pulse", "subagents", "tasks", "board", "demo", "benchmark", "run", "tokens", "traces", "profile",
-  "schedule", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe",
+  "schedule", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe", "server",
 ] as const;
 
 function readCliPackageVersion(): string {
@@ -506,6 +507,10 @@ async function main(): Promise<void> {
     case "gateway":
       await gatewayCommand(args);
       return;
+    case "server":
+      // Verbatim passthrough to muster-server, including --help when it is installed.
+      process.exitCode = await runServerDelegate(args);
+      return;
     case "channels":
       await channelsCommand(args);
       return;
@@ -541,7 +546,7 @@ function wantsHelp(args: readonly string[]): boolean {
  * (`muster chat --help` lists slash commands; `eval retrieval --help` explains
  * seeding). Everything else is answered from the master usage table.
  */
-const SELF_HELP_COMMANDS = new Set(["chat", "eval"]);
+const SELF_HELP_COMMANDS = new Set(["chat", "eval", "server"]);
 
 /**
  * Usage lines for one command, lifted from the single master help text so the
@@ -670,6 +675,7 @@ Usage:
   muster gateway daemon start|stop|status|restart [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp]
   muster gateway webhook telegram --public-url https://your-domain.example
   muster gateway poll                 # local Telegram long-poll fallback; daemonize with gateway daemon start --with-telegram-poll
+${SERVER_USAGE_LINES.map((line) => `  ${line}`).join("\n")}
   muster pairing list | approve <code> [--frappe-site URL --frappe-token-env ENV | --frappe-user USER] [--employee EMP --role ROLE]
   muster frappe setup --site-url URL --oauth-credential-file PATH [--connection-id ID] [--support] [--support-customer NAME] [--callback-mode gateway|frappe] [--result-path /api/method/...] [--identity-path /api/method/...] [--identity-ttl-ms 60000]
   muster frappe connect <https-site-origin> [--muster-url https://muster.example] [--wait|--no-wait] [--no-open] [--no-qr] [--timeout-ms 300000]
