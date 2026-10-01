@@ -13,6 +13,6 @@
     "test": "node -e \"console.log('ui: no tests yet')\""
   },
   "devDependencies": {
-    "vite": "^7.2.0"
+    "vite": "^8.3.1"
   }
 }
