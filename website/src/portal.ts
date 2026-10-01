@@ -4,6 +4,7 @@ import { initTheme } from "./theme";
 // scripts/generate-portal-data.mjs. The portal renders ONLY from this file —
 // nothing on the page is invented.
 import data from "./portal-data.json";
+import "./site-theme.css";
 
 // Light/dark toggle (shared controller) — wires the nav button + persistence.
 initTheme();

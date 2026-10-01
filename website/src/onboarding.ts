@@ -1,4 +1,5 @@
 import "./onboarding.css";
+import "./site-theme.css";
 
 type StepId = "purpose" | "style" | "provider" | "integrations" | "channels" | "memory" | "finish";
 

@@ -1,34 +1,32 @@
-# muster-website
+# Muster website
 
-Marketing site + portal-shell preview for [Muster](../README.md). Plain Vite + vanilla TypeScript; the only runtime dependency is `three` (the hero constellation). No React, no webfonts, no backend.
+Static Vite website for `https://themuster.dev`. The homepage is the approved v4 React/Three.js story. The guides, downloads, docs and previews keep their existing TypeScript behavior and content, with a shared neutral theme in `src/site-theme.css`.
 
-## Develop
+## Develop and verify
 
-```bash
-pnpm install                          # from repo root
-pnpm --filter muster-website dev      # http://localhost:5173
-pnpm --filter muster-website build    # -> website/dist
-pnpm --filter muster-website preview  # serve the production build
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter muster-website dev
 pnpm --filter muster-website typecheck
+pnpm --filter muster-website test
+VITE_BASE_PATH=/ pnpm --filter muster-website build
+pnpm --filter muster-website preview
 ```
 
-## Pages
+The story tests cover the illustrative requirement, delegation, native workbench anatomy, filter failure/correction, and server-rendered markup. Browser QA additionally needs desktop/mobile scrolling, pointer behavior, motion toggles, chat selection, profiles/tasks, browser filtering, PR panes, keyboard navigation, video and graphics fallback.
 
-- `/` — marketing site. Hero constellation (300 nodes mustering into formation, three.js, lazy-loaded after first paint behind a CSS poster), 3D→ASCII toggle (also auto-engages past the hero), animated terminal replay using the real CLI output formats, "why" cards, comparison table, surfaces diagram.
-- `/portal.html` — static mock of the future control portal (left rail / run log with collapsible tool blocks / artifact theater / "muster view" topology strip). Sample data only, clearly labeled preview, `noindex`.
+## Routes and production
 
-## Deploy
+- `/`: external chat → human mention → delegation → agents → code → browser inspection → reviewed change. The interactions are local illustrations and create no real messages, tasks or pull requests. Supporting availability copy distinguishes gateway, server and desktop behavior.
+- `/overview.html`: the previous homepage's complete runtime, integration, benchmark, comparison and download content. Previously shared homepage section fragments redirect here.
+- The existing 20 sitemap URLs, docs/download pages and three noindex previews (`portal.html`, `onboarding.html`, `spatial.html`) remain intact.
+- `roadmap.html` is retained in source but remains outside the build and sitemap because its pre-existing `roadmap.css` import is missing.
+- `404.html` supplies a static missing-page response; there is no SPA catch-all that replaces existing URLs.
 
-The build is fully static — any static host works:
+The existing `.github/workflows/pages.yml` publishes `website/dist` from `main` after the normal PR/CI flow. The verified custom domain uses base `/`; preserve `public/CNAME`, `robots.txt`, `sitemap.xml` and production canonical URLs. Root-absolute public assets assume this existing domain-root setup.
 
-- **Vercel**: project root `website/`, build command `pnpm build`, output `dist`. (Or from monorepo root: `pnpm --filter muster-website build`, output `website/dist`.)
-- **Netlify**: base `website`, build `pnpm build`, publish `dist`.
-- **GitHub Pages**: upload `website/dist` (e.g. `actions/upload-pages-artifact` with `path: website/dist`). If serving from a sub-path (`/<repo>/`), set Vite `base` accordingly in `vite.config.ts`.
+## Source and licenses
 
-Update the canonical / `og:url` in `index.html` to the final domain before going live. There is intentionally no `og:image` yet — add a 1200×630 raster when one exists.
+Approved v4 source commit: `67ce2eea04a84993fa4c8f4d62b34d4dafb8fa61`. Transfer archive SHA-256: `89e671fb27e370b007040c239e0716765de5444353b426e6d0e3b0487ecf963c`.
 
-## Notes
-
-- `prefers-reduced-motion` disables the constellation, terminal typing, and SVG pulses; a CSS radial-gradient poster remains.
-- The three.js chunk is code-split and loaded after first paint; the page is fully usable without it (and without JS, via `<noscript>` terminal fallback).
-- ASCII mode samples a 110×48 render target each ~66ms and maps luminance to a character ramp in a `<pre>` — the same scene, no second renderer.
+The user supplied the product video and current task-review screenshot. Three.js Helvetiker lettering retains `public/assets/helvetiker-license.txt` and the embedded font license. `muster-wordmark.svg` and `wordmarkContours.json` are continuous nested contours derived from that licensed typeface for loading, reduced-motion and WebGL-failure states. DM Sans and Space Grotesk load from Google Fonts with local font fallbacks. The original product/runtime files are independent of this static website.

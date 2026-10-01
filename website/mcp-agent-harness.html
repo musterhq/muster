@@ -16,14 +16,15 @@
   <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=hanken-grotesk@400,500,600,700&display=swap" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" />
+
+
   <script type="module" src="/src/main.ts"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div>
   <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
-  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/assets/brand/muster-logo.png" alt="Muster" /></a><nav aria-label="Main"><a href="/">Home</a><a href="/docs.html#capability-packs">Capability packs</a><a href="/agent-harness.html">Agent harness</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/docs.html#capability-packs">Capability packs</a><a href="/agent-harness.html">Agent harness</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
   <main>
     <section class="hero"><div class="hero-inner"><p class="kicker hero-step">MCP · tools · OAuth</p><h1 class="hero-step">Govern MCP tools before agents call them.</h1><p class="sub hero-step">Muster treats MCP as a capability surface: installable servers, setup guidance, OAuth hints, include/exclude policy, result caps, circuit breakers, and token-ledger evidence.</p><div class="hero-actions hero-step"><a class="btn-cta" href="/docs.html#capability-packs">See MCP docs</a><a class="btn-ghost" href="https://github.com/musterhq/muster" rel="noopener">GitHub -></a></div></div></section>
     <section class="band" data-reveal><p class="sec-kicker reveal-child">MCP controls</p><h2 class="reveal-child">Useful tools still need boundaries.</h2><div class="capability-board reveal-child"><article class="capability-panel"><span class="cap-label">setup</span><h3>Install and auth checks</h3><p>Expose setup commands and OAuth steps inside the CLI instead of assuming every user knows how to wire a server.</p></article><article class="capability-panel"><span class="cap-label">policy</span><h3>Include/exclude rules</h3><p>Keep tool access deliberate with configured allowlists, result-size limits, and circuit breakers.</p></article><article class="capability-panel"><span class="cap-label">evidence</span><h3>Memory and token receipts</h3><p>MCP results flow through the same scoped memory and token ledger as normal agent turns.</p></article><article class="capability-panel"><span class="cap-label">examples</span><h3>Everyday MCPs</h3><p>GitHub, Notion, Google Drive, Postgres, browser, web search, and custom stdio/http servers fit this model.</p></article></div></section>

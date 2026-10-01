@@ -2,21 +2,26 @@
   "name": "muster-website",
   "version": "0.0.1",
   "private": true,
-  "description": "Muster marketing website + web portal shell (static, Vite + vanilla TS + three).",
+  "description": "Muster static website: immersive React story and preserved TypeScript guides, downloads and previews.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/story-contract.test.mjs"
   },
   "dependencies": {
     "gsap": "^3.15.0",
-    "three": "^0.182.0"
+    "three": "^0.186.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "@phosphor-icons/react": "^2.1.10"
   },
   "devDependencies": {
-    "@types/three": "^0.182.0",
+    "@types/three": "^0.186.0",
     "typescript": "^5.8.3",
-    "vite": "^7.3.0"
+    "vite": "^7.3.0",
+    "esbuild": "^0.25.0"
   }
 }
