@@ -18,7 +18,7 @@
     "test:evidence": "node --test --test-concurrency=1 scripts/evidence/test/*.test.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.3",
     "tsx": "^4.20.6",
     "typescript": "^5.8.3"
   },
