@@ -5,6 +5,7 @@ import { initTerminal } from "./terminal";
 import { initAgentApp } from "./agent-app";
 import { initTheme, onThemeChange, probeLiquidGlassRefraction } from "./theme";
 import type { HeroMeshHandle } from "./hero-mesh";
+import "./site-theme.css";
 
 // ---------- theme (light/dark) + Liquid Glass refraction capability probe ----------
 // initTheme reflects the persisted/OS choice and wires the nav toggle; the inline
@@ -52,7 +53,7 @@ if (yearEl) yearEl.textContent = String(new Date().getFullYear());
 // frozen frame (still the same liquid look, just not animating).
 const canvas = document.getElementById("hero-canvas") as HTMLCanvasElement | null;
 
-if (canvas) {
+if (canvas && canvas.parentElement && getComputedStyle(canvas.parentElement).display !== "none") {
   let handle: HeroMeshHandle | null = null;
 
   const boot = async () => {

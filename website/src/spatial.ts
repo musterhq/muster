@@ -2,6 +2,7 @@ import "./spatial.css";
 import * as THREE from "three";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import "./site-theme.css";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -21,12 +22,12 @@ const glow = document.querySelector<HTMLElement>(".cursor-light");
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const stops: StopSpec[] = [
-  { key: "core", label: "MUSTER", title: "control core", pos: new THREE.Vector3(0, 0, 0), color: 0x6d35ff, radius: 0.86 },
-  { key: "frappe", label: "Frappe", title: "permission map", pos: new THREE.Vector3(-3.15, -1.05, -1.75), color: 0x46e4df, radius: 0.38 },
+  { key: "core", label: "MUSTER", title: "control core", pos: new THREE.Vector3(0, 0, 0), color: 0x888b91, radius: 0.86 },
+  { key: "frappe", label: "Frappe", title: "permission map", pos: new THREE.Vector3(-3.15, -1.05, -1.75), color: 0xdeaa75, radius: 0.38 },
   { key: "memory", label: "Memory", title: "bounded recall", pos: new THREE.Vector3(2.55, -2.15, -3.25), color: 0xf6f3ee, radius: 0.36 },
-  { key: "channels", label: "Channels", title: "paired surfaces", pos: new THREE.Vector3(-2.55, -3.22, -4.85), color: 0x46e4df, radius: 0.36 },
+  { key: "channels", label: "Channels", title: "paired surfaces", pos: new THREE.Vector3(-2.55, -3.22, -4.85), color: 0xdeaa75, radius: 0.36 },
   { key: "artifacts", label: "Artifacts", title: "delivery trail", pos: new THREE.Vector3(2.65, -4.48, -6.4), color: 0xf6f3ee, radius: 0.36 },
-  { key: "proof", label: "Proof", title: "audit receipt", pos: new THREE.Vector3(0, -5.85, -8.2), color: 0x6d35ff, radius: 0.48 },
+  { key: "proof", label: "Proof", title: "audit receipt", pos: new THREE.Vector3(0, -5.85, -8.2), color: 0x888b91, radius: 0.48 },
 ];
 
 const renderer = new THREE.WebGLRenderer({
@@ -50,11 +51,11 @@ const state = { progress: 0 };
 
 scene.add(new THREE.AmbientLight(0xf6f3ee, 0.58));
 
-const tealLight = new THREE.PointLight(0x46e4df, 54, 18);
+const tealLight = new THREE.PointLight(0xdeaa75, 54, 18);
 tealLight.position.set(2.6, 2.4, 4.4);
 scene.add(tealLight);
 
-const violetLight = new THREE.PointLight(0x6d35ff, 36, 18);
+const violetLight = new THREE.PointLight(0x888b91, 36, 18);
 violetLight.position.set(-4.2, -1.2, 3.2);
 scene.add(violetLight);
 
@@ -137,7 +138,7 @@ const curve = new THREE.CatmullRomCurve3(pathPoints, false, "catmullrom", 0.34);
 
 const tube = new THREE.Mesh(
   new THREE.TubeGeometry(curve, 260, 0.012, 10, false),
-  new THREE.MeshBasicMaterial({ color: 0x46e4df, transparent: true, opacity: 0.28 })
+  new THREE.MeshBasicMaterial({ color: 0xdeaa75, transparent: true, opacity: 0.28 })
 );
 root.add(tube);
 
@@ -157,7 +158,7 @@ for (let i = 0; i < 46; i += 1) {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(i % 9 === 0 ? 0.026 : 0.01, 10, 10),
     new THREE.MeshBasicMaterial({
-      color: i % 9 === 0 ? 0x46e4df : 0xf6f3ee,
+      color: i % 9 === 0 ? 0xdeaa75 : 0xf6f3ee,
       transparent: true,
       opacity: i % 9 === 0 ? 0.58 : 0.24,
     })

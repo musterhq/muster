@@ -24,7 +24,7 @@ export function resolveTheme(): Theme {
   } catch {
     /* private mode / disabled storage — fall through to OS preference */
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "dark";
 }
 
 function applyTheme(theme: Theme): void {
@@ -33,7 +33,7 @@ function applyTheme(theme: Theme): void {
   else root.removeAttribute("data-theme");
   // keep the browser UI chrome (address bar) in step with the canvas
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (meta) meta.content = theme === "dark" ? "#020205" : "#F6F3EE";
+  if (meta) meta.content = theme === "dark" ? "#08080a" : "#f4f3ef";
 }
 
 type ThemeListener = (theme: Theme) => void;

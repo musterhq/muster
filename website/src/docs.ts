@@ -1,5 +1,6 @@
 import "./portal.css";
 import { initTheme } from "./theme";
+import "./site-theme.css";
 
 // Light/dark toggle (shared controller) — wires the nav button + persistence.
 initTheme();
