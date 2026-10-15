@@ -46,6 +46,7 @@ export default defineConfig({
         runClaudeCodeAndCodex: resolve(__dirname, "run-claude-code-and-codex.html"),
         paperclipLocalTasks: resolve(__dirname, "paperclip-local-tasks.html"),
         aiCodingAgentLongTermMemory: resolve(__dirname, "ai-coding-agent-long-term-memory.html"),
+        whatIsAnAde: resolve(__dirname, "what-is-an-ade.html"),
         sandboxedCodingAgent: resolve(__dirname, "sandboxed-coding-agent.html"),
         legacyOpenSourceCodex: resolve(__dirname, "open-source-codex-desktop-app.html"),
         omnirouteDesktopClient: resolve(__dirname, "omniroute-desktop-client.html")

@@ -30,7 +30,7 @@ test('each public page has a unique <60 char title, <155 char description, canon
 });
 test('home h1 is text, not an image', () => {
   const app = readFileSync(new URL('src/story/App.jsx', root), 'utf8');
-  assert.match(app, /<h1 className='sr-only'>Muster Agent: the open-source AI coding agent desktop app<\/h1>/);
+  assert.match(app, /<h1 className='sr-only'>Muster Agent: the open-source AI Development Environment \(ADE\)<\/h1>/);
 });
 test('robots allows all and points at the sitemap', () => {
   const r = readFileSync(new URL('public/robots.txt', root), 'utf8');

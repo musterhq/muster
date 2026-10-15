@@ -34,6 +34,10 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="keywords" content="download Muster Agent, Muster Agent download, AI coding agent desktop app, AI coding agent for Windows, AI coding agent for Linux, AI coding agent for Mac, Claude Code GUI, Codex desktop app, agentic development client, Muster CLI install" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <meta property="og:video" content="https://themuster.dev/assets/video/muster-agent-demo.mp4" />
@@ -192,10 +196,25 @@
     <section class="band" data-reveal>
       <p class="sec-kicker reveal-child">Works with</p>
       <h2 class="reveal-child">Works with your routers.</h2>
-      <p class="sec-sub reveal-child">Muster Agent works with any OpenAI-compatible model router: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints. Add one under Settings, Accounts and providers, and its models and routes show up in the model picker, with your own key saved in your own app. It also runs Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI that you have installed and signed in to, plus local models through Ollama and LM Studio. Any OpenAI-compatible API works too, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally. See <a href="/omniroute-desktop-client.html">how routers work in the app</a>.</p>
+      <div class="cards three">
+        <article class="card reveal-child"><h3>OmniRoute</h3><p>Found automatically when installed on your computer, added as a provider, or read from a gateway named in your Codex config. Each person uses their own key. <a href="/omniroute-desktop-client.html">Read the guide</a>.</p></article>
+        <article class="card reveal-child"><h3>OpenRouter, LiteLLM and other gateways</h3><p>OpenRouter has its own provider card. LiteLLM and any OpenAI-compatible gateway or custom endpoint, such as vLLM or a company proxy, work through the OpenAI-compatible connection.</p></article>
+        <article class="card reveal-child"><h3>Local servers</h3><p>Ollama and LM Studio are detected on their default ports. Muster lists whatever models your router or provider offers, so new models appear automatically.</p></article>
+      </div>
+      <p class="sec-sub reveal-child">It also runs Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI that you have installed and signed in to. Any OpenAI-compatible API works too, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</p>
     </section>
 
     <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Models you can use</p>
+      <h2 class="reveal-child">Model families, not version numbers.</h2>
+      <div class="cards three">
+        <article class="card reveal-child"><h3>OpenAI GPT, Claude, Gemini</h3><p>OpenAI GPT via Codex or the API, Anthropic Claude via Claude Code or the API, Google Gemini via the Gemini CLI or the API.</p></article>
+        <article class="card reveal-child"><h3>Meta Muse and xAI Grok</h3><p>Meta Muse via the Meta Model API, xAI Grok via the Grok CLI.</p></article>
+        <article class="card reveal-child"><h3>Open-weight and more</h3><p>DeepSeek, Qwen, Mistral, Kimi, GLM and Llama or other open-weight models, through a router or run locally.</p></article>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
       <p class="sec-kicker reveal-child">Teams and containment</p>
       <h2 class="reveal-child">Paperclip and sandboxing.</h2>
       <div class="cards three">
@@ -234,10 +253,11 @@
       <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
       <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
       <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
       <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
       <a href="/omniroute-desktop-client.html">OmniRoute client</a>
     </nav>
-    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. Muster Agent is an independent open-source project and is not affiliated with or endorsed by them.</p>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
   </footer>
 </body>
 </html>

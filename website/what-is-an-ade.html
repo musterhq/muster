@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What is an AI Development Environment? | Muster Agent</title>
+  <meta name="description" content="An AI Development Environment (ADE) is where you delegate goals to coding agents. When you need one, what to look for, and how Muster Agent approaches it." />
+  <link rel="canonical" href="https://themuster.dev/what-is-an-ade.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="What is an AI Development Environment? | Muster Agent" />
+  <meta property="og:description" content="An AI Development Environment (ADE) is where you delegate goals to coding agents. When you need one, what to look for, and how Muster Agent approaches it." />
+  <meta property="og:url" content="https://themuster.dev/what-is-an-ade.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="What is an AI Development Environment? | Muster Agent" />
+  <meta name="twitter:description" content="An AI Development Environment (ADE) is where you delegate goals to coding agents. When you need one, what to look for, and how Muster Agent approaches it." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="AI Development Environment, ADE, what is an ADE, agent-first development, AI coding agent desktop app, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "What is an AI Development Environment?",
+      "description": "An AI Development Environment (ADE) is where you delegate goals to coding agents. When you need one, what to look for, and how Muster Agent approaches it.",
+      "url": "https://themuster.dev/what-is-an-ade.html",
+      "mainEntityOfPage": "https://themuster.dev/what-is-an-ade.html",
+      "image": "https://themuster.dev/assets/brand/muster-og.png",
+      "author": {
+        "@type": "Organization",
+        "name": "Muster",
+        "url": "https://themuster.dev/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Muster",
+        "url": "https://themuster.dev/"
+      },
+      "datePublished": "2026-10-15",
+      "dateModified": "2026-10-15"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is an AI Development Environment (ADE)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "An AI Development Environment is a workspace built around delegating goals to coding agents. You describe an outcome, agents do the work in a project folder, and the environment gives you progress, diffs, terminals, history and cost so you can supervise and review."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When do I need an ADE rather than an editor with AI features?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "An ADE helps when you run several agents in parallel, work across multiple repositories, hand agents long tasks, or pass work between teammates. If you mostly type code yourself and want suggestions, an editor with AI assistance may be enough."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What should I look for in an AI Development Environment?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Look for support for many agents and models, isolation through worktrees and sandboxes, changes you can review and undo, receipts that show what each turn cost, and clear privacy: where your code, keys and memory live."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Muster Agent an AI Development Environment?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Muster Agent is a free, open-source (MIT) desktop app for macOS, Windows and Linux. It is local-first, works with many agents and model routers, supports Paperclip team tasks with automatic hand-back, and offers sandboxing and per-turn receipts."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">GUIDE · ADE</p>
+        <h1 class="hero-step">What is an AI Development Environment (ADE)?</h1>
+        <p class="sub hero-step">An AI Development Environment is a workspace built for delegating goals to coding agents and supervising the result. This guide explains what that means, when you want one, what to look for, and how Muster Agent, an open-source ADE, approaches each point.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">What Muster Agent works with.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Codex</strong>, using your ChatGPT sign-in.</li>
+          <li><strong>Claude Code</strong>, using the install and sign-in you already have.</li>
+          <li><strong>OpenCode.</strong></li>
+          <li><strong>Cursor</strong>: runs the Cursor Agent CLI you have installed and signed in to.</li>
+          <li><strong>Google Gemini</strong>: runs the Gemini CLI you have installed and signed in to.</li>
+          <li><strong>Any OpenAI-compatible model router</strong>: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints, with your own key for each.</li>
+          <li><strong>Any OpenAI-compatible API</strong>, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</li>
+          <li><strong>Local models</strong> through Ollama and LM Studio.</li>
+          <li><strong>Paperclip</strong>: check out tasks from a Paperclip org, work locally in a git worktree, and let the work hand itself back.</li>
+          <li><strong>Sandboxing</strong>: scoped sandboxes and computers, permission modes from read-only to full access, and secrets kept out of commands.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Definition</p>
+      <h2 class="reveal-child">An environment for delegating, not just typing.</h2>
+      <div class="prose reveal-child">
+        <p>An AI Development Environment, or ADE, is a workspace designed around coding agents. The starting point is different from an editor with AI added. In an editor you write code and the AI suggests the next line or answers a question. In an ADE you describe a goal, one or more agents carry it out in a project folder, and the environment is built to help you supervise: what the agent is doing now, what it changed, what it ran, what it cost, and whether to keep the result.</p>
+        <p>That shift changes what the tool needs to show. A chat box is not enough when an agent works for twenty minutes across a dozen files. You want live diffs you can accept or undo, a terminal and a browser next to the conversation, a history you can search, and a way to run several agents at once without them overwriting each other.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-hero.jpg" alt="Muster Agent showing a chat with an agent on the left and the live diff of its edit on the right" width="1600" height="1000" fetchpriority="high" /><figcaption>An ADE puts the conversation and the reviewable result side by side.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">When you want one</p>
+      <h2 class="reveal-child">Four situations where an ADE earns its place.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Parallel agents.</strong> Several tasks at once, each in its own chat, need to stay apart and be easy to compare.</li>
+          <li><strong>Multiple repositories.</strong> Moving between projects is easier when each has its own chats, notes and history.</li>
+          <li><strong>Long tasks.</strong> Work that runs for a while needs visible progress, safe stopping, and a way to resume.</li>
+          <li><strong>Team hand-offs.</strong> When tasks are planned by one person or system and done by another, the work needs a clean check-out and hand-back with a record of what happened.</li>
+        </ul>
+        <p>If you mostly type code yourself and want occasional suggestions, an editor with AI features may be all you need. An ADE pays off as you delegate more.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">What to look for</p>
+      <h2 class="reveal-child">Five questions to ask of any ADE.</h2>
+      <div class="prose reveal-child">
+        <h3>1. Does it work with the agents and models you want?</h3>
+        <p>Agents and models change quickly. An ADE that ties you to one vendor ties you to that vendor’s pace. Look for support for several agents, for model routers and gateways, and for local models.</p>
+        <h3>2. How does it isolate the work?</h3>
+        <p>Agents that can run commands need boundaries. Useful building blocks are git worktrees for parallel changes, disposable sandboxes for risky commands, and permission modes that decide how much an agent may do.</p>
+        <h3>3. Can you review what changed?</h3>
+        <p>Every edit should be visible as a diff, and you should be able to keep or undo it per hunk or per file, before it becomes part of your history.</p>
+        <h3>4. Can you see what it cost?</h3>
+        <p>Long agent runs consume tokens. Per-turn receipts showing model, tokens and cost make spending something you can read rather than discover on an invoice.</p>
+        <h3>5. Where do your code, keys and memory live?</h3>
+        <p>Read the privacy model. Know what stays on your machine, what is sent to a model provider, and where long-term notes are stored.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Muster Agent</p>
+      <h2 class="reveal-child">How Muster Agent approaches each one.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Open source and local-first.</strong> Muster Agent is MIT-licensed and runs on your computer. Provider keys are stored encrypted on your machine, and long-term memory lives in the endpoint you choose.</li>
+          <li><strong>Works with every agent and router.</strong> It runs Codex, Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI you already have, and connects to any OpenAI-compatible router, API or local server. See <a href="/run-claude-code-and-codex.html">running Claude Code and Codex in one app</a> and the <a href="/omniroute-desktop-client.html">router guide</a>.</li>
+          <li><strong>Paperclip team tasks.</strong> Check a task out of a Paperclip org, work on it locally in a git worktree, and let it hand itself back after a countdown. See <a href="/paperclip-local-tasks.html">Paperclip tasks</a>.</li>
+          <li><strong>Sandboxing.</strong> Scoped Docker computers with no network by default, permission modes from read-only to full access, and secrets kept out of commands. See <a href="/sandboxed-coding-agent.html">sandboxed agents</a>.</li>
+          <li><strong>Reviewable changes and receipts.</strong> Live diffs with Keep and Undo, and per-turn receipts in the Ledger.</li>
+          <li><strong>Memory you control.</strong> Personal and per-folder notes with a recall preview before you send. See <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a>.</li>
+        </ul>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-timeline.jpg" alt="An agent turn opened up showing reasoning, file reads, edits and a test run with output" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>One turn, opened up: reads, edits and the test run with its exit code.</figcaption></figure>
+        <h3>Try it</h3>
+        <p>Muster Agent is free for macOS, Windows and Linux. Start with one small task, review the diff, and add agents, worktrees or sandboxes as you need them.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/guides.html">All guides →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+  </footer>
+</body>
+</html>

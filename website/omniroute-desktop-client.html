@@ -105,6 +105,36 @@
     </section>
 
     <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Routers and gateways</p>
+      <h2 class="reveal-child">Works with your routers.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>OmniRoute.</strong> Found automatically when it is installed on your computer (on its default local port), added as a provider, or picked up from a gateway named in your Codex configuration. Each person uses their own key.</li>
+          <li><strong>OpenRouter.</strong> Has its own provider card with a link to get a key.</li>
+          <li><strong>LiteLLM.</strong> Works through the OpenAI-compatible connection.</li>
+          <li><strong>Any OpenAI-compatible gateway or custom endpoint</strong>, for example vLLM or a company proxy. Add the base URL and key under Custom endpoint.</li>
+          <li><strong>Local servers.</strong> Ollama and LM Studio are detected on their default ports.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Models you can use</p>
+      <h2 class="reveal-child">Model families, not version numbers.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>OpenAI GPT</strong>, via Codex or the API.</li>
+          <li><strong>Anthropic Claude</strong>, via Claude Code or the API.</li>
+          <li><strong>Google Gemini</strong>, via the Gemini CLI or the API.</li>
+          <li><strong>Meta Muse</strong>, via the Meta Model API.</li>
+          <li><strong>xAI Grok</strong>, via the Grok CLI.</li>
+          <li><strong>DeepSeek, Qwen, Mistral, Kimi, GLM and Llama or other open-weight models</strong>, through a router or run locally.</li>
+        </ul>
+        <p>Muster lists whatever models your router or provider offers, read from its own model list, so new models appear automatically.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
       <p class="sec-kicker reveal-child">Connecting</p>
       <h2 class="reveal-child">Add OmniRoute in a few clicks.</h2>
       <div class="prose reveal-child">
@@ -132,12 +162,6 @@
         <p>A chat on a local OpenAI-compatible route is not limited to conversation. It offers the tools the chat’s access level allows: read and list files, edit files inside the project folder, and, with Full access, run commands. These tools never follow a link out of the folder, end everything a command started when you press Stop, and run with a scrubbed environment so no keys or tokens leak into the command.</p>
         <p>If a route refuses tools, the chat answers as plain chat and says so. A chat on a model that cannot run commands shows a notice, “This model can’t run commands or edit files”, with a one-click switch to a route that can, and the earlier conversation is carried over. A chat is never moved to another provider on its own.</p>
         <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-model-picker.jpg" alt="The Muster Agent model picker listing each ready provider’s models with context size, image support and reasoning level" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>The model picker lists each ready provider’s models. Switch per chat.</figcaption></figure>
-        <h3>Why use a router with a desktop client</h3>
-        <ul>
-          <li><strong>One key to rotate.</strong> Change upstream providers behind the router without touching the app.</li>
-          <li><strong>Per-chat choice.</strong> Use a cheap route for routine edits and a stronger one for hard problems.</li>
-          <li><strong>Same workbench.</strong> Live diffs, terminal, memory and sandboxes work the same on a router route as on any other engine.</li>
-        </ul>
         <p>Muster Agent also runs Claude Code and Codex directly; see <a href="/run-claude-code-and-codex.html">Run Claude Code and Codex in one app</a>. Memory carries across all of them: <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a>.</p>
         <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="https://github.com/musterhq/muster-code" rel="noopener">Source on GitHub →</a></p>
       </div>
@@ -159,10 +183,11 @@
       <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
       <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
       <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
       <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
       <a href="/omniroute-desktop-client.html">OmniRoute client</a>
     </nav>
-    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. Muster Agent is an independent open-source project and is not affiliated with or endorsed by them.</p>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
   </footer>
 </body>
 </html>
