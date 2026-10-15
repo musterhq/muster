@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI coding agent with long-term memory | Muster Agent</title>
+  <meta name="description" content="Muster Agent gives coding agents long-term memory: personal and per-folder notes, a recall preview before you send, and full control to edit or delete." />
+  <link rel="canonical" href="https://themuster.dev/ai-coding-agent-long-term-memory.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="AI coding agent with long-term memory | Muster Agent" />
+  <meta property="og:description" content="Muster Agent gives coding agents long-term memory: personal and per-folder notes, a recall preview before you send, and full control to edit or delete." />
+  <meta property="og:url" content="https://themuster.dev/ai-coding-agent-long-term-memory.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI coding agent with long-term memory | Muster Agent" />
+  <meta name="twitter:description" content="Muster Agent gives coding agents long-term memory: personal and per-folder notes, a recall preview before you send, and full control to edit or delete." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="AI coding agent with long-term memory, coding agent memory, agent memory desktop app, Hindsight memory, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "AI coding agent with long-term memory",
+  "description": "Muster Agent gives coding agents long-term memory: personal and per-folder notes, a recall preview before you send, and full control to edit or delete.",
+  "url": "https://themuster.dev/ai-coding-agent-long-term-memory.html",
+  "mainEntityOfPage": "https://themuster.dev/ai-coding-agent-long-term-memory.html",
+  "image": "https://themuster.dev/assets/brand/muster-og.png",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">memory · hindsight</p>
+        <h1 class="hero-step">An AI coding agent with long-term memory you can see and control</h1>
+        <p class="sub hero-step">Most coding agents start every chat from zero. Muster Agent keeps notes about you and about each project, recalls the relevant ones before each turn, and shows you what will be recalled before you send, so memory is something you manage rather than something that happens to you.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Why memory</p>
+      <h2 class="reveal-child">Agents that learn, not just agents that chat.</h2>
+      <div class="prose reveal-child">
+        <p>Every new chat with a coding agent begins with the same ritual: explain the stack, the conventions, the commands to run and the mistakes to avoid. Long-term memory removes that ritual. Muster Agent stores what an agent learned about you and about a project, and brings the relevant parts into the next conversation, whichever engine you use.</p>
+        <p>Memory only helps if you can trust it, so the design is built around visibility. Nothing is recalled invisibly, and nothing is saved without a setting that says so.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-memory.jpg" alt="The Muster Agent Memory screen showing saved notes for a folder with search and scope" width="1600" height="1000" fetchpriority="high" /><figcaption>The Memory screen: personal and folder notes with where they came from, a suggested note to keep or dismiss, and search.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">How it works</p>
+      <h2 class="reveal-child">Scopes, recall and a say in every step.</h2>
+      <div class="prose reveal-child">
+        <h3>Personal and per-folder scopes</h3>
+        <p>Notes live either in your Personal scope or with a folder or project. A repository’s conventions stay with that repository and do not leak into another one, while preferences that follow you, such as how you like commit messages written, stay personal.</p>
+        <h3>Recall preview</h3>
+        <p>A chip in the composer lists the notes the next turn will recall for the draft you are typing. Open it to read them, or remove any note you do not want in this particular chat.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-recall.jpg" alt="The Muster Agent recall list open above the composer showing three notes the next turn will use, each removable" width="1560" height="612" loading="lazy" decoding="async" /><figcaption>The recall list above the composer: three notes the next turn will use, each removable.</figcaption></figure>
+        <h3>Saving, on your terms</h3>
+        <p>After a run, Muster Agent can suggest a note to keep or dismiss. A setting chooses between never saving, asking after runs, and saving after completed runs. Recall happens automatically before each turn, and you can turn it off.</p>
+        <h3>Browse, search, edit, delete</h3>
+        <p>The Memory screen lists every note with where it came from, and lets you search, add and delete. Deletions are tracked until the memory engine confirms them, so a note you removed does not quietly reappear.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Under the hood</p>
+      <h2 class="reveal-child">Powered by Hindsight, pointed where you choose.</h2>
+      <div class="prose reveal-child">
+        <p>Long-term recall is powered by Hindsight, an open memory engine. In Memory settings you point Muster Agent at a Hindsight endpoint, for example one running on your own computer, or set the <code>HINDSIGHT_API_URL</code> and <code>HINDSIGHT_API_KEY</code> environment variables. A key saved in settings is stored encrypted. Because you choose the endpoint, you also choose where your notes live.</p>
+        <h3>Memory across engines and tasks</h3>
+        <p>Memory sits above the model, so it works the same whether a chat runs on Claude Code, Codex, a gateway or a local model. See <a href="/run-claude-code-and-codex.html">running Claude Code and Codex in one app</a>. When you work on tasks from a Paperclip server, task conversations carry handoff notes in the same spirit; see <a href="/paperclip-local-tasks.html">working locally on Paperclip tasks</a>.</p>
+        <h3>What memory is good for</h3>
+        <p>The notes that pay off are small and specific: the command that runs the tests for this repository, the naming convention a team agreed on, the reason a dependency is pinned, the way you prefer pull requests to be described. A suggested note after a run is usually one of these. Keep the ones that would save you a sentence next time, and dismiss the rest; a short, accurate memory is more useful than a long, noisy one.</p>
+        <h3>Containment, not just recall</h3>
+        <p>Memory is paired with isolation. A chat or a folder can have its own Docker-backed computer with no network by default, 512 MiB of memory, one CPU and 256 processes unless you change them, and only the environment variables and folders you grant.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-sandbox.jpg" alt="A Muster Agent chat next to its scoped sandbox computer showing resource limits, services, command history and files" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>A chat next to its scoped computer: resource meters, services, command history and files.</figcaption></figure>
+        <p>Looking for the deeper design thinking behind scoped agent memory? Read <a href="/guide-governed-memory.html">building an AI agent with memory that does not leak</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/docs.html">Read the docs →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+  </footer>
+</body>
+</html>

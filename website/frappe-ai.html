@@ -3,11 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ERPNext AI Agent — Muster</title>
-  <meta name="description" content="An ERPNext AI agent that reads DocTypes, fields, workflows, roles and permissions before it answers or acts — self-hosted, with scoped memory, a token ledger, and an observed audit trail." />
+  <title>ERPNext and Frappe AI agent | Muster Agent</title>
+  <meta name="description" content="An ERPNext and Frappe AI agent that understands DocTypes, fields, workflows and permissions. Open source, from the Muster Agent project." />
+  <link rel="canonical" href="https://themuster.dev/frappe-ai.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="ERPNext and Frappe AI agent | Muster Agent" />
+  <meta property="og:description" content="An ERPNext and Frappe AI agent that understands DocTypes, fields, workflows and permissions. Open source, from the Muster Agent project." />
+  <meta property="og:url" content="https://themuster.dev/frappe-ai.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ERPNext and Frappe AI agent | Muster Agent" />
+  <meta name="twitter:description" content="An ERPNext and Frappe AI agent that understands DocTypes, fields, workflows and permissions. Open source, from the Muster Agent project." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="keywords" content="ERPNext AI agent, Frappe AI agent, ERPNext AI, Frappe AI, ERPNext automation, DocType aware retrieval, self-hosted AI agent, ERPNext MCP" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
-  <link rel="canonical" href="https://themuster.dev/frappe-ai.html" />
   <meta name="theme-color" content="#08080a" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <script>
@@ -20,21 +38,6 @@
       } catch (e) {}
     })();
   </script>
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Muster" />
-  <meta property="og:title" content="ERPNext AI Agent — Muster" />
-  <meta property="og:description" content="An ERPNext AI agent with DocType context, scoped memory, token visibility, MCP capabilities, and permission-aware setup." />
-  <meta property="og:url" content="https://themuster.dev/frappe-ai.html" />
-  <meta property="og:image" content="https://themuster.dev/assets/demo/frappe-context-card.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="ERPNext AI Agent — Muster" />
-  <meta name="twitter:description" content="An ERPNext AI agent with scoped memory, DocType context, a token ledger, MCP, and browser automation." />
-  <meta name="twitter:image" content="https://themuster.dev/assets/demo/frappe-context-card.png" />
-
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-
-
-
   <script type="module" src="/src/main.ts"></script>
   <script type="application/ld+json">
     {
@@ -55,14 +58,16 @@
       "keywords": "ERPNext AI agent, Frappe AI agent, ERPNext AI, Frappe AI, ERPNext automation, DocType aware retrieval, MCP, scoped memory"
     }
   </script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div>
   <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
 
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a>
+    <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
     <nav aria-label="Main">
       <a href="/">Home</a>
       <a href="/docs.html">Docs</a>
@@ -209,6 +214,13 @@
       <span class="footer-sep">·</span>
       <a href="https://github.com/musterhq/muster" rel="noopener">GitHub</a>
     </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
   </footer>
 </body>
 </html>

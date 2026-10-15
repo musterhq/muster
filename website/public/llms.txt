@@ -91,3 +91,11 @@ each Codex release rather than assumed permanent.
 - MCP agent harness with token visibility: https://themuster.dev/guide-mcp-agent-harness.html
 - Frappe AI with DocType-aware retrieval: https://themuster.dev/guide-frappe-ai.html
 - GitHub: https://github.com/musterhq/muster
+
+## Guides for Muster Agent
+
+- Open-source Codex desktop app: https://themuster.dev/open-source-codex-desktop-app.html
+- Run Claude Code and Codex in one app: https://themuster.dev/run-claude-code-and-codex.html
+- Work locally on Paperclip tasks: https://themuster.dev/paperclip-local-tasks.html
+- AI coding agent with long-term memory: https://themuster.dev/ai-coding-agent-long-term-memory.html
+- OmniRoute desktop client: https://themuster.dev/omniroute-desktop-client.html

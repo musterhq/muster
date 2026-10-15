@@ -3,21 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Agent With Memory — Muster</title>
-  <meta name="description" content="Building an AI agent with memory that survives past one session: scoped lanes across tenant, workspace, user, role and session, so recall stays useful without becoming a leak." />
+  <title>AI agent memory that does not leak | Muster Agent</title>
+  <meta name="description" content="How to build an AI agent with scoped, governed memory that does not leak between users, projects or sessions, and how Muster Agent does it." />
+  <link rel="canonical" href="https://themuster.dev/guide-governed-memory.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="AI agent memory that does not leak | Muster Agent" />
+  <meta property="og:description" content="How to build an AI agent with scoped, governed memory that does not leak between users, projects or sessions, and how Muster Agent does it." />
+  <meta property="og:url" content="https://themuster.dev/guide-governed-memory.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI agent memory that does not leak | Muster Agent" />
+  <meta name="twitter:description" content="How to build an AI agent with scoped, governed memory that does not leak between users, projects or sessions, and how Muster Agent does it." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="keywords" content="AI agent with memory, AI agent memory, persistent agent memory, scoped memory, long-term memory for LLM agents, self-hosted AI agent" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
-  <link rel="canonical" href="https://themuster.dev/guide-governed-memory.html" />
-  <meta property="og:type" content="article" /><meta property="og:site_name" content="Muster" /><meta property="og:title" content="AI Agent With Memory — Muster" /><meta property="og:description" content="How scoped memory lanes let an agent remember across sessions without leaking between users, workspaces, or tenants." /><meta property="og:url" content="https://themuster.dev/guide-governed-memory.html" /><meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-  <meta name="twitter:card" content="summary_large_image" /><meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-
-
   <script type="module" src="/src/main.ts"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div><div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
-  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a><a href="/agent-harness.html">Agent harness</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a><a href="/agent-harness.html">Agent harness</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
   <main>
     <section class="hero"><div class="hero-inner"><p class="kicker hero-step">guide · agent memory</p><h1 class="hero-step">Building an AI agent with memory that does not leak.</h1><p class="sub hero-step">The longer an agent runs, the more memory helps. The same memory also becomes a risk unless scope is explicit — which tenant, workspace, user, role, and session a fact belongs to, enforced at retrieval rather than trusted at write time.</p></div></section>
     <section class="band" data-reveal>
@@ -47,6 +63,14 @@
       <p class="proof-link reveal-child"><a href="/docs.html">Read the docs -></a> <a href="https://github.com/musterhq/muster/blob/main/benchmark/RESULTS.md" rel="noopener">See token benchmark -></a></p>
     </section>
   </main>
-<footer class="site-footer"><a href="/">Muster</a><a href="/overview.html">Overview</a><a href="/docs.html">Docs</a><a href="/guides.html">Guides</a><a href="/download.html">Download</a><a href="https://github.com/musterhq/muster/blob/main/LICENSE" rel="noopener">MIT license</a></footer>
+<footer class="site-footer"><a href="/">Muster</a><a href="/overview.html">Overview</a><a href="/docs.html">Docs</a><a href="/guides.html">Guides</a><a href="/download.html">Download</a><a href="https://github.com/musterhq/muster/blob/main/LICENSE" rel="noopener">MIT license</a>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+  </footer>
 </body>
 </html>

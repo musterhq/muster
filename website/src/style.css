@@ -1968,3 +1968,17 @@ main::before {
 @media (prefers-reduced-motion: reduce) {
   .agent-rig { transform: none; }
 }
+
+/* Screenshots on the content pages: reserve space (width/height attributes) and
+   never overflow the prose column. */
+.shot { margin: 28px auto; max-width: 78ch; }
+.band > .shot { max-width: min(1040px, 100%); }
+.shot img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line, rgba(128,128,128,.25)); }
+.shot figcaption { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--ink-dim); text-align: center; }
+.prose ol { margin: 0 0 14px; padding-left: 22px; color: var(--ink-dim); font-size: var(--t-body); line-height: 1.65; }
+.prose a { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Footer link row for the Muster Agent guides, on every page. */
+.footer-guides { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; padding: 0 16px 24px; font-size: 13px; }
+.footer-guides a { color: var(--ink-dim); }
+.footer-guides a:hover { color: var(--ink); }

@@ -3,33 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Agent Audit Trail — Muster</title>
-  <meta name="description" content="Muster derives an AI agent audit trail from the filesystem, not from agent self-report. Head-to-head against Codex: 0 of 5 self-reported edits vs the observer catching the change in 86ms with a deterministic receipt." />
-  <meta name="keywords" content="AI agent audit trail, AI agent live diff, observed file changes, agent edit provenance, self-hosted AI agent, open source AI agent framework" />
-  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <title>AI agent audit trail and live diffs | Muster Agent</title>
+  <meta name="description" content="Muster Agent derives file changes by watching the workspace, not from what the agent reports, and emits a receipt that reproduces byte for byte." />
   <link rel="canonical" href="https://themuster.dev/live-inline-diff.html" />
-  <meta property="og:type" content="article" />
-  <meta property="og:site_name" content="Muster" />
-  <meta property="og:title" content="AI Agent Audit Trail — Muster" />
-  <meta property="og:description" content="0 of 5 self-reported edits vs an 86ms observed, git-apply-verified diff with a byte-identical receipt hash. The measurement, and how to rerun it." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="AI agent audit trail and live diffs | Muster Agent" />
+  <meta property="og:description" content="Muster Agent derives file changes by watching the workspace, not from what the agent reports, and emits a receipt that reproduces byte for byte." />
   <meta property="og:url" content="https://themuster.dev/live-inline-diff.html" />
   <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI agent audit trail and live diffs | Muster Agent" />
+  <meta name="twitter:description" content="Muster Agent derives file changes by watching the workspace, not from what the agent reports, and emits a receipt that reproduces byte for byte." />
   <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-
-
-
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="keywords" content="AI agent audit trail, AI agent live diff, observed file changes, agent edit provenance, self-hosted AI agent, open source AI agent framework" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
   <script type="module" src="/src/main.ts"></script>
   <script type="application/ld+json">
     {"@context":"https://schema.org","@type":"TechArticle","headline":"AI Agent Audit Trail — Muster","description":"How Muster derives an authoritative file-change stream from filesystem observation, and the live head-to-head measurement against Codex's self-reported patch stream.","url":"https://themuster.dev/live-inline-diff.html","mainEntityOfPage":"https://themuster.dev/live-inline-diff.html","author":{"@type":"Organization","name":"Muster","url":"https://themuster.dev/"},"publisher":{"@type":"Organization","name":"Muster","url":"https://themuster.dev/"},"dateModified":"2026-08-27"}
   </script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div>
   <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a>
+    <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
     <nav aria-label="Main">
       <a href="/">Home</a>
       <a href="/muster-vs-openclaw.html">vs OpenClaw</a>
@@ -122,6 +131,13 @@
       <span class="footer-sep">·</span>
       <a href="/muster-vs-openclaw.html">Comparisons</a>
     </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
   </footer>
 </body>
 </html>

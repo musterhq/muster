@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/story-contract.test.mjs"
+    "test": "node --test tests/story-contract.test.mjs tests/seo-contract.test.mjs"
   },
   "dependencies": {
     "gsap": "^3.15.0",

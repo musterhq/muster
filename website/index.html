@@ -2,102 +2,79 @@
 <html lang="en"><head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Muster — Open Source AI Agent Framework &amp; AI Coding Agent App</title>
-  <meta name="description" content="Muster is an open source AI agent framework and a free AI coding agent desktop app for macOS, Windows and Linux: Claude Code, Codex and local models in one window, with long-term memory, sandboxes and an audit trail." />
-  <meta name="keywords" content="open source AI agent framework, open source AI coding agent, AI coding agent desktop app, agentic development client, Claude Code GUI, Codex desktop app, Cursor alternative, free Cursor alternative, Claude Code and Codex in one app, AI agent with long-term memory, sandboxed AI agent, self-hosted AI agent, local LLM coding agent, Ollama coding agent, AI agent audit trail, MCP agent, OpenClaw alternative, Hermes agent alternative, resume Codex sessions, ERPNext AI agent, token ledger, AI coding app for Windows, AI coding app for Linux, AI coding app for Mac" />
+  <title>Muster Agent: open-source AI coding agent desktop app</title>
+  <meta name="description" content="Muster Agent is a free, MIT-licensed desktop app for coding agents: Codex, Claude Code, OpenCode and local models on macOS, Windows and Linux." />
+  <link rel="canonical" href="https://themuster.dev/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Muster Agent: open-source AI coding agent desktop app" />
+  <meta property="og:description" content="Muster Agent is a free, MIT-licensed desktop app for coding agents: Codex, Claude Code, OpenCode and local models on macOS, Windows and Linux." />
+  <meta property="og:url" content="https://themuster.dev/" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Muster Agent: open-source AI coding agent desktop app" />
+  <meta name="twitter:description" content="Muster Agent is a free, MIT-licensed desktop app for coding agents: Codex, Claude Code, OpenCode and local models on macOS, Windows and Linux." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="keywords" content="open source AI agent framework, open source AI coding agent, AI coding agent desktop app, agentic development client, Claude Code GUI, Codex desktop app, Claude Code and Codex in one app, AI agent with long-term memory, sandboxed AI agent, self-hosted AI agent, local LLM coding agent, Ollama coding agent, AI agent audit trail, MCP agent, resume Codex sessions, ERPNext AI agent, token ledger, AI coding app for Windows, AI coding app for Linux, AI coding app for Mac" />
   <meta name="application-name" content="Muster" />
   <meta name="apple-mobile-web-app-title" content="Muster" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
-  <link rel="canonical" href="https://themuster.dev/" />
   <meta name="theme-color" content="#08080a" />
   <!-- Set theme before first paint to avoid a flash. localStorage wins, else
        prefers-color-scheme. Mirrors resolveTheme() in src/theme.ts. -->
 
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F0EEE9'/%3E%3Ccircle cx='10' cy='10' r='3' fill='%23A78BFA'/%3E%3Ccircle cx='22' cy='10' r='3' fill='%2306B6D4'/%3E%3Ccircle cx='10' cy='22' r='3' fill='%2306B6D4'/%3E%3Ccircle cx='22' cy='22' r='3' fill='%23A78BFA'/%3E%3C/svg%3E" />
   <!-- Open Graph -->
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Muster" />
-  <meta property="og:title" content="Muster — Open Source AI Agent Framework &amp; AI Coding Agent App" />
-  <meta property="og:description" content="Self-hosted, MIT-licensed, and auditable: scoped memory, a local token ledger, and file changes observed from the filesystem rather than self-reported by the agent." />
-  <meta property="og:url" content="https://themuster.dev/" />
-  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <!-- Twitter -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Muster — Open Source AI Agent Framework &amp; AI Coding Agent App" />
-  <meta name="twitter:description" content="An open source AI agent framework for agents that should not leak memory, waste tokens, or learn without tests." />
-  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <!-- Fonts: Clash Display (headings) + Hanken Grotesk (body) via Fontshare; JetBrains Mono for code only. -->
 
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-
-
-
-
   <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
     {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "Organization",
-          "@id": "https://themuster.dev/#organization",
-          "name": "Muster",
-          "url": "https://themuster.dev/",
-          "logo": "https://themuster.dev/assets/brand/muster-logo.png",
-          "sameAs": ["https://github.com/musterhq/muster", "https://github.com/musterhq/muster-code", "https://www.npmjs.com/package/@musterhq/cli"]
-        },
-        {
-          "@type": "WebSite",
-          "@id": "https://themuster.dev/#website",
-          "name": "Muster",
-          "alternateName": ["Muster Agent Harness", "The Muster"],
-          "url": "https://themuster.dev/",
-          "publisher": { "@id": "https://themuster.dev/#organization" }
-        },
-        {
-          "@type": "SoftwareSourceCode",
-          "@id": "https://themuster.dev/#software",
-          "name": "Muster",
-          "alternateName": "Muster Agent Harness",
-          "description": "Open source AI agent framework you can self-host and audit: scoped memory, a local token ledger, eval-gated learning, MCP capabilities, browser automation, ERPNext / Frappe support, and file changes observed from the filesystem rather than self-reported.",
-          "keywords": "open source AI agent framework, open source AI coding agent, AI coding agent desktop app, agentic development client, Claude Code GUI, Codex desktop app, Cursor alternative, free Cursor alternative, Claude Code and Codex in one app, AI agent with long-term memory, sandboxed AI agent, self-hosted AI agent, local LLM coding agent, Ollama coding agent, AI agent audit trail, MCP agent, OpenClaw alternative, Hermes agent alternative, resume Codex sessions, ERPNext AI agent, token ledger, AI coding app for Windows, AI coding app for Linux, AI coding app for Mac",
-          "codeRepository": "https://github.com/musterhq/muster",
-          "programmingLanguage": "TypeScript",
-          "license": "https://github.com/musterhq/muster/blob/main/LICENSE",
-          "url": "https://themuster.dev/",
-          "applicationCategory": "DeveloperApplication",
-          "publisher": { "@id": "https://themuster.dev/#organization" }
-        },
-        {
-          "@type": "SoftwareApplication",
-          "@id": "https://themuster.dev/#agent-app",
-          "name": "Muster Agent",
-          "alternateName": ["Muster Code", "Muster Agent desktop app"],
-          "description": "Free agentic development client (AI coding agent desktop app) for macOS, Windows and Linux. Runs Claude Code, Codex, OpenCode, OpenAI-compatible gateways and local models side by side with long-term memory, Docker sandboxes, live diffs with Keep/Undo, a terminal, a browser and git history.",
-          "applicationCategory": "DeveloperApplication",
-          "applicationSubCategory": "AI coding agent",
-          "operatingSystem": "macOS, Windows 10, Windows 11, Linux",
-          "softwareVersion": "0.2.5",
-          "downloadUrl": "https://github.com/musterhq/muster-code/releases/latest",
-          "installUrl": "https://themuster.dev/download.html",
-          "url": "https://themuster.dev/#download",
-          "screenshot": "https://themuster.dev/assets/video/muster-agent-demo-poster.jpg",
-          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-          "publisher": { "@id": "https://themuster.dev/#organization" }
-        },
-        {
-          "@type": "VideoObject",
-          "@id": "https://themuster.dev/#agent-video",
-          "name": "Muster Agent — the agentic development client that remembers",
-          "description": "A 21-second tour of Muster Agent: an AI coding agent edits a TypeScript project while the live diff of its changes appears beside the chat.",
-          "thumbnailUrl": "https://themuster.dev/assets/video/muster-agent-demo-poster.jpg",
-          "contentUrl": "https://themuster.dev/assets/video/muster-agent-demo.mp4",
-          "uploadDate": "2026-09-20",
-          "duration": "PT21S",
-          "publisher": { "@id": "https://themuster.dev/#organization" }
-        }
-      ]
+      "@type": "SoftwareSourceCode",
+      "@id": "https://themuster.dev/#software",
+      "name": "Muster",
+      "alternateName": "Muster Agent Harness",
+      "description": "Open source AI agent framework you can self-host and audit: scoped memory, a local token ledger, eval-gated learning, MCP capabilities, browser automation, ERPNext / Frappe support, and file changes observed from the filesystem rather than self-reported.",
+      "keywords": "open source AI agent framework, open source AI coding agent, AI coding agent desktop app, agentic development client, Claude Code GUI, Codex desktop app, Claude Code and Codex in one app, AI agent with long-term memory, sandboxed AI agent, self-hosted AI agent, local LLM coding agent, Ollama coding agent, AI agent audit trail, MCP agent, resume Codex sessions, ERPNext AI agent, token ledger, AI coding app for Windows, AI coding app for Linux, AI coding app for Mac",
+      "codeRepository": "https://github.com/musterhq/muster",
+      "programmingLanguage": "TypeScript",
+      "license": "https://github.com/musterhq/muster/blob/main/LICENSE",
+      "url": "https://themuster.dev/",
+      "applicationCategory": "DeveloperApplication",
+      "publisher": {
+        "@id": "https://themuster.dev/#organization"
+      }
+    },
+    {
+      "@type": "VideoObject",
+      "@id": "https://themuster.dev/#agent-video",
+      "name": "Muster Agent — the agentic development client that remembers",
+      "description": "A 21-second tour of Muster Agent: an AI coding agent edits a TypeScript project while the live diff of its changes appears beside the chat.",
+      "thumbnailUrl": "https://themuster.dev/assets/video/muster-agent-demo-poster.jpg",
+      "contentUrl": "https://themuster.dev/assets/video/muster-agent-demo.mp4",
+      "uploadDate": "2026-09-20",
+      "duration": "PT21S",
+      "publisher": {
+        "@id": "https://themuster.dev/#organization"
+      }
     }
+  ]
+}
   </script>
 
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-</head><body><div id="root"></div><noscript><main style="background:#08080a;color:white;padding:60px;font:18px Arial"><h1><img src="/assets/muster-wordmark.svg" alt="Muster" style="width:100%;max-width:1100px" /></h1><p>An open-source workspace for agents across chat, projects and code.</p><h2>Messaging gateway</h2><p>Configure a provider and messaging channel with the CLI gateway.</p><h2>Muster Agent desktop</h2><p>Work with projects, agents, local notes and code review. Hindsight recall is optional.</p><h2>Connections</h2><p>Paperclip integration is available. The native headless local-server path is in progress.</p><p><a style="color:#deaa75" href="https://themuster.dev/docs.html">Set up messaging</a> · <a style="color:#deaa75" href="https://themuster.dev/download.html">Get desktop app</a></p><p>Messaging gateway and desktop are separate entry points. The full connected story is illustrative.</p></main><p><a href="/overview.html">Technical overview, integrations and audit evidence</a> · <a href="/guides.html">Guides</a></p></noscript><script type="module" src="/src/story/main.jsx"></script></body></html>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head><body><div id="root"></div><noscript><main style="background:#08080a;color:white;padding:60px;font:18px Arial"><h1>Muster Agent: the open-source AI coding agent desktop app</h1><img src="/assets/muster-wordmark.svg" alt="Muster Agent wordmark" width="1200" height="270" style="width:100%;max-width:1100px;height:auto" /><p>An open-source workspace for agents across chat, projects and code.</p><h2>Messaging gateway</h2><p>Configure a provider and messaging channel with the CLI gateway.</p><h2>Muster Agent desktop</h2><p>Work with projects, agents, local notes and code review. Hindsight recall is optional.</p><h2>Connections</h2><p>Paperclip integration is available. The native headless local-server path is in progress.</p><p><a style="color:#deaa75" href="https://themuster.dev/docs.html">Set up messaging</a> · <a style="color:#deaa75" href="https://themuster.dev/download.html">Get desktop app</a></p><p>Messaging gateway and desktop are separate entry points. The full connected story is illustrative.</p></main><p><a href="/overview.html">Technical overview, integrations and audit evidence</a> · <a href="/guides.html">Guides</a></p></noscript><script type="module" src="/src/story/main.jsx"></script></body></html>

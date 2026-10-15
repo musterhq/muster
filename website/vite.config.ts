@@ -1,9 +1,11 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
+import seoPlugin from "./seo/vite-seo-plugin.mjs";
 
 export default defineConfig({
   // The verified custom domain serves the website at the domain root.
   base: process.env.VITE_BASE_PATH ?? "/",
+  plugins: [seoPlugin()],
   build: {
     target: "es2022",
     rollupOptions: {
@@ -39,7 +41,12 @@ export default defineConfig({
         resumeCodexSessions: resolve(__dirname, "resume-codex-sessions.html"),
         onboarding: resolve(__dirname, "onboarding.html"),
         spatial: resolve(__dirname, "spatial.html"),
-        download: resolve(__dirname, "download.html")
+        download: resolve(__dirname, "download.html"),
+        openSourceCodexDesktopApp: resolve(__dirname, "open-source-codex-desktop-app.html"),
+        runClaudeCodeAndCodex: resolve(__dirname, "run-claude-code-and-codex.html"),
+        paperclipLocalTasks: resolve(__dirname, "paperclip-local-tasks.html"),
+        aiCodingAgentLongTermMemory: resolve(__dirname, "ai-coding-agent-long-term-memory.html"),
+        omnirouteDesktopClient: resolve(__dirname, "omniroute-desktop-client.html")
       }
     }
   }

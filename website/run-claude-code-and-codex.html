@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run Claude Code and Codex in one app | Muster Agent</title>
+  <meta name="description" content="Use Claude Code, Codex, OpenCode and local models side by side in one free, open-source desktop app, with one memory, one diff view and one terminal." />
+  <link rel="canonical" href="https://themuster.dev/run-claude-code-and-codex.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Run Claude Code and Codex in one app | Muster Agent" />
+  <meta property="og:description" content="Use Claude Code, Codex, OpenCode and local models side by side in one free, open-source desktop app, with one memory, one diff view and one terminal." />
+  <meta property="og:url" content="https://themuster.dev/run-claude-code-and-codex.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Run Claude Code and Codex in one app | Muster Agent" />
+  <meta name="twitter:description" content="Use Claude Code, Codex, OpenCode and local models side by side in one free, open-source desktop app, with one memory, one diff view and one terminal." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="Claude Code and Codex in one app, Claude Code GUI, Claude Code desktop app, Codex GUI, multi-agent coding app, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Run Claude Code and Codex in one app",
+  "description": "Use Claude Code, Codex, OpenCode and local models side by side in one free, open-source desktop app, with one memory, one diff view and one terminal.",
+  "url": "https://themuster.dev/run-claude-code-and-codex.html",
+  "mainEntityOfPage": "https://themuster.dev/run-claude-code-and-codex.html",
+  "image": "https://themuster.dev/assets/brand/muster-og.png",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">claude code · codex</p>
+        <h1 class="hero-step">Run Claude Code and Codex in one desktop app</h1>
+        <p class="sub hero-step">Muster Agent is a free, open-source desktop app that runs Claude Code, Codex, OpenCode, OpenAI-compatible gateways and local models side by side. Pick the engine per chat, keep one memory, and review every edit in the same diff view.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The problem</p>
+      <h2 class="reveal-child">Two good agents, two separate terminals.</h2>
+      <div class="prose reveal-child">
+        <p>Claude Code and Codex are both strong, and they are good at different things. Using both usually means two terminals, two histories, two ways of reviewing changes and no shared memory of what either one learned about your project. Muster Agent puts them in one window so the choice of engine becomes a per-chat setting rather than a different workflow.</p>
+        <p>Nothing is replaced. Muster Agent finds the Claude Code and Codex installs and sign-ins already on your computer and runs them as they are, so your subscriptions, configuration and habits carry over. It is free and MIT-licensed, and independent of both vendors.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-model-picker.jpg" alt="The Muster Agent model picker with providers down the side and models showing context size, image support and reasoning level" width="1600" height="1000" fetchpriority="high" /><figcaption>The model picker: every ready provider’s models with context size, image support and reasoning level.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">How it works</p>
+      <h2 class="reveal-child">Detect what you have, then choose per chat.</h2>
+      <div class="prose reveal-child">
+        <h3>Providers are found for you</h3>
+        <p>On first launch Muster Agent detects subscription sign-ins from the command-line tools on your computer, OpenAI-compatible gateways in your local agent configuration, API keys in your environment (OpenAI, Anthropic, OpenRouter, Groq, Mistral, DeepSeek, Gemini and others), and local model servers such as Ollama and LM Studio. Anything else can be added as a custom OpenAI-compatible endpoint. Models come from each provider’s own model list, not a hard-coded catalogue.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers.jpg" alt="Muster Agent provider setup showing detected sign-ins, gateways, API keys and local model servers" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Accounts and providers, found on first launch and ready for chats.</figcaption></figure>
+        <h3>Switch engines inside a project</h3>
+        <p>Start one chat on Claude Code and another on Codex in the same folder. The model picker shows context size, image support and reasoning level for each option, and you change it per chat. A chat is never moved to another provider or account on its own; if a model cannot run commands, the composer says so and offers a one-click switch.</p>
+        <h3>Parallel work that does not collide</h3>
+        <p>Several chats can share a checkout. Muster Agent detects overlapping edits and can run a chat in a new git worktree so parallel tasks stay apart. A menu in the composer chooses where each chat runs: this computer, a sandbox, or a worktree.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-environment-menu.jpg" alt="The Muster Agent menu for choosing where a chat runs: this computer, a sandbox, or a new worktree" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Where a chat runs: this computer, a sandbox, or a new worktree.</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">What is shared</p>
+      <h2 class="reveal-child">One workbench around whichever engine you pick.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>One review flow.</strong> Edits from any engine show as inline diffs you can keep or undo per hunk or per file.</li>
+          <li><strong>One memory.</strong> Personal and per-folder notes are recalled before each turn whichever model answers. See <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a>.</li>
+          <li><strong>One terminal and browser.</strong> Shells, a preview browser and git history sit next to the conversation.</li>
+          <li><strong>One search.</strong> Press the search shortcut to find chats, message text and files across engines.</li>
+          <li><strong>One set of skills and MCP servers.</strong> Local skills, plugins and MCP servers are managed in a single settings screen.</li>
+        </ul>
+        <h3>Local models too</h3>
+        <p>Because gateways and local servers are first-class, you can run a cheaper or private model for routine edits and reserve a frontier model for hard problems. See the <a href="/omniroute-desktop-client.html">OmniRoute desktop client</a> page for routing many providers through one endpoint.</p>
+        <h3>Choosing between them</h3>
+        <p>There is no single winner, which is the point of having both in reach. A practical habit is to try the same small task on each engine in separate chats, compare the diffs side by side, and keep the one whose change you would rather review. Because every edit lands in the same diff view with the same Keep and Undo controls, the comparison costs little. Over a few weeks you learn which engine suits refactors, which suits debugging, and which suits writing tests, and you can set that per chat instead of per tool.</p>
+        <h3>What it costs</h3>
+        <p>Muster Agent itself is free. You pay your model providers exactly as you do today, through your existing subscriptions or API keys. There is no markup and no account with us.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/open-source-codex-desktop-app.html">Codex desktop app →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+  </footer>
+</body>
+</html>

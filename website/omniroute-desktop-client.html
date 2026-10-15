@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniRoute desktop client for coding agents | Muster Agent</title>
+  <meta name="description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
+  <link rel="canonical" href="https://themuster.dev/omniroute-desktop-client.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="OmniRoute desktop client for coding agents | Muster Agent" />
+  <meta property="og:description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
+  <meta property="og:url" content="https://themuster.dev/omniroute-desktop-client.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="OmniRoute desktop client for coding agents | Muster Agent" />
+  <meta name="twitter:description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="OmniRoute desktop client, OmniRoute coding agent, OpenAI-compatible router desktop app, LLM gateway desktop client, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "OmniRoute desktop client for coding agents",
+  "description": "Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands.",
+  "url": "https://themuster.dev/omniroute-desktop-client.html",
+  "mainEntityOfPage": "https://themuster.dev/omniroute-desktop-client.html",
+  "image": "https://themuster.dev/assets/brand/muster-og.png",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">omniroute · routers</p>
+        <h1 class="hero-step">A desktop client for OmniRoute and other OpenAI-compatible routers</h1>
+        <p class="sub hero-step">OmniRoute puts many model providers behind one OpenAI-compatible endpoint. Muster Agent is a free, open-source desktop app that connects to it as a first-class provider, lists its models and routes, and lets chats on those routes read files, edit code and run commands.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The setup</p>
+      <h2 class="reveal-child">One endpoint in front, any model behind it.</h2>
+      <div class="prose reveal-child">
+        <p>A router such as OmniRoute lets you keep one address and one key while it decides which upstream provider answers, and it can publish named combos or automatic routes on top of individual models. That is convenient for coding agents, provided the client understands routers rather than treating them as a single model. Muster Agent does. It is independent of OmniRoute and works with any OpenAI-compatible router, gateway, Ollama or LM Studio.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers.jpg" alt="Muster Agent provider setup showing detected sign-ins, gateways, API keys and local model servers" width="1600" height="1000" fetchpriority="high" /><figcaption>Accounts and providers: gateways, API keys and local model servers found on first launch.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Connecting</p>
+      <h2 class="reveal-child">Add OmniRoute in a few clicks.</h2>
+      <div class="prose reveal-child">
+        <p>In Settings, open Accounts and providers, then Add provider. The screen shows one card per provider with a status chip. Ollama, LM Studio, OmniRoute and Custom endpoint start with their default address and an optional key. Choose OmniRoute, confirm the address, press Test connection, then Save. The name, base URL and key variable are under Advanced.</p>
+        <p>If your router is already configured in a local agent command-line tool, Muster Agent usually detects it on first launch and you do not need to add anything.</p>
+        <h3>Models and routes, straight from the router</h3>
+        <p>Muster Agent reads models from the router’s own model list instead of a hard-coded catalogue, so new models and combos appear without an app update. Routers that publish their own agents and automatic routes are shown as such. Sending waits for a router’s model list rather than reporting the model as unavailable. The last good list is remembered across restarts, failed listings retry on their own, and errors say exactly what is wrong.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers-local.jpg" alt="Muster Agent showing local model servers Ollama and LM Studio next to API keys from the environment" width="1600" height="799" loading="lazy" decoding="async" /><figcaption>Local model servers next to keys from your environment. A router is one more entry in the same list.</figcaption></figure>
+        <h3>The API key is actually sent</h3>
+        <p>The key you paste is attached to every chat request. An earlier release sent chats without it and failed with HTTP 401; that was fixed, and it is covered by tests.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Agent tools</p>
+      <h2 class="reveal-child">Routes can do real work, within the access you grant.</h2>
+      <div class="prose reveal-child">
+        <p>A chat on a local OpenAI-compatible route is not limited to conversation. It offers the tools the chat’s access level allows: read and list files, edit files inside the project folder, and, with Full access, run commands. These tools never follow a link out of the folder, end everything a command started when you press Stop, and run with a scrubbed environment so no keys or tokens leak into the command.</p>
+        <p>If a route refuses tools, the chat answers as plain chat and says so. A chat on a model that cannot run commands shows a notice, “This model can’t run commands or edit files”, with a one-click switch to a route that can, and the earlier conversation is carried over. A chat is never moved to another provider on its own.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-model-picker.jpg" alt="The Muster Agent model picker listing each ready provider’s models with context size, image support and reasoning level" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>The model picker lists each ready provider’s models. Switch per chat.</figcaption></figure>
+        <h3>Why use a router with a desktop client</h3>
+        <ul>
+          <li><strong>One key to rotate.</strong> Change upstream providers behind the router without touching the app.</li>
+          <li><strong>Per-chat choice.</strong> Use a cheap route for routine edits and a stronger one for hard problems.</li>
+          <li><strong>Same workbench.</strong> Live diffs, terminal, memory and sandboxes work the same on a router route as on any other engine.</li>
+        </ul>
+        <p>Muster Agent also runs Claude Code and Codex directly; see <a href="/run-claude-code-and-codex.html">Run Claude Code and Codex in one app</a>. Memory carries across all of them: <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="https://github.com/musterhq/muster-code" rel="noopener">Source on GitHub →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+  </footer>
+</body>
+</html>

@@ -3,11 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Muster Docs — Open Source AI Agent Framework</title>
-  <meta name="description" content="Documentation for Muster, an open source AI agent framework: getting started, multi-provider routing, scoped memory, the token ledger, eval-gated learning, MCP, capability packs, and ERPNext support." />
+  <title>Muster Agent docs: install, CLI and messaging setup</title>
+  <meta name="description" content="Set up Muster Agent and its open-source agent harness: install the desktop app or CLI, connect Slack or Telegram, add providers, memory and MCP." />
+  <link rel="canonical" href="https://themuster.dev/docs.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Muster Agent docs: install, CLI and messaging setup" />
+  <meta property="og:description" content="Set up Muster Agent and its open-source agent harness: install the desktop app or CLI, connect Slack or Telegram, add providers, memory and MCP." />
+  <meta property="og:url" content="https://themuster.dev/docs.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Muster Agent docs: install, CLI and messaging setup" />
+  <meta name="twitter:description" content="Set up Muster Agent and its open-source agent harness: install the desktop app or CLI, connect Slack or Telegram, add providers, memory and MCP." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta name="keywords" content="open source AI agent framework, self-hosted AI agent, AI agent docs, MCP agent, scoped memory, token ledger, ERPNext AI agent" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
-  <link rel="canonical" href="https://themuster.dev/docs.html" />
   <meta name="theme-color" content="#08080a" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <!-- Set theme before first paint to avoid a flash (mirrors src/theme.ts). -->
@@ -21,27 +39,15 @@
       } catch (e) {}
     })();
   </script>
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Muster Docs — Open Source AI Agent Framework" />
-  <meta property="og:description" content="Documentation for scoped memory, token visibility, eval-gated learning, MCP capabilities, browser automation, and Frappe / ERPNext workflows." />
-  <meta property="og:url" content="https://themuster.dev/docs.html" />
-  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Muster Docs — Open Source AI Agent Framework" />
-  <meta name="twitter:description" content="Docs for scoped memory, token ledger, eval-gated learning, MCP, capability packs, browser automation, and Frappe / ERPNext workflows." />
-  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-
-
-
   <script type="module" src="/src/docs.ts"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body class="portal-body docs-body">
   <div class="portal-app">
     <header class="portal-top">
-      <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a>
+      <a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
       <nav class="portal-nav" aria-label="Site">
         <a href="/">Home</a>
         <a href="/frappe-ai.html">Frappe AI</a>
@@ -306,7 +312,14 @@ Design rule:
 
         <footer class="docs-foot mono dim">
           <p>muster_ — MIT · <a href="/">home</a> · <a href="/portal.html">portal preview</a> · <a href="https://github.com/musterhq/muster" rel="noopener">github</a></p>
-        </footer>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+    </nav>
+  </footer>
       </main>
     </div>
   </div>
