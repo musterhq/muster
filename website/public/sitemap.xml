@@ -1,132 +1,226 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Only indexable pages belong here. portal.html and onboarding.html were listed
-  in an earlier revision while both carry <meta name="robots" content="noindex">,
-  which asks Google to index and not-index the same URL; they are removed.
-  spatial.html is noindex,nofollow and likewise excluded. roadmap.html carries a
-  self-canonical but is absent from vite.config.ts inputs, so it never reaches
-  dist — src/roadmap.ts imports ./roadmap.css, which does not exist in the repo.
-  Until that is fixed the URL 404s and must not be advertised here.
--->
+<!-- Public, indexable pages only. portal, onboarding and spatial are noindex prototypes; roadmap.html is not built (see vite.config.ts). tests/seo-contract.test.mjs keeps this in step with the build inputs. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://themuster.dev/</loc>
-    <lastmod>2026-09-29</lastmod>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://themuster.dev/download.html</loc>
-    <lastmod>2026-09-29</lastmod>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.98</priority>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/agent-harness.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/ai-coding-agent-long-term-memory.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/browser-automation-agent.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/docs.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/frappe-ai.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/google-chat-ai-agent.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/guide-agent-harness.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/guide-frappe-ai.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/guide-governed-memory.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/guide-mcp-agent-harness.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/guides.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://themuster.dev/live-inline-diff.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/muster-vs-openclaw.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
+    <loc>https://themuster.dev/mcp-agent-harness.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://themuster.dev/muster-vs-hermes-agent.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/muster-vs-openclaw.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://themuster.dev/muster-vs-qm.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/omniroute-desktop-client.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/desktop-app-for-codex.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/sandboxed-coding-agent.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/what-is-an-ade.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/overview.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/paperclip-local-tasks.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://themuster.dev/resume-codex-sessions.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/agent-harness.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
-    <loc>https://themuster.dev/frappe-ai.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
-    <loc>https://themuster.dev/guide-governed-memory.html</loc>
-    <lastmod>2026-08-27</lastmod>
+    <loc>https://themuster.dev/run-claude-code-and-codex.html</loc>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://themuster.dev/docs.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://themuster.dev/guides.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://themuster.dev/mcp-agent-harness.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.85</priority>
   </url>
   <url>
     <loc>https://themuster.dev/slack-ai-agent.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://themuster.dev/telegram-ai-agent.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/blog/</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/google-chat-ai-agent.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://themuster.dev/blog/prompting-coding-agents-well.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/browser-automation-agent.html</loc>
-    <lastmod>2026-08-27</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://themuster.dev/blog/getting-agents-to-use-tools-well.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/guide-agent-harness.html</loc>
-    <lastmod>2026-07-08</lastmod>
+    <loc>https://themuster.dev/blog/sandboxing-coding-agents-with-muster.html</loc>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
+    <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/guide-mcp-agent-harness.html</loc>
-    <lastmod>2026-07-08</lastmod>
+    <loc>https://themuster.dev/blog/muster-server-agents-on-your-own-server.html</loc>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
+    <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://themuster.dev/guide-frappe-ai.html</loc>
-    <lastmod>2026-07-08</lastmod>
+    <loc>https://themuster.dev/blog/use-any-model-through-routers.html</loc>
+    <lastmod>2026-10-15</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/blog/paperclip-tasks-locally.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/blog/reviewing-agent-changes-safely.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://themuster.dev/blog/parallel-agents-and-sub-agents.html</loc>
+    <lastmod>2026-10-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

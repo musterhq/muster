@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting coding agents to use tools well | Muster Agent</title>
+  <meta name="description" content="How to get coding agents to use the terminal, the browser and MCP servers well, and how to choose permissions so that capable does not mean careless." />
+  <link rel="canonical" href="https://themuster.dev/blog/getting-agents-to-use-tools-well.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Getting coding agents to use tools well | Muster Agent" />
+  <meta property="og:description" content="How to get coding agents to use the terminal, the browser and MCP servers well, and how to choose permissions so that capable does not mean careless." />
+  <meta property="og:url" content="https://themuster.dev/blog/getting-agents-to-use-tools-well.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Getting coding agents to use tools well | Muster Agent" />
+  <meta name="twitter:description" content="How to get coding agents to use the terminal, the browser and MCP servers well, and how to choose permissions so that capable does not mean careless." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Getting coding agents to use tools well",
+  "description": "How to get coding agents to use the terminal, the browser and MCP servers well, and how to choose permissions so that capable does not mean careless.",
+  "url": "https://themuster.dev/blog/getting-agents-to-use-tools-well.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/getting-agents-to-use-tools-well.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-terminal.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Getting coding agents to use tools well: terminal, browser, MCP and permissions</h1>
+        <p class="sub hero-step">Tools turn a coding agent from a chat partner into a worker. How well it uses them depends on what you expose, what you let it do without asking, and how you check the outcome. Practical guidance first, then how Muster Agent handles it.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The principle</p>
+      <h2 class="reveal-child">Give tools that match the job, and check the evidence they leave.</h2>
+      <div class="prose reveal-child">
+
+        <p>A coding agent without tools can only guess. With a terminal it can run your tests, with a browser it can look at your app, and with connectors to other systems it can read an issue or query a database. Each tool also widens what can go wrong, so the aim is not “more tools” but the right few, with clear limits and visible results.</p>
+        <p>Three habits cover most of it: expose only what the task needs, decide in advance which actions need your approval, and prefer tools whose output you can read afterwards.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">The terminal</p>
+      <h2 class="reveal-child">Let it run things, and teach it which commands matter.</h2>
+      <div class="prose reveal-child">
+
+        <p>The terminal is the most useful tool you can give an agent, because it closes the loop: edit, run the tests, read the failure, fix. The agent is only as good as the commands it knows about, so tell it the three that matter: how to build, how to run the tests, how to start the app. If your test suite is slow, give it the command for a single file or a single test so it does not run everything on each iteration.</p>
+        <ul>
+          <li><strong>Prefer fast, focused checks.</strong> A one-second unit test teaches the agent more per minute than a ten-minute suite.</li>
+          <li><strong>Watch for destructive commands.</strong> Anything that deletes, force-pushes, drops a table or touches production should never run unattended. Decide this through permissions, not through hoping the agent is careful.</li>
+          <li><strong>Keep long-running processes separate.</strong> A dev server should live in its own terminal tab, not block the agent’s command.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The browser</p>
+      <h2 class="reveal-child">For anything a user sees, look at it.</h2>
+      <div class="prose reveal-child">
+
+        <p>Code that passes tests can still render wrongly. For interface work, ask the agent to open the page, look at the result and check the console for errors. A screenshot it can read, or a console message it can quote, is far better evidence than a statement that the change “should work”. Give it the URL and the path to exercise, and tell it what correct looks like.</p>
+        <p>Treat the browser as a read-heavy tool by default. Previewing and inspecting are safe. Submitting forms against real accounts, or clicking through flows that send email or move money, deserve an explicit decision from you.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">MCP servers</p>
+      <h2 class="reveal-child">Connect systems deliberately.</h2>
+      <div class="prose reveal-child">
+
+        <p>The Model Context Protocol lets an agent call tools exposed by other systems: an issue tracker, a documentation index, a database, a design tool. Each server you add enlarges what the agent can read and change, and adds descriptions to its context that cost attention. A small, well-chosen set works better than a long list.</p>
+        <ul>
+          <li><strong>Start read-only.</strong> Connect a server in a mode that can fetch information before you let it write.</li>
+          <li><strong>Scope credentials.</strong> Give an MCP server the narrowest token that does the job, not your personal admin key.</li>
+          <li><strong>Remove what you do not use.</strong> Unused tools still sit in context and can be called by mistake.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Permissions</p>
+      <h2 class="reveal-child">Choose how much it may do before it asks.</h2>
+      <div class="prose reveal-child">
+
+        <p>The permission model is the lever that lets you trust a tool-using agent. The useful question is not “is the agent safe” but “what is the worst thing it can do in this mode, and can I live with that?” A read-only mode is right for exploring an unfamiliar repository. A mode that can edit within the project folder suits normal work. Unrestricted access is for situations you have already contained, such as a disposable environment.</p>
+        <p>Combine permissions with isolation rather than relying on either alone. A narrow permission mode in a throwaway worktree is safer than broad permissions on your main checkout.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">How Muster Agent handles it</p>
+      <h2 class="reveal-child">Tools next to the conversation, with limits you can see.</h2>
+      <div class="prose reveal-child">
+
+        <p>Muster Agent is an open-source desktop app that works with several coding agents. Its tool surface is designed around the principles above.</p>
+        <ul>
+          <li><strong>A real terminal.</strong> Shells sit under the chat, one tab per shell, so the dev server and the test run can run side by side. Scrollback is capped at 5,000 lines and each command’s output is kept within a bounded buffer. Your own terminals are separate from the agent’s own shell, and the app says so.</li>
+          <li><strong>A built-in browser.</strong> It previews your app, reads its console and lets you pick elements to hand to the agent.</li>
+          <li><strong>Skills, plugins and MCP servers.</strong> They have their own tabs in settings, and local skills can be switched on or off by scope.</li>
+          <li><strong>Three permission modes per chat.</strong> Read-only, workspace and full access. For engines that run as command-line tools, the mode is translated into the tool’s own flags. Linked files outside the folder cannot be read without full access, and secrets are removed from the environment of the commands the agent runs and from stored commands and diffs.</li>
+          <li><strong>Where the chat runs.</strong> A menu chooses this computer, a sandbox or a new worktree, so isolation is a choice you make per chat.</li>
+        </ul>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-terminal.jpg" alt="The integrated terminal panel under a Muster Agent chat with one tab per shell" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Real shells under the chat, one tab per shell.</figcaption></figure>
+        <p>In a project organisation, an agent’s page can also hold tool rules that allow, ask or deny by command, file or connector, which is a way to write your approval policy down once rather than answer the same question repeatedly. For the containment side in more depth, see <a href="/sandboxed-coding-agent.html">sandboxed coding agents</a>.</p>
+        <h3>A starting configuration</h3>
+        <p>For a new repository: read-only first, to let the agent explore and propose a plan. Then workspace mode in a worktree for the actual change, with the terminal available and the browser for visual checks. Add MCP servers one at a time as you find a real need. Review the diff before you keep anything.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

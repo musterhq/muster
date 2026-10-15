@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How to prompt coding agents well | Muster Agent</title>
+  <meta name="description" content="How to prompt coding agents: state the goal, give the right context, set constraints, define acceptance checks and leave out what does not help." />
+  <link rel="canonical" href="https://themuster.dev/blog/prompting-coding-agents-well.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="How to prompt coding agents well | Muster Agent" />
+  <meta property="og:description" content="How to prompt coding agents: state the goal, give the right context, set constraints, define acceptance checks and leave out what does not help." />
+  <meta property="og:url" content="https://themuster.dev/blog/prompting-coding-agents-well.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="How to prompt coding agents well | Muster Agent" />
+  <meta name="twitter:description" content="How to prompt coding agents: state the goal, give the right context, set constraints, define acceptance checks and leave out what does not help." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "How to prompt coding agents well",
+  "description": "How to prompt coding agents: state the goal, give the right context, set constraints, define acceptance checks and leave out what does not help.",
+  "url": "https://themuster.dev/blog/prompting-coding-agents-well.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/prompting-coding-agents-well.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-inline-diff.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">How to prompt coding agents well</h1>
+        <p class="sub hero-step">A coding agent does best with a clear goal, the right context, firm constraints and a way to check its own work. Here is how to write that, what to leave out, and how Muster Agent supports each step.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The short version</p>
+      <h2 class="reveal-child">Describe the outcome, not the keystrokes.</h2>
+      <div class="prose reveal-child">
+
+        <p>The most common mistake with a coding agent is to write a prompt like a to-do list of edits: open this file, change that function, rename this variable. An agent can do that, but you could have done it faster yourself. The leverage comes from describing the result you want and letting the agent work out the steps, then checking the result against something concrete.</p>
+        <p>A good prompt has five parts, and they fit in a short message: the goal, the context, the constraints, the acceptance checks, and a note on what not to touch. You do not need all five every time. For a one-line fix, the goal is enough. For anything that takes more than a few minutes of agent time, the other four are where the quality comes from.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">1. Goal</p>
+      <h2 class="reveal-child">Say what done looks like.</h2>
+      <div class="prose reveal-child">
+
+        <p>State the outcome in terms a reviewer could verify. “Make the export faster” is a wish. “The CSV export of 50,000 rows finishes in under five seconds and the output is byte-identical to before” is a goal. If you cannot say what done looks like, the agent will guess, and you will find out what it guessed when you read the diff.</p>
+        <p>Include the why when it changes the design. “We need this to work offline” or “this runs inside a request handler, so it must not block” tells the agent which trade-offs matter without you listing them.</p>
+        <h3>Prefer one goal per task</h3>
+        <p>Agents handle a focused task far better than a bundle. If you have three unrelated changes, run three tasks. The diffs stay small, each can be kept or undone on its own, and a mistake in one does not contaminate the others.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">2. Context</p>
+      <h2 class="reveal-child">Give what the agent cannot discover, skip what it can.</h2>
+      <div class="prose reveal-child">
+
+        <p>Agents can read your repository, search it and run your tests, so you do not need to paste code they can open. What they cannot discover is intent and history: why a module is shaped the way it is, which approach you already tried, which file is the real entry point, which command runs the relevant tests.</p>
+        <ul>
+          <li><strong>Point at the starting place.</strong> Name the file or directory to begin with. It saves a long search and prevents the agent from solving the problem in the wrong layer.</li>
+          <li><strong>Share the failure.</strong> For a bug, include the exact error, the command that triggers it and what you expected. A stack trace is worth more than a paragraph of description.</li>
+          <li><strong>Say what you already ruled out.</strong> “It is not the cache; I disabled it and the bug remains” saves a wasted hour.</li>
+          <li><strong>Name conventions that are not obvious.</strong> If your team writes tests a certain way or avoids a certain library, say so once. Better, write it down where the agent will find it every time.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">3. Constraints</p>
+      <h2 class="reveal-child">Put the guardrails in the prompt.</h2>
+      <div class="prose reveal-child">
+
+        <p>Constraints are the difference between a change you can merge and a change you have to untangle. Useful ones are concrete: which files may change, which public interfaces must stay the same, which dependencies are off limits, what style to follow, whether to add tests. “Do not change the public API” and “no new dependencies” are short and enforce a lot.</p>
+        <p>Constraints about process matter as well. If you want the agent to propose a plan before editing, ask for it. If you want it to stop and ask when it hits ambiguity rather than choosing silently, say that. A sentence like “if something is unclear, ask before changing code” turns a silent wrong guess into a question you can answer in seconds.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">4. Acceptance checks</p>
+      <h2 class="reveal-child">Give the agent a way to know it is finished.</h2>
+      <div class="prose reveal-child">
+
+        <p>An agent that can check its own work will usually fix its own mistakes. Tell it how: the test command to run, the linter to satisfy, the behaviour to confirm in the browser. “Run the unit tests for the billing module and make sure they pass, and add a test that fails without your change” gives the agent a loop to iterate in and gives you evidence to read.</p>
+        <p>If there are no tests, ask for one first. A failing test that reproduces the bug is the best specification you can give, and it stays in the repository afterwards. For interface work, ask the agent to run the app and look at the result rather than reporting success from the code alone.</p>
+        <h3>Ask for evidence, not reassurance</h3>
+        <p>“Done” is not evidence. Ask the agent to summarise what it changed and to show the command output that supports it. That is also what makes review fast: you read a short summary, check the diff, and look at the test result.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">5. What to leave out</p>
+      <h2 class="reveal-child">Less noise, better results.</h2>
+      <div class="prose reveal-child">
+
+        <p>Long prompts are not better prompts. Leave out anything the agent can read from the code, instructions that contradict each other, vague adjectives like “clean” and “robust”, and background that does not affect the decision. Do not paste whole files, and avoid pasting secrets: an agent does not need a live key to write code that reads one from the environment.</p>
+        <p>Also leave out step-by-step micromanagement unless you have a specific reason. If you dictate the steps, you inherit responsibility for their correctness. If you state the goal and constraints, the agent carries more of that burden, and you can judge it by the result.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Where Muster Agent helps</p>
+      <h2 class="reveal-child">Support for the parts that repeat.</h2>
+      <div class="prose reveal-child">
+
+        <p>Muster Agent is an open-source desktop app that works with several coding agents, so the advice above applies whichever you choose. A few features make the repeated parts cheaper.</p>
+        <ul>
+          <li><strong>Memory for context you repeat.</strong> Notes live in a personal scope or with a folder or project, such as the command that runs the tests or a naming convention. A chip in the composer shows which notes the next turn will recall, and you can remove any of them for that chat. See <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a>.</li>
+          <li><strong>Tasks that carry a goal.</strong> Projects hold tasks with owners, priorities and dependencies. For a task checked out from a Paperclip server, the task’s goal and acceptance criteria are treated as what you want done.</li>
+          <li><strong>Reviewable results.</strong> Every edit appears as a diff you can keep or undo per hunk or per file, and each agent turn can be opened up to show the files read, the edits and the test run with its output and exit code.</li>
+          <li><strong>Skills.</strong> Local skills, switched on or off by scope, are a place to keep instructions you would otherwise retype.</li>
+        </ul>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-inline-diff.jpg" alt="Muster Agent chat with inline diffs for each file the agent edited" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Inline diffs in the chat. Keep or Undo one change, or the whole file.</figcaption></figure>
+        <p>A last practical tip: when a result is not what you wanted, resist the urge to pile corrections into one long follow-up. Undo the change, tighten the goal or add the missing constraint, and run it again. A clean second attempt from a better prompt is usually faster than a negotiation.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

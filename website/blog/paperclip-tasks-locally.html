@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doing Paperclip tasks locally | Muster Agent</title>
+  <meta name="description" content="Check out a Paperclip task, work in a git worktree and let the work hand itself back, with what Muster Agent actually does." />
+  <link rel="canonical" href="https://themuster.dev/blog/paperclip-tasks-locally.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Doing Paperclip tasks locally | Muster Agent" />
+  <meta property="og:description" content="Check out a Paperclip task, work in a git worktree and let the work hand itself back, with what Muster Agent actually does." />
+  <meta property="og:url" content="https://themuster.dev/blog/paperclip-tasks-locally.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Doing Paperclip tasks locally | Muster Agent" />
+  <meta name="twitter:description" content="Check out a Paperclip task, work in a git worktree and let the work hand itself back, with what Muster Agent actually does." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Doing Paperclip tasks locally with Muster Agent",
+  "description": "Check out a Paperclip task, work in a git worktree and let the work hand itself back, with what Muster Agent actually does.",
+  "url": "https://themuster.dev/blog/paperclip-tasks-locally.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/paperclip-tasks-locally.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-git-changes.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Paperclip tasks, locally: check out, worktree and automatic hand-back</h1>
+        <p class="sub hero-step">Planning on a server and doing the work on your own machine is a good split, if the hand-off is clean. This post covers the workflow, what to watch for, and how Muster Agent implements check-out, worktrees and hand-back.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Why work locally</p>
+      <h2 class="reveal-child">Some work needs your machine.</h2>
+      <div class="prose reveal-child">
+
+        <p>An orchestration server is good at planning: who owns what, what blocks what, what has been approved and what it costs. It is less good at the work that depends on your own repository, your credentials, your running dev server and your judgement while you read the diff. A clean workflow lets the server hold the plan while you do the work where it belongs.</p>
+        <p>The failure modes are familiar: two people unknowingly working on the same task, work that finishes but is never reported, or a task that changed under you while you were heads-down. A good local workflow handles those three explicitly.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">The workflow</p>
+      <h2 class="reveal-child">Four steps, whichever tools you use.</h2>
+      <div class="prose reveal-child">
+
+        <ol>
+          <li><strong>Claim it visibly.</strong> Make it obvious to everyone, on the server, that the task is yours and on which machine.</li>
+          <li><strong>Isolate the work.</strong> Do it on a branch in its own working directory, so your other work and the main checkout stay clean.</li>
+          <li><strong>Keep a record.</strong> Capture what changed, what was tested and what it cost, in the task itself.</li>
+          <li><strong>Hand back deliberately.</strong> Report the result and release the task, after confirming the task is still yours.</li>
+        </ol>
+        <p>Two cautions. Treat task text from a server as untrusted input, because it can contain instructions or links you did not write. And prefer work that is checked by tests, so that “done” means something.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">With Muster Agent</p>
+      <h2 class="reveal-child">Connect, check out, work.</h2>
+      <div class="prose reveal-child">
+
+        <h3>Connect</h3>
+        <p>Open Settings, then Integrations, then Muster Server, type the server address of your Paperclip organisation and press Connect. Projects appear under their organisation in the sidebar, tasks open as threads, and the Roster and Inbox are there. Paperclip and your own projects stay apart: an import never writes into a project you made in Muster Agent.</p>
+        <h3>Check out</h3>
+        <p>Press Work locally on a task. Muster Agent assigns it to you if needed, sets it In progress, posts a check-out comment naming your computer, copies the organisation’s agents, instructions, skills and review policy read-only, makes a worktree and a branch from the project’s dev branch inside your own checkout, and opens a local chat with the task’s context loaded. The task’s goal and acceptance criteria are treated as what you want done. Checking the same task out again reuses the worktree and chat instead of creating a copy, and any folder, not only a git repository, can be linked to a project: a plain folder is used as it is, and the files are noted at check-out.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-git-changes.jpg" alt="Muster Agent git tab listing uncommitted files colour-coded by status with the chat that changed each one" width="1600" height="1000" fetchpriority="high" /><figcaption>The git tab: uncommitted files by status, with the chat that changed each one.</figcaption></figure>
+        <h3>Work</h3>
+        <p>Use any engine and model you have: you can work as the server’s agent, with its model mapped to the closest one available locally and a note when it differs, or with your own provider. Everything else in the app, live diffs, terminal, memory, sandboxes, works as usual. Server text is passed to the local agent marked as untrusted data.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Hand-back</p>
+      <h2 class="reveal-child">Automatic, but careful.</h2>
+      <div class="prose reveal-child">
+
+        <p>When the work is finished, Muster Agent hands the task back on its own after a 60 second countdown, with Hand back now and Keep working buttons. The countdown runs in the app’s runtime, so it survives a window reload. Safeguards keep it from firing early:</p>
+        <ul>
+          <li>If the agent’s last message ends with a question or an offer, nothing is committed or handed back until you answer or say you are done.</li>
+          <li>Saying “done” or “hand it back” hands the task back directly.</li>
+          <li>If no tests ran, the task offers Run tests and hand back, or Hand back anyway.</li>
+          <li>Before anything is sent, the task is checked on the server. If it was cancelled, closed or reassigned while you worked, nothing is posted, the check-out on this computer ends and your worktree is kept.</li>
+        </ul>
+        <p>What gets posted is built from the agent’s own replies with secrets removed. The hand-back adds a local work log with files, tests, tokens, model and cost. Stale check-outs, idle for more than three days, show with Hand back and Release options so work does not stay quietly claimed.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Writing tasks that work locally</p>
+      <h2 class="reveal-child">Good hand-offs start with good tasks.</h2>
+      <div class="prose reveal-child">
+
+        <p>The quality of local work depends heavily on how the task was written. Tasks that work well have a goal stated as an outcome, acceptance criteria someone can verify, and a note on where to start. Tasks that work badly say “improve the importer” and leave everything else to guesswork.</p>
+        <ul>
+          <li><strong>Size them to a sitting.</strong> A task that fits in a few hours produces a diff you can review and a hand-back that means something. Break larger work into subtasks with explicit dependencies.</li>
+          <li><strong>Write acceptance criteria as checks.</strong> “The import of the sample file produces 120 rows and no warnings” can be run. “The importer is robust” cannot.</li>
+          <li><strong>List constraints.</strong> Interfaces that must not change, files to leave alone, whether tests are required.</li>
+          <li><strong>Say what is out of scope.</strong> It prevents the helpful extras that make review harder.</li>
+        </ul>
+        <p>Because the check-out treats the goal and acceptance criteria as what you want done, time spent here is repaid twice: the agent works toward the right thing, and the reviewer has a clear standard for the hand-back.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The optional plugin</p>
+      <h2 class="reveal-child">Make it visible inside Paperclip.</h2>
+      <div class="prose reveal-child">
+
+        <p>An optional plugin for Paperclip adds a Muster tab to each task showing who has it checked out, on which computer and since when, a Receipts tab that renders the work log as a table, a My work page, and one reminder comment after a quiet day. It never reassigns anything and makes no outbound network calls. It needs a self-hosted Paperclip and an instance admin to install, and it cannot be installed on cloud-managed instances that only allow plugins baked into the platform image. Check-out works without it.</p>
+        <p>For the full product walk-through see <a href="/paperclip-local-tasks.html">working locally on Paperclip tasks</a>, and for hosting the server side see <a href="/blog/muster-server-agents-on-your-own-server.html">Muster Server</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

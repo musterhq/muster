@@ -3,20 +3,63 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Frappe AI with DocType-Aware Retrieval — Muster Guide</title>
-  <meta name="description" content="Frappe AI and ERPNext agents need DocType, field, workflow, role, permission, report, and site context before they answer or act." />
-  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <title>Frappe AI with DocType-aware retrieval | Muster Agent</title>
+  <meta name="description" content="How to build ERPNext and Frappe agents that use site-specific structure: DocTypes, fields and permissions, with retrieval a harness can govern." />
   <link rel="canonical" href="https://themuster.dev/guide-frappe-ai.html" />
-  <meta property="og:type" content="article" /><meta property="og:site_name" content="Muster" /><meta property="og:title" content="Frappe AI with DocType-Aware Retrieval" /><meta property="og:description" content="Why Frappe / ERPNext agents need DocTypes, fields, workflows, roles, and permission context." /><meta property="og:url" content="https://themuster.dev/guide-frappe-ai.html" /><meta property="og:image" content="https://themuster.dev/assets/demo/frappe-context-card.png" />
-  <meta name="twitter:card" content="summary_large_image" /><meta name="twitter:image" content="https://themuster.dev/assets/demo/frappe-context-card.png" />
-
-
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Frappe AI with DocType-aware retrieval | Muster Agent" />
+  <meta property="og:description" content="How to build ERPNext and Frappe agents that use site-specific structure: DocTypes, fields and permissions, with retrieval a harness can govern." />
+  <meta property="og:url" content="https://themuster.dev/guide-frappe-ai.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Frappe AI with DocType-aware retrieval | Muster Agent" />
+  <meta name="twitter:description" content="How to build ERPNext and Frappe agents that use site-specific structure: DocTypes, fields and permissions, with retrieval a harness can govern." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
   <script type="module" src="/src/main.ts"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div><div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
-  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a><a href="/frappe-ai.html">Frappe AI</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a><a href="/frappe-ai.html">Frappe AI</a><a href="/docs.html">Docs</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
   <main>
     <section class="hero"><div class="hero-inner"><p class="kicker hero-step">guide · Frappe AI</p><h1 class="hero-step">Frappe AI with DocType-aware retrieval.</h1><p class="sub hero-step">ERPNext and Frappe agents need site-specific structure, not generic ERP knowledge.</p></div></section>
     <section class="band" data-reveal>
@@ -45,6 +88,19 @@
       <p class="proof-link reveal-child"><a href="/frappe-ai.html">See the Frappe AI page -></a> <a href="/docs.html#capability-packs">Read capability docs -></a></p>
     </section>
   </main>
-<footer class="site-footer"><a href="/">Muster</a><a href="/overview.html">Overview</a><a href="/docs.html">Docs</a><a href="/guides.html">Guides</a><a href="/download.html">Download</a><a href="https://github.com/musterhq/muster/blob/main/LICENSE" rel="noopener">MIT license</a></footer>
+<footer class="site-footer"><a href="/">Muster</a><a href="/overview.html">Overview</a><a href="/docs.html">Docs</a><a href="/guides.html">Guides</a><a href="/download.html">Download</a><a href="https://github.com/musterhq/muster/blob/main/LICENSE" rel="noopener">MIT license</a>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
 </body>
 </html>

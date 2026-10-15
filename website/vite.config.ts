@@ -1,9 +1,11 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
+import seoPlugin from "./seo/vite-seo-plugin.mjs";
 
 export default defineConfig({
   // The verified custom domain serves the website at the domain root.
   base: process.env.VITE_BASE_PATH ?? "/",
+  plugins: [seoPlugin()],
   build: {
     target: "es2022",
     rollupOptions: {
@@ -39,7 +41,24 @@ export default defineConfig({
         resumeCodexSessions: resolve(__dirname, "resume-codex-sessions.html"),
         onboarding: resolve(__dirname, "onboarding.html"),
         spatial: resolve(__dirname, "spatial.html"),
-        download: resolve(__dirname, "download.html")
+        download: resolve(__dirname, "download.html"),
+        openSourceCodexDesktopApp: resolve(__dirname, "desktop-app-for-codex.html"),
+        runClaudeCodeAndCodex: resolve(__dirname, "run-claude-code-and-codex.html"),
+        paperclipLocalTasks: resolve(__dirname, "paperclip-local-tasks.html"),
+        aiCodingAgentLongTermMemory: resolve(__dirname, "ai-coding-agent-long-term-memory.html"),
+        blogIndex: resolve(__dirname, "blog/index.html"),
+        blog0: resolve(__dirname, "blog/prompting-coding-agents-well.html"),
+        blog1: resolve(__dirname, "blog/getting-agents-to-use-tools-well.html"),
+        blog2: resolve(__dirname, "blog/sandboxing-coding-agents-with-muster.html"),
+        blog3: resolve(__dirname, "blog/muster-server-agents-on-your-own-server.html"),
+        blog4: resolve(__dirname, "blog/use-any-model-through-routers.html"),
+        blog5: resolve(__dirname, "blog/paperclip-tasks-locally.html"),
+        blog6: resolve(__dirname, "blog/reviewing-agent-changes-safely.html"),
+        blog7: resolve(__dirname, "blog/parallel-agents-and-sub-agents.html"),
+        whatIsAnAde: resolve(__dirname, "what-is-an-ade.html"),
+        sandboxedCodingAgent: resolve(__dirname, "sandboxed-coding-agent.html"),
+        legacyOpenSourceCodex: resolve(__dirname, "open-source-codex-desktop-app.html"),
+        omnirouteDesktopClient: resolve(__dirname, "omniroute-desktop-client.html")
       }
     }
   }

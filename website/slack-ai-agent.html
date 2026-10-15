@@ -3,27 +3,63 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Slack AI Agent Harness — Governed Slack Bots with Muster</title>
-  <meta name="description" content="Build a governed Slack AI agent with Muster's gateway adapter, pairing flow, Slack signing-secret verification, scoped memory, token ledger, and tool policy." />
-  <meta name="keywords" content="Slack AI agent, Slack bot AI, Slack agent harness, governed Slack bot, Slack automation, AI agent for Slack, Muster Slack" />
-  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <title>Slack AI agent with approvals | Muster Agent</title>
+  <meta name="description" content="Run a governed Slack AI agent with Muster Agent: Slack events map into scoped sessions, with pairing, approvals and an audit trail." />
   <link rel="canonical" href="https://themuster.dev/slack-ai-agent.html" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Muster" />
-  <meta property="og:title" content="Slack AI Agent Harness — Muster" />
-  <meta property="og:description" content="Govern Slack bots with pairing, signature checks, scoped memory, token ledger, and tool policy." />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Slack AI agent with approvals | Muster Agent" />
+  <meta property="og:description" content="Run a governed Slack AI agent with Muster Agent: Slack events map into scoped sessions, with pairing, approvals and an audit trail." />
   <meta property="og:url" content="https://themuster.dev/slack-ai-agent.html" />
   <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Slack AI agent with approvals | Muster Agent" />
+  <meta name="twitter:description" content="Run a governed Slack AI agent with Muster Agent: Slack events map into scoped sessions, with pairing, approvals and an audit trail." />
   <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
-
-
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="keywords" content="Slack AI agent, Slack bot AI, Slack agent harness, governed Slack bot, Slack automation, AI agent for Slack, Muster Slack" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
   <script type="module" src="/src/main.ts"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
 </head>
 <body>
   <div id="scroll-progress" aria-hidden="true"></div><div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
-  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/docs.html#gateway">Gateway docs</a><a href="/agent-harness.html">Agent harness</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Muster home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a><nav aria-label="Main"><a href="/">Home</a><a href="/docs.html#gateway">Gateway docs</a><a href="/agent-harness.html">Agent harness</a><a class="nav-cta" href="https://github.com/musterhq/muster" rel="noopener">GitHub</a></nav></header>
   <main>
     <section class="hero"><div class="hero-inner"><p class="kicker hero-step">Slack AI · gateway adapter</p><h1 class="hero-step">A Slack AI agent should not bypass governance.</h1><p class="sub hero-step">Muster's Slack adapter maps Slack events into the shared gateway envelope, verifies signing secrets when configured, requires sender pairing, and records memory and token receipts for every run.</p><div class="hero-actions hero-step"><a class="btn-cta" href="/docs.html#gateway">Set up the gateway</a><a class="btn-ghost" href="/mcp-agent-harness.html">Add MCP tools -></a></div></div></section>
     <section class="band" data-reveal><p class="sec-kicker reveal-child">Slack setup path</p><h2 class="reveal-child">Bot token, signing secret, pairing, then governed replies.</h2><pre class="mono codeblock reveal-child">$ muster gateway init
@@ -62,6 +98,18 @@ $ muster pairing approve &lt;code&gt;</pre><div class="cards five"><article clas
       <span class="footer-sep">&middot;</span>
       <a href="/muster-vs-openclaw.html">Comparisons</a>
     </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
   </footer>
 </body>
 </html>

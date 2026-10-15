@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Muster Server: agents on your own server | Muster Agent</title>
+  <meta name="description" content="What Muster Server runs, how to deploy it, how the desktop app connects, how teams use it, and what is not built yet. An honest guide for self-hosting." />
+  <link rel="canonical" href="https://themuster.dev/blog/muster-server-agents-on-your-own-server.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Muster Server: agents on your own server | Muster Agent" />
+  <meta property="og:description" content="What Muster Server runs, how to deploy it, how the desktop app connects, how teams use it, and what is not built yet. An honest guide for self-hosting." />
+  <meta property="og:url" content="https://themuster.dev/blog/muster-server-agents-on-your-own-server.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Muster Server: agents on your own server | Muster Agent" />
+  <meta name="twitter:description" content="What Muster Server runs, how to deploy it, how the desktop app connects, how teams use it, and what is not built yet. An honest guide for self-hosting." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Running agents on your own server with Muster Server",
+  "description": "What Muster Server runs, how to deploy it, how the desktop app connects, how teams use it, and what is not built yet. An honest guide for self-hosting.",
+  "url": "https://themuster.dev/blog/muster-server-agents-on-your-own-server.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/muster-server-agents-on-your-own-server.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-projects.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Running agents on your own server or in the cloud with Muster Server</h1>
+        <p class="sub hero-step">Muster Server runs the Muster Agent runtime on a machine your team shares, with browser access, roles and connectors. This post explains what runs where, how to deploy and connect, how teams use it, and which parts are not in this release.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Do you need a server?</p>
+      <h2 class="reveal-child">Often you do not.</h2>
+      <div class="prose reveal-child">
+
+        <p>A desktop app on your own machine is the simplest setup: your repositories are already there, your editor is there, and nothing needs hosting. A shared server earns its place when several people should see the same projects and tasks, when agents should keep working while laptops are closed, or when a chat channel should be able to start work.</p>
+        <p>Decide first what really needs to run centrally. Planning, task tracking and chat entry points suit a server. Anything that touches a developer’s local checkout, terminal or browser usually belongs on that developer’s computer. Muster Server is built around exactly that split.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">What Muster Server is</p>
+      <h2 class="reveal-child">One process, one database, the same interface.</h2>
+      <div class="prose reveal-child">
+
+        <p>Muster Server runs the Muster Agent runtime on a shared machine. People sign in from a browser and get the same interface as the desktop app: chats, projects, the Roster, the Inbox and the Ledger. Owners and admins manage people, invites, project access, usage and cost, and chat connectors. It is one Node process with an SQLite database, and in the team’s own end-to-end run it idled at about 120 MB of memory.</p>
+        <h3>Deploying it</h3>
+        <ul>
+          <li><strong>Release tarball with systemd.</strong> Download the server archive for your platform, check it against the published checksums, run <code>muster-server init</code>, then <code>muster-server start</code>. The archive bundles its own Node runtime.</li>
+          <li><strong>Docker.</strong> A Dockerfile and an example Compose file with Caddy in front for automatic HTTPS. Data lives in one volume.</li>
+          <li><strong>Behind your own proxy.</strong> The server binds to loopback by default and expects TLS to be terminated by a reverse proxy such as Caddy or nginx, or you can give it a certificate directly. Binding beyond loopback requires you to list the allowed host names.</li>
+        </ul>
+        <p>Back it up with <code>muster-server backup</code>. The secret key is not in the backup, so keep it separately, because without it stored provider and connector secrets cannot be read.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">People and access</p>
+      <h2 class="reveal-child">Local accounts, invites and roles.</h2>
+      <div class="prose reveal-child">
+
+        <p>Accounts are local. The first command creates an owner, and everyone else joins through a single-use invite link that expires. There are four roles: owner, admin, member and viewer. Members and viewers see the projects shared with them, and chats started outside a project are private to the person who started them. Project owners can invite people to their own project only. Revoking a person ends every session and token at once and disconnects open browser tabs.</p>
+        <p>Sessions use secure cookies and CSRF protection, sign-in is rate limited, API tokens are stored as hashes, and secrets at rest are encrypted. Every sign-in, invite, role change and turn start goes into a tamper-evident audit chain you can verify from the command line.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Connecting the desktop app</p>
+      <h2 class="reveal-child">One field and one button.</h2>
+      <div class="prose reveal-child">
+
+        <p>In the desktop app, open Settings, then Integrations, then Muster Server, type the server address and press Connect. The app works out what kind of server it is, opens the server’s own sign-in page in a window of the app, and you approve the connection there; the app never sees your password. Once connected, the server’s organisation and projects appear in the app itself, grouped under the org in the sidebar, with tasks as threads, the Roster, the Inbox, Ledger receipts and approvals. A server that speaks the Paperclip REST API connects the same way.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-projects.jpg" alt="Muster Agent Projects screen listing tasks with owners, priorities and dependencies" width="1600" height="1000" fetchpriority="high" /><figcaption>Projects: tasks with owners, priorities and dependencies, shown the same on desktop and in the browser.</figcaption></figure>
+        <p>Some features depend on the user’s own computer, so the browser version shows them as desktop only rather than as broken buttons: the built-in browser, terminals and host commands, screen capture and computer use, and app updates. This is also why checking a task out to work locally happens in the desktop app.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">How teams use it</p>
+      <h2 class="reveal-child">Chat in, tasks out, cost visible.</h2>
+      <div class="prose reveal-child">
+
+        <ul>
+          <li><strong>Chat connectors.</strong> Slack (Socket Mode or signed events), Telegram (polling or webhook) and Mattermost are supported. You can run several per type, route by channel, mention, keyword or sender, and choose whether a match starts a chat or creates a task. Refusals are visible: a guest or unrouted channel gets a reply that says why.</li>
+          <li><strong>Remote agents.</strong> An agent on another machine can join one project by invite and report on its assigned tasks through a project-scoped credential. Nothing runs for a remote agent on the server.</li>
+          <li><strong>Cost per person.</strong> Every turn is in the Ledger, so cost can be reported by user, project or model from the command line or the web interface.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">A rollout plan</p>
+      <h2 class="reveal-child">Start small and prove the basics.</h2>
+      <div class="prose reveal-child">
+
+        <ol>
+          <li><strong>One machine, one project.</strong> Install the server on a small machine, create the owner, and share a single project with one teammate. Confirm that the desktop app connects and that tasks and the Ledger show up.</li>
+          <li><strong>Prove backup and restore.</strong> Run a backup, copy the secret key somewhere safe, restore into a scratch directory and run the built-in doctor command. A backup you have never restored is a hope, not a backup.</li>
+          <li><strong>Add TLS and a proxy.</strong> Put the server behind a reverse proxy with a real certificate and set the public URL and allowed hosts before inviting more people.</li>
+          <li><strong>Add one connector.</strong> Connect a single chat channel with one routing rule, and check what a refusal looks like for a guest or an unrouted channel.</li>
+          <li><strong>Read the cost report.</strong> After a week, look at cost by person and by model, and decide whether prices need to be set for unpriced models.</li>
+        </ol>
+        <h3>Questions to settle first</h3>
+        <p>Who administers the server and rotates keys? Which repositories may the server’s operating-system user touch? Are people allowed to use their own provider accounts, or only shared ones? Does any requirement, such as single sign-on, sit on the list of things not yet built? Answering these before the first invite avoids rework later.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">What is not built yet</p>
+      <h2 class="reveal-child">Be clear before you commit.</h2>
+      <div class="prose reveal-child">
+
+        <p>The server documentation is explicit about its limits, and they are worth knowing. Single sign-on and OIDC are not part of this release. Postgres is not supported; the store is SQLite behind an interface. There is one organisation per server. Agent jobs do not yet run in per-run sandboxes on the server, and the agent runtime runs as the server’s operating-system user, so run it as a dedicated user with access only to the repositories it should work in. WhatsApp, Discord, Teams, Google Chat and email connectors are marked coming soon and never start. If any of these is a requirement, plan around it.</p>
+        <p>For team task flow in practice, see <a href="/paperclip-local-tasks.html">working locally on Paperclip tasks</a>, and for containment see <a href="/blog/sandboxing-coding-agents-with-muster.html">sandboxing coding agents</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sandboxed coding agent desktop app | Muster Agent</title>
+  <meta name="description" content="Muster Agent gives coding agents scoped sandboxes and permission modes from read-only to full access, and keeps secrets out of commands. Open source." />
+  <link rel="canonical" href="https://themuster.dev/sandboxed-coding-agent.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Sandboxed coding agent desktop app | Muster Agent" />
+  <meta property="og:description" content="Muster Agent gives coding agents scoped sandboxes and permission modes from read-only to full access, and keeps secrets out of commands. Open source." />
+  <meta property="og:url" content="https://themuster.dev/sandboxed-coding-agent.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Sandboxed coding agent desktop app | Muster Agent" />
+  <meta name="twitter:description" content="Muster Agent gives coding agents scoped sandboxes and permission modes from read-only to full access, and keeps secrets out of commands. Open source." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="sandboxed coding agent, AI coding agent sandbox, Docker sandbox for coding agents, coding agent permissions, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Sandboxed coding agent desktop app",
+  "description": "Muster Agent gives coding agents scoped sandboxes and permission modes from read-only to full access, and keeps secrets out of commands. Open source.",
+  "url": "https://themuster.dev/sandboxed-coding-agent.html",
+  "mainEntityOfPage": "https://themuster.dev/sandboxed-coding-agent.html",
+  "image": "https://themuster.dev/assets/brand/muster-og.png",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">WORKS WITH SANDBOXES</p>
+        <h1 class="hero-step">A sandboxed coding agent: scoped computers, permission modes and no secrets in commands</h1>
+        <p class="sub hero-step">Muster Agent is a free, open-source desktop app that works with Codex, Claude Code and other agents, and adds the containment around them: disposable Docker computers with no network by default, three permission modes from read-only to full access, and a command environment scrubbed of keys and tokens.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">What Muster Agent works with.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Codex</strong>, using your ChatGPT sign-in.</li>
+          <li><strong>Claude Code</strong>, using the install and sign-in you already have.</li>
+          <li><strong>OpenCode.</strong></li>
+          <li><strong>Cursor</strong>: runs the Cursor Agent CLI you have installed and signed in to.</li>
+          <li><strong>Google Gemini</strong>: runs the Gemini CLI you have installed and signed in to.</li>
+          <li><strong>Any OpenAI-compatible model router</strong>: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints, with your own key for each.</li>
+          <li><strong>Any OpenAI-compatible API</strong>, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</li>
+          <li><strong>Local models</strong> through Ollama and LM Studio.</li>
+          <li><strong>Paperclip</strong>: check out tasks from a Paperclip org, work locally in a git worktree, and let the work hand itself back.</li>
+          <li><strong>Sandboxing</strong>: scoped sandboxes and computers, permission modes from read-only to full access, and secrets kept out of commands.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The problem</p>
+      <h2 class="reveal-child">Agents are most useful when they can act, and riskiest then too.</h2>
+      <div class="prose reveal-child">
+        <p>A coding agent that can only talk is not much help. One that can edit files and run commands on your laptop is, but it also has your files, your shell and, unless something stops it, your environment variables. Muster Agent handles this with layers you can choose between: how much the agent may do, where it does it, and what it can see while doing it.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-sandbox.jpg" alt="A Muster Agent chat next to its scoped sandbox computer showing resource limits, services, read-only layers, command history and files" width="1600" height="1000" fetchpriority="high" /><figcaption>The chat runs in a disposable sandbox. Look for No network, the memory, CPU and process meters, and the commands it ran.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Permission modes</p>
+      <h2 class="reveal-child">Read-only, workspace or full access, per chat.</h2>
+      <div class="prose reveal-child">
+        <p>Every chat has one of three permission modes, and the engine underneath is held to it whichever one you use.</p>
+        <ul>
+          <li><strong>Read-only.</strong> The agent can read and answer. It does not edit files or run commands, and it does not drive the computer or the browser beyond reading pages and taking screenshots.</li>
+          <li><strong>Workspace.</strong> The agent can work inside the project folder, and steps that need your say-so appear as approval cards.</li>
+          <li><strong>Full access.</strong> The agent runs without approval prompts. Use it when you have already contained the work, for example in a sandbox or a worktree.</li>
+        </ul>
+        <p>For the engines that run as their own command-line tools, Muster Agent translates the mode into that tool’s own flags. For the Cursor Agent CLI, read-only becomes its ask mode, while workspace keeps Cursor’s sandbox on and full turns it off. For the Gemini CLI, read-only becomes plan mode, workspace becomes auto-edit and full becomes yolo. The same modes apply to Codex, Claude Code, OpenCode and OpenAI-compatible routers.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-environment-menu.jpg" alt="The Muster Agent menu for choosing where a chat runs: this computer, a sandbox, or a new worktree" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Where a chat runs: this computer, a sandbox, or a new worktree.</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Scoped computers</p>
+      <h2 class="reveal-child">Give the agent a computer of its own.</h2>
+      <div class="prose reveal-child">
+        <p>A chat, or a whole folder, can get its own Docker container with its own history, files and services. The defaults are conservative: no network unless you allow egress, 512 MiB of memory, one CPU and 256 processes, all adjustable per computer, with at most two computers running at once.</p>
+        <p>Access is by explicit grant. Environment variables and tool access are allowlisted, and extra folders can be mounted read-only. Tool and skill layers are mounted into the container as read-only snapshots. Sandboxes are optional: install Docker to turn them on, and without it everything else works normally.</p>
+        <h3>An honest limit</h3>
+        <p>A sandboxed chat tells the agent truthfully that its own shell still runs on your computer under the chat’s access level, and asks it to use the sandbox tools instead. Containment comes from combining the sandbox with the right permission mode, not from the sandbox label alone.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Secrets</p>
+      <h2 class="reveal-child">Keys and tokens stay out of commands.</h2>
+      <div class="prose reveal-child">
+        <p>Commands the agent runs get a scrubbed environment: variables that look like API keys, tokens, passwords or credentials are removed before the command starts. Secrets are also removed from stored commands and diffs, and a chat on a router route runs its tools the same way. File tools never follow a link out of the project folder, linked files outside the folder cannot be read without full access, and pressing Stop ends everything a command started, including programs it detached.</p>
+        <p>Provider keys you save in Muster Agent are stored encrypted, and on Linux only with a real keyring, never with an insecure fallback.</p>
+        <h3>Putting it together</h3>
+        <p>A sensible setup for unfamiliar work is a chat in a worktree or a sandbox, in workspace mode, on a model you trust with that code. For routine work in a repository you know, read-only is a safe way to explore before you change anything. For tasks from a Paperclip server, see <a href="/paperclip-local-tasks.html">working locally on Paperclip tasks</a>; for the models and routers behind a chat, see <a href="/run-claude-code-and-codex.html">running Claude Code and Codex in one app</a> and the <a href="/omniroute-desktop-client.html">router guide</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="https://github.com/musterhq/muster-code" rel="noopener">Source on GitHub →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+  </footer>
+</body>
+</html>

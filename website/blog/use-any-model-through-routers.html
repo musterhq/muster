@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Use any model through routers | Muster Agent</title>
+  <meta name="description" content="How to use any model through an OpenAI-compatible router such as OmniRoute, OpenRouter or LiteLLM, choose models per task, and read cost receipts." />
+  <link rel="canonical" href="https://themuster.dev/blog/use-any-model-through-routers.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Use any model through routers | Muster Agent" />
+  <meta property="og:description" content="How to use any model through an OpenAI-compatible router such as OmniRoute, OpenRouter or LiteLLM, choose models per task, and read cost receipts." />
+  <meta property="og:url" content="https://themuster.dev/blog/use-any-model-through-routers.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Use any model through routers | Muster Agent" />
+  <meta name="twitter:description" content="How to use any model through an OpenAI-compatible router such as OmniRoute, OpenRouter or LiteLLM, choose models per task, and read cost receipts." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Using any model through routers with Muster Agent",
+  "description": "How to use any model through an OpenAI-compatible router such as OmniRoute, OpenRouter or LiteLLM, choose models per task, and read cost receipts.",
+  "url": "https://themuster.dev/blog/use-any-model-through-routers.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/use-any-model-through-routers.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-model-picker.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Using any model through routers: OmniRoute, OpenRouter and LiteLLM</h1>
+        <p class="sub hero-step">A router gives you one endpoint in front of many models. This post explains when that helps, how to choose a model for each task, how cost shows up, and how Muster Agent connects through its OpenAI-compatible connection.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Why a router</p>
+      <h2 class="reveal-child">One address, one key, many models.</h2>
+      <div class="prose reveal-child">
+
+        <p>A model router sits between your tools and several model providers. You point your tool at a single base URL with a single key, and the router decides which upstream provider answers, applies fallbacks and sometimes publishes named combinations of models. For coding work this helps in three ways: you can change providers without reconfiguring every tool, you can keep one key to rotate, and you can mix a cheap model for routine edits with a stronger one for hard problems.</p>
+        <p>Most routers speak the same protocol, usually called OpenAI-compatible: a base URL ending in <code>/v1</code>, a bearer key and a <code>/models</code> endpoint that lists what is available. Because they share that shape, a client that supports the protocol works with any of them.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Choosing models per task</p>
+      <h2 class="reveal-child">Match the model to the work.</h2>
+      <div class="prose reveal-child">
+
+        <ul>
+          <li><strong>Routine edits and renames.</strong> A fast, inexpensive model is usually enough, and quick turns keep you in flow.</li>
+          <li><strong>Debugging and design.</strong> Use the strongest model you can afford, with higher reasoning where offered. One good answer is cheaper than five poor ones.</li>
+          <li><strong>Large context.</strong> Check the context window before you hand over a big task. A model that cannot hold the relevant files will guess about the rest.</li>
+          <li><strong>Images.</strong> If the task involves screenshots, confirm the model accepts images.</li>
+          <li><strong>Private code.</strong> If code must stay on your machine, route to a local model, and accept the quality trade-off.</li>
+        </ul>
+        <p>Do not decide once and forget. Try the same small task on two models, compare the diffs and the cost, and keep the one you would rather review. Model lists change quickly, so revisit the choice every few weeks.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Reading the cost</p>
+      <h2 class="reveal-child">Spend you can read.</h2>
+      <div class="prose reveal-child">
+
+        <p>The risk with routers is invisible spend. A fallback to a pricier model, a long context or a loop of retries can cost more than you expect. The remedy is a record per turn: which model, how many tokens, what it cost. Check it regularly, set your own prices where the router reports none, and treat any turn marked unpriced as a gap to fill rather than as free.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">With Muster Agent</p>
+      <h2 class="reveal-child">The OpenAI-compatible connection.</h2>
+      <div class="prose reveal-child">
+
+        <p>Muster Agent is an open-source desktop app that works with several coding agents and with any OpenAI-compatible router. Here is how each case connects, based on what the app actually does.</p>
+        <ul>
+          <li><strong>OmniRoute.</strong> It is detected automatically when it is installed on your computer, on its default local port. You can also add it as a provider, or have it picked up from a gateway named in your Codex configuration. Each person uses their own key, saved in their own app.</li>
+          <li><strong>OpenRouter.</strong> It has its own provider card with a link to get a key and its default endpoint filled in.</li>
+          <li><strong>LiteLLM and other gateways.</strong> There is no special handling; they work through the OpenAI-compatible connection like any gateway or custom endpoint, for example a proxy run by your company.</li>
+          <li><strong>Local servers.</strong> Ollama and LM Studio are detected on their default ports.</li>
+        </ul>
+        <h3>Adding one</h3>
+        <ol>
+          <li>Open Settings, then Accounts and providers, then Add provider.</li>
+          <li>Choose the provider’s card, or Custom endpoint for anything else, and enter the base URL, for example <code>https://router.example.com/v1</code>, and your key.</li>
+          <li>Press Test connection, then Save.</li>
+        </ol>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers.jpg" alt="Muster Agent provider setup showing detected sign-ins, gateways, API keys and local model servers" width="1600" height="1000" fetchpriority="high" /><figcaption>Accounts and providers: gateways, API keys and local model servers found on first launch.</figcaption></figure>
+        <h3>Models appear on their own</h3>
+        <p>Muster reads each provider’s own model list rather than using a hard-coded catalogue, so new models appear without an app update. Sending waits for a router’s model list instead of reporting the model as unavailable, the last good list is remembered across restarts, and errors say exactly what is wrong. The model picker shows each model’s context size, image support and reasoning level, and you switch per chat.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-model-picker.jpg" alt="The Muster Agent model picker with providers down the side and models showing context size, image support and reasoning level" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>The model picker: switch the model per chat.</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Reliability and safety</p>
+      <h2 class="reveal-child">Routers are infrastructure too.</h2>
+      <div class="prose reveal-child">
+
+        <h3>Fallbacks and failure modes</h3>
+        <p>A router that silently falls back to another model can change quality and price mid-task. Prefer explicit routes for important work, know what your router substitutes when a provider is down, and watch for turns that suddenly take longer or cost more. If an answer looks different from usual, check which model produced it before you blame the prompt.</p>
+        <h3>Protecting keys</h3>
+        <p>A router key can spend your money across several providers. Give each person their own key so usage and revocation are per person, keep keys out of repositories and prompts, and if you run a router on your own machine, bind it to the local address unless you have a reason to expose it. Rotate a key you have pasted anywhere shared.</p>
+        <h3>Benchmark on your own tasks</h3>
+        <p>Public leaderboards measure other people’s problems. Keep three or four small tasks from your own codebase, such as a bug with a known fix, a small feature and a refactor, and run them against any model you are considering. Compare the diffs, the number of corrections needed and the cost. Ten minutes of this beats an afternoon of reading comparisons, and you can repeat it whenever a new model appears.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Tools, limits and cost</p>
+      <h2 class="reveal-child">What a router chat can do.</h2>
+      <div class="prose reveal-child">
+
+        <p>A chat on a local OpenAI-compatible route offers the tools its access level allows: reading and listing files, editing files inside the folder and, with full access, running commands. If a route refuses tools, the chat answers as plain chat and says so, and a chat on a model that cannot run commands offers a one-click switch to one that can. A chat is never moved to another provider on its own. Chats sent directly to the Anthropic Messages API are text only, and the composer says so before you send.</p>
+        <p>Every project turn gets a receipt with files changed, tests, tokens, time and cost in the Ledger, which has cost views by model, agent, project and day, and lets you enter your own prices. See also <a href="/omniroute-desktop-client.html">the router guide</a> and <a href="/blog/reviewing-agent-changes-safely.html">reviewing agent changes safely</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

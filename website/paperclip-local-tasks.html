@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Work locally on Paperclip tasks | Muster Agent</title>
+  <meta name="description" content="Link a Paperclip server to Muster Agent, check a task out to your computer, work in your own folders, and hand it back with a receipt of the work." />
+  <link rel="canonical" href="https://themuster.dev/paperclip-local-tasks.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Work locally on Paperclip tasks | Muster Agent" />
+  <meta property="og:description" content="Link a Paperclip server to Muster Agent, check a task out to your computer, work in your own folders, and hand it back with a receipt of the work." />
+  <meta property="og:url" content="https://themuster.dev/paperclip-local-tasks.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Work locally on Paperclip tasks | Muster Agent" />
+  <meta name="twitter:description" content="Link a Paperclip server to Muster Agent, check a task out to your computer, work in your own folders, and hand it back with a receipt of the work." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="keywords" content="Paperclip desktop client, work locally on Paperclip tasks, Paperclip tasks local agent, Paperclip plugin, Muster Agent" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Work locally on Paperclip tasks",
+  "description": "Link a Paperclip server to Muster Agent, check a task out to your computer, work in your own folders, and hand it back with a receipt of the work.",
+  "url": "https://themuster.dev/paperclip-local-tasks.html",
+  "mainEntityOfPage": "https://themuster.dev/paperclip-local-tasks.html",
+  "image": "https://themuster.dev/assets/brand/muster-og.png",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">paperclip · local work</p>
+        <h1 class="hero-step">Work locally on Paperclip tasks with Muster Agent</h1>
+        <p class="sub hero-step">Paperclip plans the work and assigns it to agents and people. Muster Agent lets you pick a task up on your own computer, work in your own folders with the engine you choose, and send back a local work log with files changed, tests, tokens and cost.</p>
+        <div class="hero-actions hero-step">
+          <a class="btn-cta" href="/download.html">Download Muster Agent</a>
+          <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">What Muster Agent works with.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Codex</strong>, using your ChatGPT sign-in.</li>
+          <li><strong>Claude Code</strong>, using the install and sign-in you already have.</li>
+          <li><strong>OpenCode.</strong></li>
+          <li><strong>Cursor</strong>: runs the Cursor Agent CLI you have installed and signed in to.</li>
+          <li><strong>Google Gemini</strong>: runs the Gemini CLI you have installed and signed in to.</li>
+          <li><strong>Any OpenAI-compatible model router</strong>: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints, with your own key for each.</li>
+          <li><strong>Any OpenAI-compatible API</strong>, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</li>
+          <li><strong>Local models</strong> through Ollama and LM Studio.</li>
+          <li><strong>Paperclip</strong>: check out tasks from a Paperclip org, work locally in a git worktree, and let the work hand itself back.</li>
+          <li><strong>Sandboxing</strong>: scoped sandboxes and computers, permission modes from read-only to full access, and secrets kept out of commands.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The idea</p>
+      <h2 class="reveal-child">Plan on the server, do the work on your machine.</h2>
+      <div class="prose reveal-child">
+        <p>Paperclip is an open-source orchestration server where agents and people share projects, tasks, approvals and budgets. Some of that work needs your own repository, your own tools and your own review, which a server-side agent cannot reach. Muster Agent connects to your Paperclip server so those tasks can be done locally and reported back in the place the rest of the team already looks.</p>
+        <p>Muster Agent and Paperclip are independent projects. Muster Agent does not replace Paperclip; it is a desktop client for it.</p>
+      </div>
+      <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-projects.jpg" alt="Muster Agent Projects screen listing tasks with owners, priorities and dependencies" width="1600" height="1000" fetchpriority="high" /><figcaption>Projects: tasks with owners, priorities and dependencies. Ready tasks go to agents in parallel, and you verify the results.</figcaption></figure>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Connect and work</p>
+      <h2 class="reveal-child">From connection to a checked-out task.</h2>
+      <div class="prose reveal-child">
+        <h3>1. Connect a server</h3>
+        <p>Open Settings, then Integrations, then Muster Server, type the server address and press Connect. A Paperclip running on this computer is offered inline, and an API token is available under other ways to connect. The app works out what is at the address by itself. Test connection says when a URL is not a Paperclip API and warns when a token would travel over plain http.</p>
+        <h3>2. See the org in the app</h3>
+        <p>Each Paperclip project appears under its organisation in the sidebar. Tasks open as conversation threads, and the Roster shows each agent with the adapter and model the server reports. The Inbox gathers questions, approvals and mentions. Paperclip and your own projects stay apart: an import never writes into a project you created in Muster Agent, and what you change locally is kept when you import again.</p>
+        <h3>3. Work locally</h3>
+        <p>Choose Work locally on a task to check it out. Muster Agent uses Paperclip’s ordinary primitives: it reassigns the task to you, posts comments and writes documents, so the state is visible in Paperclip itself. A <em>Work as</em> option maps a server agent’s model to the closest one you have locally and tells you when it differs, for example Opus on the server becoming Claude Code with Opus here.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-git-changes.jpg" alt="Muster Agent git tab listing uncommitted files colour-coded by status with the chat that changed each one" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>The git tab: uncommitted files by status, with the chat that changed each one.</figcaption></figure>
+        <h3>A worktree and a branch of its own</h3>
+        <p>For a git project, check-out makes a worktree and a branch from the project’s dev branch inside your own checkout, and opens a local chat with the task’s context loaded. Checking the same task out again reuses that worktree and chat instead of creating a copy. Any folder can be linked to a project: a plain folder is used as it is, and Muster Agent notes the files at check-out so the hand-back lists what was added, changed and removed.</p>
+        <h3>4. Hand it back with a receipt</h3>
+        <p>When you are done, the task gets a Local work log: files added and removed, tests, tokens, model and cost. You can also change priority and assignee from the task’s properties, create tasks with labels, goals and blockers, and approve, reject or ask for changes on Paperclip approvals. Nothing is sent until you press a button.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Optional plugin</p>
+      <h2 class="reveal-child">Make check-outs visible inside Paperclip.</h2>
+      <div class="prose reveal-child">
+        <p>A small optional plugin, <em>Muster for Paperclip</em>, adds to Paperclip’s own web interface:</p>
+        <ul>
+          <li>a <strong>Muster</strong> tab on each task showing who has it checked out, on which computer, since when, and the latest work summary, with an Open in Muster button;</li>
+          <li>a <strong>Receipts</strong> tab that renders the Local work log as a table with totals;</li>
+          <li>a <strong>My work</strong> page and sidebar link grouping your active tasks by project;</li>
+          <li>one reminder comment when a check-out has been quiet for a set number of hours (24 by default).</li>
+        </ul>
+        <p>The plugin never reassigns anything, makes no outbound network calls and stores nothing of its own. Check-out works without it. It needs a self-hosted Paperclip and an instance admin to install it, and it cannot be installed on cloud-managed instances that only allow plugins baked into the platform image.</p>
+        <h3>Hand-back that does not fire on unfinished work</h3>
+        <p>When the work is finished, Muster Agent hands the task back on its own after a 60 second countdown, with Hand back now and Keep working buttons, and the countdown survives a window reload. If the agent’s last message ends with a question or an offer, nothing is committed or handed back until you answer or say you are done. Saying “done” hands it back directly. If no tests ran, the task offers Run tests and hand back, or Hand back anyway. If the task was cancelled, closed or reassigned while you worked, nothing is posted and your worktree is kept.</p>
+        <p>Task text from the server reaches the local agent marked as untrusted data, and what Muster Agent posts as you has secrets removed. For contained commands, add <a href="/sandboxed-coding-agent.html">sandboxing</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="https://github.com/musterhq/muster-code" rel="noopener">Source on GitHub →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+  </footer>
+</body>
+</html>
