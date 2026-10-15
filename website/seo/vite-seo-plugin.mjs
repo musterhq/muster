@@ -5,7 +5,7 @@
 //  2. Injects shared JSON-LD (Organization, SoftwareApplication, WebSite) with the
 //     softwareVersion taken from the latest GitHub release of musterhq/muster-code.
 import { createRequire } from "node:module";
-import { resolve, basename } from "node:path";
+import { resolve, relative } from "node:path";
 import { build as esbuild } from "esbuild";
 
 const ORIGIN = "https://themuster.dev";
@@ -34,7 +34,8 @@ function organization() {
     name: "Muster",
     url: `${ORIGIN}/`,
     logo: `${ORIGIN}/assets/brand/muster-logo.png`,
-    description: "Muster builds Muster Agent, an open-source desktop app for coding agents.",
+    description: "Muster builds Muster Agent, an open-source AI Development Environment.",
+    address: { "@type": "PostalAddress", addressCountry: "IN" },
     sameAs: ["https://github.com/musterhq", "https://github.com/musterhq/muster-code", "https://github.com/musterhq/muster", "https://www.npmjs.com/package/@musterhq/cli"],
   };
 }
@@ -101,7 +102,7 @@ export default function seoPlugin() {
     async buildStart() { if (isBuild) { rel = await latestRelease(); homeHtml = await renderHome(root); } },
     transformIndexHtml(html, ctx) {
       if (!isBuild) return html;
-      const file = basename(ctx.filename ?? "");
+      const file = relative(root, ctx.filename ?? "");
       if (file === "index.html" && homeHtml) html = html.replace('<div id="root"></div>', `<div id="root">${homeHtml}</div>`);
       const parts = SHARED[file];
       if (parts) {

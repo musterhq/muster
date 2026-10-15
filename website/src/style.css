@@ -1984,3 +1984,5 @@ main::before {
 .footer-guides a:hover { color: var(--ink); }
 
 .trademark-note { max-width: var(--maxw); margin: 0 auto; padding: 0 16px 24px; font-size: 12px; line-height: 1.5; color: var(--ink-faint); text-align: center; }
+
+.made-in { max-width: var(--maxw); margin: 0 auto; padding: 0 16px 8px; font-size: 12px; color: var(--ink-faint); text-align: center; }

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parallel agents and sub-agents | Muster Agent</title>
+  <meta name="description" content="When to run agents in parallel, when to use sub-agents, and how to keep the work reviewable, plus how Muster Agent handles overlap and worktrees." />
+  <link rel="canonical" href="https://themuster.dev/blog/parallel-agents-and-sub-agents.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Parallel agents and sub-agents | Muster Agent" />
+  <meta property="og:description" content="When to run agents in parallel, when to use sub-agents, and how to keep the work reviewable, plus how Muster Agent handles overlap and worktrees." />
+  <meta property="og:url" content="https://themuster.dev/blog/parallel-agents-and-sub-agents.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Parallel agents and sub-agents | Muster Agent" />
+  <meta name="twitter:description" content="When to run agents in parallel, when to use sub-agents, and how to keep the work reviewable, plus how Muster Agent handles overlap and worktrees." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Parallel agents and sub-agents: when to split work",
+  "description": "When to run agents in parallel, when to use sub-agents, and how to keep the work reviewable, plus how Muster Agent handles overlap and worktrees.",
+  "url": "https://themuster.dev/blog/parallel-agents-and-sub-agents.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/parallel-agents-and-sub-agents.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-environment-menu.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Parallel agents and sub-agents: when to split work and keep it reviewable</h1>
+        <p class="sub hero-step">Running several agents at once can multiply your output or multiply your confusion. This post gives rules for when to split work, how to keep the pieces independent and reviewable, and what Muster Agent provides.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">When to split</p>
+      <h2 class="reveal-child">Split along seams, not along effort.</h2>
+      <div class="prose reveal-child">
+
+        <p>Parallel agents pay off when tasks are independent: different files, different modules, different repositories, or investigation versus implementation. They backfire when two agents need the same files or when one task’s output is the other’s input. The test is simple: if you would be comfortable giving the pieces to two people who could not talk to each other, you can give them to two agents.</p>
+        <ul>
+          <li><strong>Good splits.</strong> A bug fix and an unrelated documentation update. Tests for one module and a refactor of another. A spike to explore an approach while another agent builds the safe version.</li>
+          <li><strong>Bad splits.</strong> Two agents editing the same file. A change and the tests that depend on its exact shape, written separately. Anything where the interface is still being decided.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Keeping it reviewable</p>
+      <h2 class="reveal-child">Parallel work needs more structure, not less.</h2>
+      <div class="prose reveal-child">
+
+        <ul>
+          <li><strong>Isolate working directories.</strong> Give each agent its own branch and worktree so edits cannot collide and each diff reviews on its own.</li>
+          <li><strong>Write the goal for each piece.</strong> Parallel tasks need clearer goals and acceptance checks than one conversation does, because you cannot course-correct them all at once.</li>
+          <li><strong>Limit the fan-out.</strong> Your attention is the constraint. Two or three streams you can really review beat six you skim.</li>
+          <li><strong>Merge in order.</strong> Review and keep the independent pieces first, then rebase the dependent ones.</li>
+          <li><strong>Track cost.</strong> Parallel runs multiply spend. Read the receipts as you go.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Sub-agents</p>
+      <h2 class="reveal-child">Delegation inside one task.</h2>
+      <div class="prose reveal-child">
+
+        <p>Some engines can start sub-agents themselves: a main agent hands a piece of the task to helpers, often for research or for a well-defined chunk, and collects the results. This is useful for fan-out work such as searching several parts of a codebase, but it adds a layer you cannot see unless the tool shows it. When you use sub-agents, make sure you can inspect what each one did, and treat their output with the same scrutiny as the main agent’s.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">A worked example</p>
+      <h2 class="reveal-child">Three tasks, three streams.</h2>
+      <div class="prose reveal-child">
+
+        <p>Suppose you have three things to do before a release: fix a flaky test, update the installation docs, and explore whether a new caching approach is worth it. They touch different files and none depends on another, so they split cleanly. Give each its own goal and acceptance check: the flaky test must pass twenty runs in a row, the docs must match the commands in the current installer, and the caching spike must produce a short written comparison with measurements, not a merged change.</p>
+        <p>Start the three, then review in order of risk. The documentation change is quick to read and safe to keep. The test fix deserves a careful look at whether it removed the flakiness or merely hid it, for example by adding a sleep. The spike is not meant to merge at all, so you read the comparison and decide whether to turn it into a real task. Notice what made this work: independent files, explicit checks, and a different expected outcome for each stream.</p>
+        <h3>Signs you split too much</h3>
+        <ul>
+          <li>You keep answering the same clarifying question in several chats.</li>
+          <li>Diffs touch shared files and you resolve conflicts by hand more than once.</li>
+          <li>You approve changes you did not read because there are too many.</li>
+          <li>Spend rises faster than finished work.</li>
+        </ul>
+        <p>When you see these, pause some streams and finish others first. Fewer, finished streams beat many half-reviewed ones, and the agents will still be there when you are ready.</p>
+        <h3>Write a short brief for every stream</h3>
+        <p>Before starting a stream, write three lines: the goal, the files or area it may touch, and the check that proves it is done. It takes a minute, it makes overlap visible before it happens, and it gives you a standard to review against when the work comes back. If you cannot write the three lines, the task is not ready to run in parallel yet.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">With Muster Agent</p>
+      <h2 class="reveal-child">Parallel chats, worktrees and visible sub-agents.</h2>
+      <div class="prose reveal-child">
+
+        <h3>Parallel chats in one project</h3>
+        <p>Several chats can share a checkout. Muster Agent detects when two chats touch overlapping files and offers Run in a worktree, so a parallel task works on its own branch rather than your checkout. A menu in the composer chooses where each chat runs: this computer, a sandbox or a new worktree. Sandboxes are limited to two running computers at once, which is a sensible ceiling for attention too.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-environment-menu.jpg" alt="The Muster Agent menu for choosing where a chat runs: this computer, a sandbox, or a new worktree" width="1600" height="1000" fetchpriority="high" /><figcaption>Where a chat runs: this computer, a sandbox, or a new worktree.</figcaption></figure>
+        <h3>Projects: ready tasks in parallel</h3>
+        <p>Projects hold tasks with owners, priorities and dependencies. Ready tasks go to agents in parallel, and you verify the results. Because dependencies are explicit, a task that needs another’s output waits rather than starting on a guess.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-projects.jpg" alt="Muster Agent Projects screen listing tasks with owners, priorities and dependencies" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>Projects: tasks with owners, priorities and dependencies.</figcaption></figure>
+        <h3>Sub-agents you can inspect</h3>
+        <p>Sub-agents started by Codex and by Claude Code are reviewable: each appears on the summary card and in a Subagents tab. Muster also keeps sub-agents still working in the background alive when it frees memory, and shows an approval card if one asks for permission rather than declining silently. Routes that cannot start sub-agents, such as API-key chats, routers and local servers, are told to do the work directly and no longer mention missing sub-agent tools.</p>
+        <h3>Reviewing many streams</h3>
+        <p>Each chat’s edits show as diffs you can keep or undo, the git tab shows which chat changed each file, and Ledger receipts show tokens and cost per turn. Use them to review one stream at a time. More on that in <a href="/blog/reviewing-agent-changes-safely.html">reviewing agent changes safely</a>.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

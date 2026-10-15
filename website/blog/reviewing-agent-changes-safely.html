@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reviewing coding agent changes safely | Muster Agent</title>
+  <meta name="description" content="How to review what a coding agent changed: read small diffs, keep or undo per file, check the evidence and keep receipts, with Muster Agent features." />
+  <link rel="canonical" href="https://themuster.dev/blog/reviewing-agent-changes-safely.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Muster Agent" />
+  <meta property="og:title" content="Reviewing coding agent changes safely | Muster Agent" />
+  <meta property="og:description" content="How to review what a coding agent changed: read small diffs, keep or undo per file, check the evidence and keep receipts, with Muster Agent features." />
+  <meta property="og:url" content="https://themuster.dev/blog/reviewing-agent-changes-safely.html" />
+  <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Reviewing coding agent changes safely | Muster Agent" />
+  <meta name="twitter:description" content="How to review what a coding agent changed: read small diffs, keep or undo per file, check the evidence and keep receipts, with Muster Agent features." />
+  <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
+  <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="alternate" type="application/rss+xml" title="Muster Agent blog" href="/blog/rss.xml" />
+  <script type="module" src="/src/main.ts"></script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Reviewing coding agent changes safely",
+  "description": "How to review what a coding agent changed: read small diffs, keep or undo per file, check the evidence and keep receipts, with Muster Agent features.",
+  "url": "https://themuster.dev/blog/reviewing-agent-changes-safely.html",
+  "mainEntityOfPage": "https://themuster.dev/blog/reviewing-agent-changes-safely.html",
+  "image": "https://themuster.dev/assets/screens/muster-agent-timeline.jpg",
+  "datePublished": "2026-10-15",
+  "dateModified": "2026-10-15",
+  "author": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Muster",
+    "url": "https://themuster.dev/"
+  },
+  "inLanguage": "en"
+}
+  </script>
+<link rel="preload" href="/assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+</head>
+<body>
+  <div id="scroll-progress" aria-hidden="true"></div>
+  <div id="hero-stage" aria-hidden="true"><canvas id="hero-canvas"></canvas></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Muster Agent home"><img src="/favicon.svg" alt="" width="32" height="32" /><span>muster</span></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/download.html">Download</a>
+      <a href="/docs.html">Docs</a>
+      <a href="/guides.html">Guides</a>
+      <a href="/blog/">Blog</a>
+      <a class="nav-cta" href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="kicker hero-step">blog · <time datetime="2026-10-15">15 October 2026</time></p>
+        <h1 class="hero-step">Reviewing agent changes safely: live diffs, keep or undo, and receipts</h1>
+        <p class="sub hero-step">Agents write code faster than anyone can read it, so review has to be designed. These habits keep changes small and checkable, and this post shows how Muster Agent’s diffs, per-file undo and Ledger receipts support them.</p>
+        <p class="sub hero-step byline">By the Muster team · <a href="/blog/">All posts</a></p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">The problem</p>
+      <h2 class="reveal-child">Speed moves the bottleneck to review.</h2>
+      <div class="prose reveal-child">
+
+        <p>When an agent can produce a few hundred changed lines in a few minutes, the limiting step is no longer writing but understanding. The risk is predictable: a large diff that looks plausible, gets approved quickly and hides a subtle problem. Good review for agent output is mostly about shaping the work so a human can actually check it.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Habits that work</p>
+      <h2 class="reveal-child">Make the diff small, then read it in the right order.</h2>
+      <div class="prose reveal-child">
+
+        <ul>
+          <li><strong>Keep tasks small.</strong> One goal per task gives a diff you can hold in your head. If a change grows, split it.</li>
+          <li><strong>Read the summary, then the tests, then the code.</strong> Start with what the agent says it did, check that the tests express the intended behaviour, then read the implementation against them.</li>
+          <li><strong>Look for what is missing.</strong> Agents often leave out error handling, edge cases or cleanup. Ask what happens on empty input, on failure and on retry.</li>
+          <li><strong>Check for scope creep.</strong> Unrelated edits, reformatting and renamed files are signs the agent wandered. Undo them.</li>
+          <li><strong>Run it.</strong> Do not rely on the agent’s claim that tests pass. See the output, or run the command yourself.</li>
+          <li><strong>Keep a rollback.</strong> Work on a branch or worktree so discarding the whole attempt is one step.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Evidence</p>
+      <h2 class="reveal-child">Prefer a record to a recollection.</h2>
+      <div class="prose reveal-child">
+
+        <p>Review is easier when the work leaves a trail: which files were read, what was edited, which commands ran and what they returned, and what the turn cost. A record also lets you answer later questions, such as why a file changed, without re-running anything. The more tamper-evident the record, the more you can trust it when something has gone wrong.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">With Muster Agent</p>
+      <h2 class="reveal-child">Review built into the conversation.</h2>
+      <div class="prose reveal-child">
+
+        <h3>Live diffs with Keep and Undo</h3>
+        <p>Each file the agent edits appears as a diff inside the conversation as it lands. You can review hunk by hunk or file by file, view whole-file inline diffs, and keep or undo one change or the whole file. Nothing is final until you decide, so you can let the agent take bigger steps and still stay in control.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-inline-diff.jpg" alt="Muster Agent chat with inline diffs for each file the agent edited" width="1600" height="1000" fetchpriority="high" /><figcaption>Inline diffs in the chat. Keep or Undo one change, or the whole file.</figcaption></figure>
+        <h3>One turn, opened up</h3>
+        <p>Open a turn to see the reasoning, the files read and searched, each edit with its added and removed line counts, and the test run with its output and exit code. Long output folds to its tail until you ask for more, so even a long session stays readable.</p>
+        <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-timeline.jpg" alt="A Muster Agent turn opened up showing reasoning, file reads, edits and a test run with output" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>One turn, opened up: reads, edits and the test run with its exit code.</figcaption></figure>
+        <h3>The git tab</h3>
+        <p>The git tab lists uncommitted files colour-coded by status, with the chat that changed each one, plus the commit graph with branches and tags, and you can compare any two refs. Chats can run in a new worktree so a parallel task never edits your checkout.</p>
+        <h3>Ledger receipts</h3>
+        <p>Every agent turn in a project gets a receipt with files changed, tests, tokens, time and cost, recorded in a tamper-evident Ledger with Receipts, Timeline, Activity and Costs views. Imported history from earlier tools stays outside the verified chain and is labelled as imported. On a Muster Server, an audit command verifies the server’s audit chain and the turn Ledger chain, and editing or deleting a past entry breaks the chain and reports where.</p>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Going deeper</p>
+      <h2 class="reveal-child">Tests, large diffs and disagreement.</h2>
+      <div class="prose reveal-child">
+
+        <h3>Review the tests as carefully as the code</h3>
+        <p>An agent told to make the tests pass may change the tests. Read test edits first. A weakened assertion, a removed case or a mocked-out dependency can turn a failing suite green without fixing anything. If the tests changed, ask why, and prefer changes that add coverage over changes that remove it.</p>
+        <h3>When the diff is large anyway</h3>
+        <p>Sometimes a large diff is unavoidable, such as a rename across a codebase. Review it by category rather than line by line: confirm the mechanical part with a command, such as a search that shows no old names remain, then read the handful of non-mechanical edits closely. Ask the agent to separate the mechanical change from the logic change into two steps so you can keep one and inspect the other.</p>
+        <h3>When you disagree with the result</h3>
+        <p>Undo the part you dislike, state the principle you want applied, and ask for a second attempt rather than editing around the first. If an agent repeatedly misses the same convention, write that convention down where it will be recalled every time, instead of correcting each run.</p>
+        <h3>Reviewing as a team</h3>
+        <p>A reviewer who did not watch the agent needs the same evidence you had: the summary, the tests and the cost. A receipt attached to the task lets a teammate see what ran without reconstructing it, which is much of the value of a record over a recollection.</p>
+        <h3>Know when to stop reviewing and start again</h3>
+        <p>If you find three or four unrelated problems in one diff, the prompt or the task was probably wrong, not just the code. Undo the lot, rewrite the goal with the constraint you were missing, and run it again. Fixing a flawed attempt line by line takes longer than a clean second run from a better brief, and the second diff is usually smaller.</p>
+      </div>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">A review routine</p>
+      <h2 class="reveal-child">What to do each time.</h2>
+      <div class="prose reveal-child">
+
+        <ol>
+          <li>Read the agent’s summary and the opened-up turn to see what it actually did.</li>
+          <li>Undo anything outside the scope you set, one file or hunk at a time.</li>
+          <li>Check the test output and exit code. Run extra checks yourself if the change is risky.</li>
+          <li>Keep what passes review, commit in small steps, and glance at the receipt so cost does not surprise you.</li>
+        </ol>
+        <p>Pair review with containment: <a href="/blog/sandboxing-coding-agents-with-muster.html">sandboxing coding agents</a> limits the damage a bad change can do before you see it, and <a href="/blog/prompting-coding-agents-well.html">better prompts</a> make the diff smaller in the first place.</p>
+        <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="/blog/">More posts →</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© <span id="year">2026</span> Muster Agent — open source, MIT</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/musterhq/muster-code" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="/docs.html">Docs</a>
+      <span class="footer-sep">·</span>
+      <a href="/guides.html">Guides</a>
+    </div>
+    <nav class="footer-guides" aria-label="Muster Agent guides">
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
+      <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
+      <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
+      <a href="/what-is-an-ade.html">What is an ADE?</a>
+      <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
+      <a href="/omniroute-desktop-client.html">OmniRoute client</a>
+      <a href="/blog/">Blog</a>
+    </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. xAI and Grok are trademarks of xAI; DeepSeek, Qwen (Alibaba), Mistral AI, Kimi (Moonshot AI), GLM (Zhipu AI), OpenRouter, LiteLLM, vLLM, Llama, Ollama, LM Studio and OmniRoute are trademarks of their respective owners. Muster Agent is an independent open-source project and is not affiliated with or endorsed by any of them.</p>
+    <p class="made-in">Made in India</p>
+  </footer>
+</body>
+</html>

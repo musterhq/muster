@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Muster Agent blog</title>
+    <link>https://themuster.dev/blog/</link>
+    <atom:link href="https://themuster.dev/blog/rss.xml" rel="self" type="application/rss+xml" />
+    <description>Practical guides on coding agents from the Muster team.</description>
+    <language>en</language>
+    <lastBuildDate>Thu, 15 Oct 2026 00:00:00 GMT</lastBuildDate>
+    <item>
+      <title>How to prompt coding agents well</title>
+      <link>https://themuster.dev/blog/prompting-coding-agents-well.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/prompting-coding-agents-well.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>How to prompt coding agents: state the goal, give the right context, set constraints, define acceptance checks and leave out what does not help.</description>
+    </item>
+    <item>
+      <title>Getting coding agents to use tools well</title>
+      <link>https://themuster.dev/blog/getting-agents-to-use-tools-well.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/getting-agents-to-use-tools-well.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>How to get coding agents to use the terminal, the browser and MCP servers well, and how to choose permissions so that capable does not mean careless.</description>
+    </item>
+    <item>
+      <title>Sandboxing coding agents with Muster Agent</title>
+      <link>https://themuster.dev/blog/sandboxing-coding-agents-with-muster.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/sandboxing-coding-agents-with-muster.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>How to contain a coding agent: permission modes, disposable sandboxes, scoped computers and keeping secrets out of commands, with Muster Agent.</description>
+    </item>
+    <item>
+      <title>Running agents on your own server with Muster Server</title>
+      <link>https://themuster.dev/blog/muster-server-agents-on-your-own-server.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/muster-server-agents-on-your-own-server.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>What Muster Server runs, how to deploy it, how the desktop app connects, how teams use it, and what is not built yet. An honest guide for self-hosting.</description>
+    </item>
+    <item>
+      <title>Using any model through routers with Muster Agent</title>
+      <link>https://themuster.dev/blog/use-any-model-through-routers.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/use-any-model-through-routers.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>How to use any model through an OpenAI-compatible router such as OmniRoute, OpenRouter or LiteLLM, choose models per task, and read cost receipts.</description>
+    </item>
+    <item>
+      <title>Doing Paperclip tasks locally with Muster Agent</title>
+      <link>https://themuster.dev/blog/paperclip-tasks-locally.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/paperclip-tasks-locally.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>Check out a Paperclip task, work in a git worktree and let the work hand itself back, with what Muster Agent actually does.</description>
+    </item>
+    <item>
+      <title>Reviewing coding agent changes safely</title>
+      <link>https://themuster.dev/blog/reviewing-agent-changes-safely.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/reviewing-agent-changes-safely.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>How to review what a coding agent changed: read small diffs, keep or undo per file, check the evidence and keep receipts, with Muster Agent features.</description>
+    </item>
+    <item>
+      <title>Parallel agents and sub-agents: when to split work</title>
+      <link>https://themuster.dev/blog/parallel-agents-and-sub-agents.html</link>
+      <guid isPermaLink="true">https://themuster.dev/blog/parallel-agents-and-sub-agents.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>When to run agents in parallel, when to use sub-agents, and how to keep the work reviewable, plus how Muster Agent handles overlap and worktrees.</description>
+    </item>
+    <item>
+      <title>What is an AI Development Environment (ADE)?</title>
+      <link>https://themuster.dev/what-is-an-ade.html</link>
+      <guid isPermaLink="true">https://themuster.dev/what-is-an-ade.html</guid>
+      <pubDate>Thu, 15 Oct 2026 00:00:00 GMT</pubDate>
+      <description>The anchor guide: what an ADE is, when you want one, what to look for, and how Muster Agent approaches it.</description>
+    </item>
+  </channel>
+</rss>
