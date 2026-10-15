@@ -1982,3 +1982,5 @@ main::before {
 .footer-guides { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; padding: 0 16px 24px; font-size: 13px; }
 .footer-guides a { color: var(--ink-dim); }
 .footer-guides a:hover { color: var(--ink); }
+
+.trademark-note { max-width: var(--maxw); margin: 0 auto; padding: 0 16px 24px; font-size: 12px; line-height: 1.5; color: var(--ink-faint); text-align: center; }

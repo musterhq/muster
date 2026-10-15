@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OmniRoute desktop client for coding agents | Muster Agent</title>
+  <title>Desktop app for OmniRoute and routers | Muster Agent</title>
   <meta name="description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
   <link rel="canonical" href="https://themuster.dev/omniroute-desktop-client.html" />
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="Muster Agent" />
-  <meta property="og:title" content="OmniRoute desktop client for coding agents | Muster Agent" />
+  <meta property="og:title" content="Desktop app for OmniRoute and routers | Muster Agent" />
   <meta property="og:description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
   <meta property="og:url" content="https://themuster.dev/omniroute-desktop-client.html" />
   <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
@@ -16,7 +16,7 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="OmniRoute desktop client for coding agents | Muster Agent" />
+  <meta name="twitter:title" content="Desktop app for OmniRoute and routers | Muster Agent" />
   <meta name="twitter:description" content="Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands." />
   <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
@@ -27,7 +27,7 @@
 {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "OmniRoute desktop client for coding agents",
+  "headline": "Desktop app for OmniRoute and routers",
   "description": "Use OmniRoute as a provider in Muster Agent, a free open-source desktop app: pick its models and routes per chat, with file edits and commands.",
   "url": "https://themuster.dev/omniroute-desktop-client.html",
   "mainEntityOfPage": "https://themuster.dev/omniroute-desktop-client.html",
@@ -66,9 +66,9 @@
   <main>
     <section class="hero">
       <div class="hero-inner">
-        <p class="kicker hero-step">omniroute · routers</p>
-        <h1 class="hero-step">A desktop client for OmniRoute and other OpenAI-compatible routers</h1>
-        <p class="sub hero-step">OmniRoute puts many model providers behind one OpenAI-compatible endpoint. Muster Agent is a free, open-source desktop app that connects to it as a first-class provider, lists its models and routes, and lets chats on those routes read files, edit code and run commands.</p>
+        <p class="kicker hero-step">WORKS WITH OMNIROUTE</p>
+        <h1 class="hero-step">A desktop app that works with OmniRoute and any OpenAI-compatible router</h1>
+        <p class="sub hero-step">OmniRoute puts many model providers behind one OpenAI-compatible endpoint. Muster Agent is a free, open-source desktop app that works with it as a first-class provider, lists its models and routes, and lets chats on those routes read files, edit code and run commands.</p>
         <div class="hero-actions hero-step">
           <a class="btn-cta" href="/download.html">Download Muster Agent</a>
           <a class="btn-ghost" href="https://github.com/musterhq/muster-code" rel="noopener">Star on GitHub →</a>
@@ -77,10 +77,29 @@
     </section>
 
     <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">What Muster Agent works with.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Codex</strong>, using your ChatGPT sign-in.</li>
+          <li><strong>Claude Code</strong>, using the install and sign-in you already have.</li>
+          <li><strong>OpenCode.</strong></li>
+          <li><strong>Cursor</strong>: runs the Cursor Agent CLI you have installed and signed in to.</li>
+          <li><strong>Google Gemini</strong>: runs the Gemini CLI you have installed and signed in to.</li>
+          <li><strong>Any OpenAI-compatible model router</strong>: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints, with your own key for each.</li>
+          <li><strong>Any OpenAI-compatible API</strong>, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</li>
+          <li><strong>Local models</strong> through Ollama and LM Studio.</li>
+          <li><strong>Paperclip</strong>: check out tasks from a Paperclip org, work locally in a git worktree, and let the work hand itself back.</li>
+          <li><strong>Sandboxing</strong>: scoped sandboxes and computers, permission modes from read-only to full access, and secrets kept out of commands.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
       <p class="sec-kicker reveal-child">The setup</p>
       <h2 class="reveal-child">One endpoint in front, any model behind it.</h2>
       <div class="prose reveal-child">
-        <p>A router such as OmniRoute lets you keep one address and one key while it decides which upstream provider answers, and it can publish named combos or automatic routes on top of individual models. That is convenient for coding agents, provided the client understands routers rather than treating them as a single model. Muster Agent does. It is independent of OmniRoute and works with any OpenAI-compatible router, gateway, Ollama or LM Studio.</p>
+        <p>A router such as OmniRoute lets you keep one address and one key while it decides which upstream provider answers, and it can publish named combos or automatic routes on top of individual models. That is convenient for coding agents, provided the client understands routers rather than treating them as a single model. Muster Agent does. It is independent of OmniRoute and works with OpenRouter, LiteLLM-style gateways, any custom OpenAI-compatible endpoint, Ollama and LM Studio. Each person uses their own key for a router, saved in their own app.</p>
       </div>
       <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers.jpg" alt="Muster Agent provider setup showing detected sign-ins, gateways, API keys and local model servers" width="1600" height="1000" fetchpriority="high" /><figcaption>Accounts and providers: gateways, API keys and local model servers found on first launch.</figcaption></figure>
     </section>
@@ -91,6 +110,13 @@
       <div class="prose reveal-child">
         <p>In Settings, open Accounts and providers, then Add provider. The screen shows one card per provider with a status chip. Ollama, LM Studio, OmniRoute and Custom endpoint start with their default address and an optional key. Choose OmniRoute, confirm the address, press Test connection, then Save. The name, base URL and key variable are under Advanced.</p>
         <p>If your router is already configured in a local agent command-line tool, Muster Agent usually detects it on first launch and you do not need to add anything.</p>
+        <h3>Use Meta’s Muse models in Muster</h3>
+        <p>Meta’s Model API is OpenAI-compatible, so the same custom-endpoint route works for Muse models such as Muse Spark and Muse Wonder. Muster Agent’s route is compatible by design, but we have not tested it live against Meta’s API yet.</p>
+        <ol>
+          <li>Open Settings, then Accounts and providers, then Add provider, and choose Custom endpoint (OpenAI-compatible).</li>
+          <li>Set the base URL to <code>https://api.meta.ai/v1</code> and paste your Meta Model API key.</li>
+          <li>Enter the model id, for example <code>muse-spark-1.1</code>, then Test connection and Save. See Meta’s models page for the current ids.</li>
+        </ol>
         <h3>Models and routes, straight from the router</h3>
         <p>Muster Agent reads models from the router’s own model list instead of a hard-coded catalogue, so new models and combos appear without an app update. Routers that publish their own agents and automatic routes are shown as such. Sending waits for a router’s model list rather than reporting the model as unavailable. The last good list is remembered across restarts, failed listings retry on their own, and errors say exactly what is wrong.</p>
         <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-providers-local.jpg" alt="Muster Agent showing local model servers Ollama and LM Studio next to API keys from the environment" width="1600" height="799" loading="lazy" decoding="async" /><figcaption>Local model servers next to keys from your environment. A router is one more entry in the same list.</figcaption></figure>
@@ -129,12 +155,14 @@
       <a href="/guides.html">Guides</a>
     </div>
     <nav class="footer-guides" aria-label="Muster Agent guides">
-      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
       <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
       <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
       <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
       <a href="/omniroute-desktop-client.html">OmniRoute client</a>
     </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. Muster Agent is an independent open-source project and is not affiliated with or endorsed by them.</p>
   </footer>
 </body>
 </html>

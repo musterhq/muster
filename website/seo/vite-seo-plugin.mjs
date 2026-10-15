@@ -44,7 +44,7 @@ function application(rel) {
     "@id": `${ORIGIN}/#agent-app`,
     name: "Muster Agent",
     alternateName: ["Muster Code", "Muster Agent desktop app"],
-    description: "Muster Agent is a free, open-source desktop app for coding agents. It runs Codex, Claude Code, OpenCode, OpenAI-compatible gateways and local models side by side, with long-term memory, Docker sandboxes, live diffs with Keep and Undo, a terminal, a browser and git history.",
+    description: "Muster Agent is a free, open-source desktop app that works with Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI, the Gemini CLI, any OpenAI-compatible model router (OmniRoute, OpenRouter, custom endpoints), any OpenAI-compatible API including Meta's Muse models (Muse Spark, Muse Wonder) through the Meta Model API, and local models (Ollama, LM Studio) and open-weight models you run locally. It adds long-term memory, scoped sandboxes, permission modes from read-only to full access, live diffs with Keep and Undo, a terminal, a browser, git history and local work on Paperclip tasks.",
     applicationCategory: "DeveloperApplication",
     applicationSubCategory: "AI coding agent",
     operatingSystem: "macOS, Windows, Linux",

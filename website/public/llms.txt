@@ -94,7 +94,7 @@ each Codex release rather than assumed permanent.
 
 ## Guides for Muster Agent
 
-- Open-source Codex desktop app: https://themuster.dev/open-source-codex-desktop-app.html
+- Desktop app for Codex, Claude Code and routers: https://themuster.dev/desktop-app-for-codex.html
 - Run Claude Code and Codex in one app: https://themuster.dev/run-claude-code-and-codex.html
 - Work locally on Paperclip tasks: https://themuster.dev/paperclip-local-tasks.html
 - AI coding agent with long-term memory: https://themuster.dev/ai-coding-agent-long-term-memory.html

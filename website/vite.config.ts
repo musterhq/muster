@@ -42,10 +42,12 @@ export default defineConfig({
         onboarding: resolve(__dirname, "onboarding.html"),
         spatial: resolve(__dirname, "spatial.html"),
         download: resolve(__dirname, "download.html"),
-        openSourceCodexDesktopApp: resolve(__dirname, "open-source-codex-desktop-app.html"),
+        openSourceCodexDesktopApp: resolve(__dirname, "desktop-app-for-codex.html"),
         runClaudeCodeAndCodex: resolve(__dirname, "run-claude-code-and-codex.html"),
         paperclipLocalTasks: resolve(__dirname, "paperclip-local-tasks.html"),
         aiCodingAgentLongTermMemory: resolve(__dirname, "ai-coding-agent-long-term-memory.html"),
+        sandboxedCodingAgent: resolve(__dirname, "sandboxed-coding-agent.html"),
+        legacyOpenSourceCodex: resolve(__dirname, "open-source-codex-desktop-app.html"),
         omnirouteDesktopClient: resolve(__dirname, "omniroute-desktop-client.html")
       }
     }

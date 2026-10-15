@@ -77,6 +77,25 @@
     </section>
 
     <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">What Muster Agent works with.</h2>
+      <div class="prose reveal-child">
+        <ul>
+          <li><strong>Codex</strong>, using your ChatGPT sign-in.</li>
+          <li><strong>Claude Code</strong>, using the install and sign-in you already have.</li>
+          <li><strong>OpenCode.</strong></li>
+          <li><strong>Cursor</strong>: runs the Cursor Agent CLI you have installed and signed in to.</li>
+          <li><strong>Google Gemini</strong>: runs the Gemini CLI you have installed and signed in to.</li>
+          <li><strong>Any OpenAI-compatible model router</strong>: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints, with your own key for each.</li>
+          <li><strong>Any OpenAI-compatible API</strong>, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally.</li>
+          <li><strong>Local models</strong> through Ollama and LM Studio.</li>
+          <li><strong>Paperclip</strong>: check out tasks from a Paperclip org, work locally in a git worktree, and let the work hand itself back.</li>
+          <li><strong>Sandboxing</strong>: scoped sandboxes and computers, permission modes from read-only to full access, and secrets kept out of commands.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" data-reveal>
       <p class="sec-kicker reveal-child">The idea</p>
       <h2 class="reveal-child">Plan on the server, do the work on your machine.</h2>
       <div class="prose reveal-child">
@@ -97,6 +116,8 @@
         <h3>3. Work locally</h3>
         <p>Choose Work locally on a task to check it out. Muster Agent uses Paperclip’s ordinary primitives: it reassigns the task to you, posts comments and writes documents, so the state is visible in Paperclip itself. A <em>Work as</em> option maps a server agent’s model to the closest one you have locally and tells you when it differs, for example Opus on the server becoming Claude Code with Opus here.</p>
         <figure class="shot reveal-child"><img src="/assets/screens/muster-agent-git-changes.jpg" alt="Muster Agent git tab listing uncommitted files colour-coded by status with the chat that changed each one" width="1600" height="1000" loading="lazy" decoding="async" /><figcaption>The git tab: uncommitted files by status, with the chat that changed each one.</figcaption></figure>
+        <h3>A worktree and a branch of its own</h3>
+        <p>For a git project, check-out makes a worktree and a branch from the project’s dev branch inside your own checkout, and opens a local chat with the task’s context loaded. Checking the same task out again reuses that worktree and chat instead of creating a copy. Any folder can be linked to a project: a plain folder is used as it is, and Muster Agent notes the files at check-out so the hand-back lists what was added, changed and removed.</p>
         <h3>4. Hand it back with a receipt</h3>
         <p>When you are done, the task gets a Local work log: files added and removed, tests, tokens, model and cost. You can also change priority and assignee from the task’s properties, create tasks with labels, goals and blockers, and approve, reject or ask for changes on Paperclip approvals. Nothing is sent until you press a button.</p>
       </div>
@@ -114,8 +135,9 @@
           <li>one reminder comment when a check-out has been quiet for a set number of hours (24 by default).</li>
         </ul>
         <p>The plugin never reassigns anything, makes no outbound network calls and stores nothing of its own. Check-out works without it. It needs a self-hosted Paperclip and an instance admin to install it, and it cannot be installed on cloud-managed instances that only allow plugins baked into the platform image.</p>
-        <h3>Who this suits</h3>
-        <p>Teams that already plan in Paperclip and want engineers to use a real desktop workbench, with diffs, a terminal, memory and sandboxes, for the tasks that need local access. See <a href="/ai-coding-agent-long-term-memory.html">long-term memory</a> for how decisions carry across tasks, and <a href="/run-claude-code-and-codex.html">running Claude Code and Codex together</a> for engine choice.</p>
+        <h3>Hand-back that does not fire on unfinished work</h3>
+        <p>When the work is finished, Muster Agent hands the task back on its own after a 60 second countdown, with Hand back now and Keep working buttons, and the countdown survives a window reload. If the agent’s last message ends with a question or an offer, nothing is committed or handed back until you answer or say you are done. Saying “done” hands it back directly. If no tests ran, the task offers Run tests and hand back, or Hand back anyway. If the task was cancelled, closed or reassigned while you worked, nothing is posted and your worktree is kept.</p>
+        <p>Task text from the server reaches the local agent marked as untrusted data, and what Muster Agent posts as you has secrets removed. For contained commands, add <a href="/sandboxed-coding-agent.html">sandboxing</a>.</p>
         <p class="proof-link"><a href="/download.html">Download Muster Agent →</a> <a href="https://github.com/musterhq/muster-code" rel="noopener">Source on GitHub →</a></p>
       </div>
     </section>
@@ -132,12 +154,14 @@
       <a href="/guides.html">Guides</a>
     </div>
     <nav class="footer-guides" aria-label="Muster Agent guides">
-      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
       <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
       <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
       <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
       <a href="/omniroute-desktop-client.html">OmniRoute client</a>
     </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. Muster Agent is an independent open-source project and is not affiliated with or endorsed by them.</p>
   </footer>
 </body>
 </html>

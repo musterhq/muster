@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Download Muster Agent for macOS, Windows and Linux</title>
-  <meta name="description" content="Download Muster Agent, the free open-source desktop app for Codex, Claude Code and local models. Installers for macOS, Windows and Linux (MIT)." />
+  <meta name="description" content="Download Muster Agent, the free open-source desktop app that works with Codex, Claude Code, routers and local models. macOS, Windows and Linux (MIT)." />
   <link rel="canonical" href="https://themuster.dev/download.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Muster Agent" />
   <meta property="og:title" content="Download Muster Agent for macOS, Windows and Linux" />
-  <meta property="og:description" content="Download Muster Agent, the free open-source desktop app for Codex, Claude Code and local models. Installers for macOS, Windows and Linux (MIT)." />
+  <meta property="og:description" content="Download Muster Agent, the free open-source desktop app that works with Codex, Claude Code, routers and local models. macOS, Windows and Linux (MIT)." />
   <meta property="og:url" content="https://themuster.dev/download.html" />
   <meta property="og:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <meta property="og:image:width" content="1200" />
@@ -17,9 +17,19 @@
   <meta property="og:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Download Muster Agent for macOS, Windows and Linux" />
-  <meta name="twitter:description" content="Download Muster Agent, the free open-source desktop app for Codex, Claude Code and local models. Installers for macOS, Windows and Linux (MIT)." />
+  <meta name="twitter:description" content="Download Muster Agent, the free open-source desktop app that works with Codex, Claude Code, routers and local models. macOS, Windows and Linux (MIT)." />
   <meta name="twitter:image" content="https://themuster.dev/assets/brand/muster-og.png" />
   <meta name="twitter:image:alt" content="Muster Agent, the open-source AI coding agent desktop app" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:width" content="1200" />
@@ -51,7 +61,7 @@
       "name": "Which coding agents does it work with?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Codex, Claude Code and OpenCode, plus OpenAI-compatible gateways and local models. It runs your existing installs side by side and lets you pick the model per chat."
+        "text": "Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI, plus any OpenAI-compatible router (OmniRoute, OpenRouter, custom endpoints) and local models through Ollama and LM Studio. It runs the installs you already have side by side and lets you pick the model per chat."
       }
     },
     {
@@ -75,7 +85,7 @@
       "name": "How does it relate to Codex and Claude Code?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Muster Agent is an independent open-source project, not made by or affiliated with OpenAI or Anthropic. It is a desktop workbench around the Codex and Claude Code installs and sign-ins you already have."
+        "text": "Muster Agent is an independent open-source project, not made by or affiliated with OpenAI or Anthropic. It is a desktop workbench that works with the Codex and Claude Code installs and sign-ins you already have."
       }
     },
     {
@@ -108,8 +118,8 @@
         <p class="kicker">Muster Agent · desktop app</p>
         <h1 id="download-title">Download Muster Agent for Mac, Windows and Linux.</h1>
         <p class="sub">
-          The AI coding agent app that remembers. Claude Code, Codex, OpenCode, gateways and local models
-          in one window, with long-term memory, sandboxed computers, live diffs, a terminal and a browser.
+          The desktop app that works with Codex, Claude Code, OpenCode, the Cursor Agent CLI, the Gemini CLI,
+          any OpenAI-compatible router and local models, with long-term memory, sandboxed computers, live diffs, a terminal and a browser.
         </p>
         <div class="download-primary" data-download-primary>
           <a class="btn-cta btn-download" href="https://github.com/musterhq/muster-code/releases/download/agent-v0.3.11/Muster-Agent-0.3.11-arm64.dmg">
@@ -179,15 +189,31 @@
       </div>
     </section>
 
+    <section class="band" data-reveal>
+      <p class="sec-kicker reveal-child">Works with</p>
+      <h2 class="reveal-child">Works with your routers.</h2>
+      <p class="sec-sub reveal-child">Muster Agent works with any OpenAI-compatible model router: OmniRoute, OpenRouter, LiteLLM-style gateways and custom endpoints. Add one under Settings, Accounts and providers, and its models and routes show up in the model picker, with your own key saved in your own app. It also runs Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI that you have installed and signed in to, plus local models through Ollama and LM Studio. Any OpenAI-compatible API works too, including Meta’s Muse models (Muse Spark, Muse Wonder) through the Meta Model API, plus open-weight models you run locally. See <a href="/omniroute-desktop-client.html">how routers work in the app</a>.</p>
+    </section>
+
+    <section class="band band-alt" data-reveal>
+      <p class="sec-kicker reveal-child">Teams and containment</p>
+      <h2 class="reveal-child">Paperclip and sandboxing.</h2>
+      <div class="cards three">
+        <article class="card reveal-child"><h3>Paperclip tasks</h3><p>Check a task out of a Paperclip org, work locally in a git worktree, and let the work hand itself back after a 60 second countdown. <a href="/paperclip-local-tasks.html">Read the guide</a>.</p></article>
+        <article class="card reveal-child"><h3>Scoped sandboxes</h3><p>Give a chat a disposable Docker computer with no network by default and capped memory, CPU and processes. Docker is optional. <a href="/sandboxed-coding-agent.html">Read the guide</a>.</p></article>
+        <article class="card reveal-child"><h3>Permission modes</h3><p>Read-only, workspace or full access per chat, with secrets kept out of the commands the agent runs.</p></article>
+      </div>
+    </section>
+
     <section class="band band-alt" data-reveal>
       <p class="sec-kicker reveal-child">FAQ</p>
       <h2 class="reveal-child">Questions people ask first.</h2>
       <div class="cards three">
         <article class="card reveal-child"><h3>Is Muster Agent free?</h3><p>Yes. Muster Agent is free and open source under the MIT licence. You bring your own model access: ChatGPT or Claude sign-ins, API keys, OpenAI-compatible gateways, or local models through Ollama and LM Studio. It finds the ones already on your computer, so you do not sign in again.</p></article>
-        <article class="card reveal-child"><h3>Which coding agents does it work with?</h3><p>Codex, Claude Code and OpenCode, plus OpenAI-compatible gateways and local models. It runs your existing installs side by side and lets you pick the model per chat.</p></article>
+        <article class="card reveal-child"><h3>Which coding agents does it work with?</h3><p>Codex (your ChatGPT sign-in), Claude Code, OpenCode, the Cursor Agent CLI and the Gemini CLI, plus any OpenAI-compatible router (OmniRoute, OpenRouter, custom endpoints) and local models through Ollama and LM Studio. It runs the installs you already have side by side and lets you pick the model per chat.</p></article>
         <article class="card reveal-child"><h3>Which operating systems does it support?</h3><p>macOS 14 or later (Apple silicon and Intel .dmg), Windows 10 and 11 x64 (installer .exe or portable .zip), and x64 Linux (.AppImage, .deb or .tar.gz).</p></article>
         <article class="card reveal-child"><h3>Does my code stay on my computer?</h3><p>Muster Agent runs on your computer and works in your own folders. Your code goes only to the model provider you choose for a chat, so a local model keeps everything on your machine. Optional Docker sandboxes have no network by default.</p></article>
-        <article class="card reveal-child"><h3>How does it relate to Codex and Claude Code?</h3><p>Muster Agent is an independent open-source project, not made by or affiliated with OpenAI or Anthropic. It is a desktop workbench around the Codex and Claude Code installs and sign-ins you already have.</p></article>
+        <article class="card reveal-child"><h3>How does it relate to Codex and Claude Code?</h3><p>Muster Agent is an independent open-source project, not made by or affiliated with OpenAI or Anthropic. It is a desktop workbench that works with the Codex and Claude Code installs and sign-ins you already have.</p></article>
         <article class="card reveal-child"><h3>How do I update it?</h3><p>On macOS it downloads the new release, checks its SHA-256 and code signature, and installs on restart. On Windows and Linux it tells you when a new version is out and opens the download.</p></article>
       </div>
     </section>
@@ -204,12 +230,14 @@
       <a href="/docs.html">Docs</a>
     </div>
     <nav class="footer-guides" aria-label="Muster Agent guides">
-      <a href="/open-source-codex-desktop-app.html">Codex desktop app</a>
+      <a href="/desktop-app-for-codex.html">Desktop app for Codex</a>
       <a href="/run-claude-code-and-codex.html">Claude Code + Codex</a>
       <a href="/paperclip-local-tasks.html">Paperclip tasks</a>
+      <a href="/sandboxed-coding-agent.html">Sandboxed agents</a>
       <a href="/ai-coding-agent-long-term-memory.html">Long-term memory</a>
       <a href="/omniroute-desktop-client.html">OmniRoute client</a>
     </nav>
+    <p class="trademark-note">Codex, ChatGPT and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Cursor is a trademark of Anysphere; Gemini and Google are trademarks of Google LLC. Meta and Muse are trademarks of Meta Platforms, Inc. Muster Agent is an independent open-source project and is not affiliated with or endorsed by them.</p>
   </footer>
 </body>
 </html>

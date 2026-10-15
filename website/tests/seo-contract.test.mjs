@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, readdirSync} from 'node:fs';
 const root = new URL('../', import.meta.url);
-const skip = new Set(['404.html', 'portal.html', 'onboarding.html', 'spatial.html', 'roadmap.html']);
+const skip = new Set(['404.html', 'portal.html', 'onboarding.html', 'spatial.html', 'roadmap.html', 'open-source-codex-desktop-app.html']);
 const pages = readdirSync(root).filter((f) => f.endsWith('.html') && !skip.has(f));
 const sitemap = readFileSync(new URL('public/sitemap.xml', root), 'utf8');
 const decode = (s) => s.replace(/&amp;/g, '&');
