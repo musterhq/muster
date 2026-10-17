@@ -207,3 +207,44 @@ test("Claude Code does not add the API preset, high-risk plugins are not enabled
   assert.equal(config.tools?.mcp?.servers?.sqlite, undefined);
 
 });
+
+test("quit asks before discarding choices, finish lists what it will write, and the checklist waits for a key", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-onboarding-quit-"));
+  const input = fakeTtyInput();
+  const { output, read } = fakeTtyOutput();
+  const running = runMusterOnboardingTui(["--no-chat", "--no-color"], { cwd, input, output });
+  await tick();
+  input.write(" "); await tick();
+  input.write("q"); await tick();
+  assert.match(read(), /Discard your choices and quit\?/);
+  input.write("n"); await tick();
+  input.write("\x03"); await tick();
+  input.write("y");
+  assert.equal((await running).saved, false);
+
+  const state = onboardingStateForSelections({ purpose: ["code"], memory: ["never"] });
+  const finish = renderOnboarding(state, 120, false);
+  assert.match(finish, /Will write/);
+  assert.match(finish, /memory write policy: never/);
+  assert.match(finish, /Nothing is saved until you press Enter/);
+
+  const fakeHome = await mkdtemp(join(tmpdir(), "muster-onboarding-quit-home-"));
+  const previousHome = process.env.MUSTER_ONBOARDING_HOME;
+  process.env.MUSTER_ONBOARDING_HOME = fakeHome;
+  try {
+  const input2 = fakeTtyInput();
+  const second = fakeTtyOutput();
+  let settled = false;
+  const saving = runMusterOnboardingTui(["--no-chat", "--no-color"], { cwd, input: input2, output: second.output }).then((r) => { settled = true; return r; });
+  await tick();
+  input2.write("s");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(settled, false, "the post-save checklist stays up until a key is pressed");
+  assert.match(second.read(), /Saved\. Press any key to continue\./);
+  input2.write("x");
+  assert.equal((await saving).saved, true);
+  } finally {
+    if (previousHome === undefined) delete process.env.MUSTER_ONBOARDING_HOME;
+    else process.env.MUSTER_ONBOARDING_HOME = previousHome;
+  }
+});
