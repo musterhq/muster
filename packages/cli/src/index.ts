@@ -22,6 +22,7 @@ import {
   encodeCapabilitySelection,
   parseCapabilityConfirmation,
 } from "./capabilities-overlay.js";
+import { runServerCommand } from "./server-command.js";
 import { hasCompletedMusterOnboarding, runMusterOnboardingTui } from "./onboarding-tui.js";
 import { formatWorkspaceMismatchBanner, isParallelWorkPrompt, parallelTaskChoiceForKey, workspaceMismatchChoiceForKey, workspaceOverrideForMismatchChoice } from "./directory-awareness.js";
 import { runFrappe2RealPromptsQa } from "./qa-frappe2.js";
@@ -329,7 +330,7 @@ const SHELL_COMMANDS = [
   "episodes", "feedback", "candidates", "eval", "capability", "roster", "artifacts", "plugins", "mcp", "dashboard",
   "context", "latency", "memory", "goal", "tui", "provider", "runtime", "qa", "pi", "state", "migrate", "sessions",
   "skills", "pulse", "subagents", "tasks", "board", "demo", "benchmark", "run", "tokens", "traces", "profile",
-  "schedule", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe",
+  "schedule", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe", "server",
 ] as const;
 
 function readCliPackageVersion(): string {
@@ -518,6 +519,9 @@ async function main(): Promise<void> {
     case "frappe":
       await frappeCommand(args);
       return;
+    case "server":
+      await runServerCommand(args, { out: (line) => console.log(line), readStdin: readAllStdin });
+      return;
     default:
       throw new Error(unknownShellCommandMessage(command, SHELL_COMMANDS));
   }
@@ -672,6 +676,7 @@ Usage:
   muster gateway poll                 # local Telegram long-poll fallback; daemonize with gateway daemon start --with-telegram-poll
   muster pairing list | approve <code> [--frappe-site URL --frappe-token-env ENV | --frappe-user USER] [--employee EMP --role ROLE]
   muster frappe setup --site-url URL --oauth-credential-file PATH [--connection-id ID] [--support] [--support-customer NAME] [--callback-mode gateway|frappe] [--result-path /api/method/...] [--identity-path /api/method/...] [--identity-ttl-ms 60000]
+  muster server connect <url> --token-env VAR | status | disconnect | projects | tasks --project P | approvals --project P | ledger   # Muster Server, read-only
   muster frappe connect <https-site-origin> [--muster-url https://muster.example] [--wait|--no-wait] [--no-open] [--no-qr] [--timeout-ms 300000]
   muster frappe doctor [--connection-id ID]
   muster flow replay <run-id> [--live-agents]
@@ -13478,3 +13483,9 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+
+async function readAllStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
