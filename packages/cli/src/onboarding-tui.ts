@@ -60,6 +60,10 @@ interface OnboardingState {
   cursor: number;
   selected: Record<StepId, Set<string>>;
   saved?: boolean;
+  /** Set while the quit prompt ("discard your choices?") is showing. */
+  confirmQuit?: boolean;
+  /** Set after save: the checklist stays up until a key is pressed. */
+  awaitingAck?: boolean;
   applied?: OnboardingApplyResult;
 }
 
@@ -247,12 +251,27 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
   render();
   const result = await new Promise<{ saved: boolean; handoffToChat: boolean }>((resolve) => {
     const onKeypress = async (_chunk: string, key: { name?: string; ctrl?: boolean }) => {
-      if (key.ctrl && key.name === "c") {
+      if (state.awaitingAck) {
         cleanup();
-        resolve({ saved: false, handoffToChat: false });
+        resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
         return;
       }
-      if (key.name === "q") {
+      if (state.confirmQuit) {
+        if (key.name === "y") {
+          cleanup();
+          resolve({ saved: false, handoffToChat: false });
+          return;
+        }
+        state.confirmQuit = false;
+        render();
+        return;
+      }
+      if ((key.ctrl && key.name === "c") || key.name === "q") {
+        if (hasAnySelection(state)) {
+          state.confirmQuit = true;
+          render();
+          return;
+        }
         cleanup();
         resolve({ saved: false, handoffToChat: false });
         return;
@@ -265,9 +284,10 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
         applyCodingDefaults(state);
         state.applied = await applyOnboardingProfile(state, cwd);
         state.saved = true;
+        state.awaitingAck = true;
+        state.stepIndex = steps.length;
+        state.confirmQuit = false;
         render();
-        cleanup();
-        resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
         return;
       }
       if (key.name === "up") moveCursor(state, -1);
@@ -278,9 +298,9 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
         if (currentStep(state).id === "finish") {
           state.applied = await applyOnboardingProfile(state, cwd);
           state.saved = true;
+          state.awaitingAck = true;
+          state.confirmQuit = false;
           render();
-          cleanup();
-          resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
           return;
         } else {
           next(state);
@@ -379,6 +399,15 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
   const body = railWidth
     ? zipRail(main, rail, mainWidth, useColor)
     : [...main, "", ...rail];
+  if (state.confirmQuit) {
+    return [
+      borderTop("Muster onboarding", bodyWidth, useColor),
+      ...body.map((line) => frame(line, bodyWidth, useColor)),
+      frame("", bodyWidth, useColor),
+      frame(`${paint("Discard your choices and quit?", "warn", useColor)}  ${paint("y", "lime", useColor)} discard  ${paint("any other key", "lime", useColor)} keep going`, bodyWidth, useColor),
+      borderBottom(bodyWidth, useColor),
+    ].join("\n");
+  }
   return [
     borderTop("Muster onboarding", bodyWidth, useColor),
     ...body.map((line) => frame(line, bodyWidth, useColor)),
@@ -488,7 +517,8 @@ function renderFinish(state: OnboardingState, width: number, useColor: boolean):
     ...profileImpacts(state).map((impact) => frame(`${paint("Impact", "lime", useColor)} ${impact}`, bodyWidth, useColor)),
     frame("", bodyWidth, useColor),
     ...renderAppliedSetup(state, bodyWidth, useColor),
-    frame(state.saved ? paint("Saved profile and applied available setup. Opening chat...", "lime", useColor) : `${paint("Enter", "lime", useColor)} save/apply setup  ${paint("Esc", "lime", useColor)} back  ${paint("q", "lime", useColor)} quit`, bodyWidth, useColor),
+    ...(state.saved ? [] : plannedWrites(state).map((line, index) => frame(`${index === 0 ? paint("Will write", "cyan", useColor) : "          "} ${line}`, bodyWidth, useColor))),
+    frame(state.confirmQuit ? `${paint("Discard your choices and quit?", "warn", useColor)}  ${paint("y", "lime", useColor)} discard  ${paint("any other key", "lime", useColor)} keep going` : state.saved ? paint(state.awaitingAck ? "Saved. Press any key to continue." : "Saved profile and applied available setup.", "lime", useColor) : `${paint("Enter", "lime", useColor)} save/apply setup  ${paint("Esc", "lime", useColor)} back  ${paint("q", "lime", useColor)} quit`, bodyWidth, useColor),
     borderBottom(bodyWidth, useColor),
   ];
   return lines.join("\n");
@@ -513,6 +543,10 @@ function initialState(): OnboardingState {
 function currentStep(state: OnboardingState): Step | { id: "finish"; eyebrow: string; title: string; body: string; choices: readonly Choice[] } {
   if (state.stepIndex >= steps.length) return { id: "finish", eyebrow: "ready", title: "Finish", body: "", choices: [] };
   return steps[state.stepIndex]!;
+}
+
+function hasAnySelection(state: OnboardingState): boolean {
+  return Object.values(state.selected).some((set) => set.size > 0);
 }
 
 function moveCursor(state: OnboardingState, delta: number): void {
@@ -757,8 +791,24 @@ function labelsFor(state: OnboardingState, stepId: StepId): string[] {
   return step?.choices.filter((item) => selected.has(item.id)).map((item) => item.label) ?? [];
 }
 
+/** What Enter will write, computed from the same selection helpers the apply step uses. */
+export function plannedWrites(state: OnboardingState): string[] {
+  const catalog = listBuiltinPlugins();
+  const plugins = pluginsForSelections(state).map((id) => catalog.find((entry) => entry.id === id || entry.aliases?.includes(id))).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const enabled = plugins.filter((entry) => entry.risk !== "high").map((entry) => entry.id);
+  const optIn = plugins.filter((entry) => entry.risk === "high").map((entry) => entry.id);
+  const lines = [`config: <workspace>/.muster/config.json, profile: ~/.muster/onboarding-profile.json`];
+  lines.push(`memory write policy: ${memoryPolicyForSelections(state)}`);
+  if (enabled.length) lines.push(`plugins enabled: ${enabled.join(", ")}`);
+  if (optIn.length) lines.push(`plugins left off (high risk, enable yourself): ${optIn.join(", ")}`);
+  const mcp = mcpForSelections(state);
+  if (mcp.length) lines.push(`MCP servers: ${mcp.join(", ")}`);
+  if (state.selected.channels.size) lines.push(`gateway config for: ${[...state.selected.channels].join(", ")}`);
+  return lines;
+}
+
 function profileImpacts(state: OnboardingState): string[] {
-  const impacts = ["Muster will show setup before saving anything."];
+  const impacts = ["Nothing is saved until you press Enter on the finish screen."];
   if (state.selected.style.has("tokens")) impacts.push("Low-token retrieval will run before old context is added.");
   if (state.selected.style.has("privacy")) impacts.push("Tenant/user/workspace/session scopes stay visible.");
   if (state.selected.integrations.has("frappe")) impacts.push("Frappe answers will prefer module, DocType, field, and workflow context.");
@@ -774,11 +824,11 @@ function renderAppliedSetup(state: OnboardingState, width: number, useColor: boo
     frame(`${paint("Config", "cyan", useColor)} ${state.applied.configPath}`, width, useColor),
   ];
   if (state.applied.gatewayPath) lines.push(frame(`${paint("Gateway", "cyan", useColor)} ${state.applied.gatewayPath}`, width, useColor));
-  for (const action of state.applied.nextActions.slice(0, 6)) {
+  for (const action of state.applied.nextActions.slice(0, 14)) {
     const target = action.command ?? action.url ?? action.label;
     lines.push(frame(`${paint("Next", "peach", useColor)} ${action.label}: ${target}`, width, useColor));
   }
-  if (state.applied.nextActions.length > 6) lines.push(frame(paint(`+${state.applied.nextActions.length - 6} more setup actions saved in onboarding profile`, "warn", useColor), width, useColor));
+  if (state.applied.nextActions.length > 14) lines.push(frame(paint(`+${state.applied.nextActions.length - 14} more setup actions saved in onboarding profile`, "warn", useColor), width, useColor));
   lines.push(frame("", width, useColor));
   return lines;
 }
