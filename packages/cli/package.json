@@ -26,11 +26,11 @@
   "author": "Muster contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Dkm0315/muster.git",
+    "url": "git+https://github.com/musterhq/muster.git",
     "directory": "packages/cli"
   },
   "homepage": "https://themuster.dev",
-  "bugs": "https://github.com/Dkm0315/muster/issues",
+  "bugs": "https://github.com/musterhq/muster/issues",
   "keywords": [
     "agent-harness",
     "ai-agent",

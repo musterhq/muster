@@ -178,6 +178,7 @@ const steps: readonly Step[] = [
       choice("preferences", "Remember my preferences", "Tone, workflow, provider, and answer preferences.", "personal", "peach", "Preference memory personalizes the interface without leaking work data.", controls("Recall strictness", "Balanced", "Retention", "Until removed")),
       choice("site", "Remember app/site context", "Index Frappe or web-app context with graph links and receipts.", "plugin context", "lime", "Site memory helps app-aware answers but should be rebuilt when metadata changes.", controls("Index depth", "Graph", "Refresh", "On demand")),
       choice("ask", "Ask before saving", "Show what will be remembered before writing durable memory.", "consent", "cyan", "Durable memory writes require confirmation, reducing accidental personalization.", controls("Durable writes", "Ask first", "Receipt detail", "Compact"), ["muster memory status"]),
+      choice("auto", "Save automatically", "Let Muster write durable memory without asking each time.", "hands-off", "peach", "Fastest personalization, but memory can fill with facts you never reviewed.", controls("Durable writes", "Automatic", "Receipt detail", "Compact")),
       choice("never", "Never save automatically", "Use the assistant without durable memory writes.", "private", "lavender", "Maximum privacy, but Muster will not personalize future sessions unless context is re-provided.", controls("Durable writes", "Disabled", "Retention", "None"), ["muster memory status"]),
     ],
   },
@@ -520,13 +521,19 @@ function moveCursor(state: OnboardingState, delta: number): void {
   state.cursor = (state.cursor + delta + step.choices.length) % step.choices.length;
 }
 
+const MEMORY_POLICY_IDS: ReadonlySet<string> = new Set(["ask", "never", "auto"]);
+
 function toggleCurrent(state: OnboardingState): void {
   const step = currentStep(state);
   const item = step.choices[state.cursor];
   if (!item) return;
   const set = state.selected[step.id];
   if (set.has(item.id)) set.delete(item.id);
-  else set.add(item.id);
+  else {
+    // The three write policies are one choice, not three toggles.
+    if (step.id === "memory" && MEMORY_POLICY_IDS.has(item.id)) for (const id of MEMORY_POLICY_IDS) set.delete(id);
+    set.add(item.id);
+  }
 }
 
 function preselectCurrentStep(state: OnboardingState): void {
@@ -603,7 +610,6 @@ async function applyProviderSelections(state: OnboardingState, cwd: string, conf
     addAction({ kind: "provider", id: "anthropic", label: "Anthropic API key", command: "export ANTHROPIC_API_KEY=...", url: "https://console.anthropic.com/settings/keys", env: ["ANTHROPIC_API_KEY"], note: "Native Claude API route is configured and becomes usable once the env var exists." });
   }
   if (selected.has("claude")) {
-    await addPresetProvider("anthropic", {}, cwd);
     configured.push("provider:claude-code-ready");
     addAction({ kind: "provider", id: "claude-code", label: "Claude Code login", command: "claude login", url: "https://docs.anthropic.com/en/docs/claude-code/setup", note: "Muster will route Claude Code workflows through local Claude Code auth when available." });
   }
@@ -619,7 +625,12 @@ async function applyPluginSelections(state: OnboardingState, cwd: string, config
   for (const id of pluginIds) {
     const plugin = catalog.find((entry) => entry.id === id || entry.aliases?.includes(id));
     if (!plugin) continue;
-    await enableBuiltinPlugin(plugin.id, cwd, { allowHighRisk: true });
+    if (plugin.risk === "high") {
+      // High-risk plugins are never enabled silently; the user opts in explicitly.
+      addAction({ kind: "plugin", id: plugin.id, label: `${plugin.id} (high risk, not enabled)`, command: `muster plugins enable ${plugin.id}`, note: "High-risk plugins need an explicit enable; review muster plugins inspect first." });
+      continue;
+    }
+    await enableBuiltinPlugin(plugin.id, cwd);
     configured.push(`plugin:${plugin.id}`);
     const env = setupEnv(plugin.setup);
     for (const url of plugin.setup?.setupUrls ?? []) {
@@ -688,8 +699,8 @@ async function applyChannelSelections(state: OnboardingState, cwd: string, confi
  */
 export function memoryPolicyForSelections(state: OnboardingState): MemoryWritePolicy {
   if (state.selected.memory.has("never")) return "never";
-  if (state.selected.memory.has("ask")) return "ask";
-  return "auto";
+  if (state.selected.memory.has("auto")) return "auto";
+  return "ask";
 }
 
 async function applyMemorySelections(state: OnboardingState, cwd: string, configured: string[]): Promise<void> {
@@ -802,7 +813,7 @@ function pluginsForSelections(state: OnboardingState): string[] {
 }
 
 function mcpForSelections(state: OnboardingState): string[] {
-  const ids = new Set<string>(["git", "sqlite"]);
+  const ids = new Set<string>();
   if (state.selected.purpose.has("code") || state.selected.integrations.has("github")) ids.add("github");
   if (state.selected.integrations.has("browser")) ids.add("browser");
   if (state.selected.integrations.has("web") || state.selected.purpose.has("research")) ids.add("parallel-search");
