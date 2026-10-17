@@ -18,6 +18,7 @@ import {
   type McpServerConfig,
   type MemoryWritePolicy,
 } from "@musterhq/core";
+import { detectProviders, type DetectedProviders } from "./onboarding-detect.js";
 import { initGatewayConfig, saveGatewayConfig, type GatewayConfig } from "@musterhq/gateway";
 
 type StepId = "purpose" | "style" | "provider" | "integrations" | "channels" | "memory" | "finish";
@@ -62,6 +63,8 @@ interface OnboardingState {
   saved?: boolean;
   /** Set while the quit prompt ("discard your choices?") is showing. */
   confirmQuit?: boolean;
+  /** Result of the read-only provider scan; undefined until it finishes. */
+  detected?: DetectedProviders;
   /** Set after save: the checklist stays up until a key is pressed. */
   awaitingAck?: boolean;
   applied?: OnboardingApplyResult;
@@ -222,17 +225,19 @@ function channelCommands(id: string): readonly string[] {
   return commands[id] ?? [];
 }
 
-export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
+export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders> } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
   const output = options.output ?? process.stdout;
   const input = options.input ?? process.stdin;
   const width = Math.max(88, output.columns ?? 112);
   const state = initialState();
   const cwd = options.cwd ?? process.cwd();
   const useColor = shouldUseOnboardingColor(args, input, output);
+  const detection = (options.detect ?? detectProviders)().catch(() => undefined);
   if (args.includes("--preview") || !input.isTTY || !output.isTTY) {
     const previewStep = readPreviewStep(args);
     if (previewStep !== undefined) state.stepIndex = previewStep;
     preselectCurrentStep(state);
+    state.detected = await detection;
     output.write(`${renderOnboarding(state, width, useColor)}\n`);
     return { saved: false, handoffToChat: false };
   }
@@ -249,6 +254,13 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
     output.write(`\x1b[H\x1b[2J${frame}\x1b[J`);
   };
   render();
+  // Detection runs behind the first paint; keys work immediately and the rows fill in when it lands.
+  void detection.then((detected) => {
+    if (!detected || state.saved) return;
+    state.detected = detected;
+    preselectDetectedProviders(state);
+    render();
+  });
   const result = await new Promise<{ saved: boolean; handoffToChat: boolean }>((resolve) => {
     const onKeypress = async (_chunk: string, key: { name?: string; ctrl?: boolean }) => {
       if (state.awaitingAck) {
@@ -393,7 +405,7 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
     "",
     ...renderChoices(step, state, mainWidth, useColor),
     "",
-    ...renderSetupSurface(selectedChoices, active, mainWidth, useColor),
+    ...renderSetupSurface(selectedChoices, active, mainWidth, useColor, step.id === "provider" ? state.detected : undefined),
   ];
   const rail = summaryRailLines(state, railWidth || inner, useColor);
   const body = railWidth
@@ -463,7 +475,8 @@ function zipRail(main: readonly string[], rail: readonly string[], mainWidth: nu
 function renderChoices(step: Step, state: OnboardingState, width: number, useColor: boolean): string[] {
   const rows: string[] = [];
   for (let index = 0; index < step.choices.length; index += 1) {
-    const item = step.choices[index];
+    const detected = step.id === "provider" ? state.detected?.[step.choices[index]!.id] : undefined;
+    const item = detected ? { ...step.choices[index]!, badge: detected.badge, tone: (detected.ready ? "lime" : "peach") as Tone } : step.choices[index]!;
     const checked = state.selected[step.id].has(item.id);
     const focused = index === state.cursor;
     const marker = checked ? "✓" : "◇";
@@ -474,7 +487,7 @@ function renderChoices(step: Step, state: OnboardingState, width: number, useCol
   return rows;
 }
 
-function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, width: number, useColor: boolean): string[] {
+function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, width: number, useColor: boolean, detected?: DetectedProviders): string[] {
   if (!selectedChoices.length) {
     return [
       paint("Selected setup", "cyan", useColor),
@@ -492,7 +505,7 @@ function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, 
     for (const control of item.controls) lines.push(`  ${control.label}: ${paint(control.value, "lime", useColor)}`);
     // Honest next action, never a fake input: the command is printed in full
     // (wrapped, never truncated) so it can be copied and run verbatim.
-    for (const command of (item.configureLater ?? []).slice(0, 4)) {
+    for (const command of detected?.[item.id]?.ready ? [] : (item.configureLater ?? []).slice(0, 4)) {
       const rows = wrap(`configure later: ${command}`, Math.max(20, width - 2));
       for (const [row, line] of rows.entries()) lines.push(`  ${row === 0 ? "" : "  "}${paint(line, "peach", useColor)}`);
     }
@@ -543,6 +556,12 @@ function initialState(): OnboardingState {
 function currentStep(state: OnboardingState): Step | { id: "finish"; eyebrow: string; title: string; body: string; choices: readonly Choice[] } {
   if (state.stepIndex >= steps.length) return { id: "finish", eyebrow: "ready", title: "Finish", body: "", choices: [] };
   return steps[state.stepIndex]!;
+}
+
+/** Detected, ready routes start ticked so the common case is one Enter. */
+export function preselectDetectedProviders(state: OnboardingState): void {
+  if (!state.detected || state.selected.provider.size) return;
+  for (const [id, status] of Object.entries(state.detected)) if (status.ready) state.selected.provider.add(id);
 }
 
 function hasAnySelection(state: OnboardingState): boolean {
