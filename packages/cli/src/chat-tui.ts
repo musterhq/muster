@@ -142,6 +142,8 @@ export interface RunMusterChatTuiOptions extends MusterAutocompleteOptions {
   readonly onSubmit: (text: string, sink: MusterChatSink) => Promise<boolean>;
   /** Interrupt the provider turn currently owned by onSubmit. */
   readonly onInterrupt?: () => boolean | Promise<boolean>;
+  /** Inject text into the running turn; false when the runtime cannot steer (the text is queued instead). */
+  readonly onSteer?: (text: string) => boolean | Promise<boolean>;
   /** Consume a raw key while index.ts owns a one-line pending decision. */
   readonly onDecisionKey?: (data: string, sink: MusterChatSink) => boolean;
   /** Printed to stdout after teardown when the session exits via /exit. */
@@ -772,8 +774,11 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
 
 /** `/bin/zsh -lc 'pytest -q'` → `pytest -q`: the wrapper is noise, the command is the fact. */
 export function unwrapShellCommand(command: string): string {
-  const match = command.trim().match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
-  return (match?.[2] ?? command).trim();
+  const trimmed = command.trim();
+  const quoted = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
+  if (quoted) return quoted[2]!.trim();
+  const bare = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(\S+)$/);
+  return (bare?.[1] ?? trimmed).trim();
 }
 
 function toolCellName(event: AgentToolEvent): string {
@@ -935,9 +940,68 @@ export function windowTranscript(rows: readonly string[], viewportRows: number, 
   return { visible: rows.slice(Math.max(0, end - viewportRows), end), clamped };
 }
 
+/** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
+export function isQueueFollowUpKey(data: string): boolean {
+  return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
+}
+
+/** Alt+Up pulls the newest queued follow-up back into the composer. */
+export function isEditQueuedKey(data: string): boolean {
+  return data === "\x1b[1;3A" || data === "\x1b\x1b[A" || matchesKey(data, "alt+up");
+}
+
+/**
+ * What the composer does with input while a turn runs: Enter steers the live
+ * turn when the runtime can take it, otherwise (and always on Ctrl+Q) the text
+ * waits in a queue that runs, in order, once the turn ends.
+ */
+export class RunningTurnInput {
+  readonly queued: string[] = [];
+
+  constructor(private readonly onSteer?: (text: string) => boolean | Promise<boolean>) {}
+
+  async route(value: string, mode: "steer" | "queue", appendLine: (line: string) => void): Promise<void> {
+    if (mode === "steer" && this.onSteer) {
+      let steered = false;
+      try {
+        steered = await this.onSteer(value);
+      } catch {
+        steered = false;
+      }
+      if (steered) {
+        appendLine(formatUserLine(value));
+        appendLine(`  ${dim(`${RESULT_ELBOW} sent to the running turn`)}`);
+        return;
+      }
+    }
+    this.queued.push(value);
+  }
+
+  takeNext(): string | undefined {
+    return this.queued.shift();
+  }
+
+  takeLast(): string | undefined {
+    return this.queued.pop();
+  }
+
+  drain(): string[] {
+    return this.queued.splice(0);
+  }
+}
+
+/** The band above the composer: one dim row per queued follow-up plus the keys that act on them. */
+export function renderQueuedBand(queued: readonly string[], width: number): string[] {
+  if (!queued.length) return [];
+  const rows = queued.map((text) => truncateToWidth(dim(`  ↳ queued  ${text.replace(/\s+/g, " ").trim()}`), width, "…"));
+  rows.push(truncateToWidth(dim("    alt+↑ edit · esc interrupts and returns them to the composer"), width, ""));
+  return rows;
+}
+
 export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   readonly onSubmit?: (text: string, sink: MusterChatSink) => Promise<boolean>;
   readonly onInterrupt?: () => boolean | Promise<boolean>;
+  readonly onSteer?: (text: string) => boolean | Promise<boolean>;
   readonly initialLines?: readonly string[];
   readonly onDecisionKey?: (data: string, sink: MusterChatSink) => boolean;
   readonly width?: number;
@@ -945,7 +1009,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
 }): MusterChatHarness {
   const tui = fakeHarnessTui(options.width ?? 120, options.rows ?? 40);
   const editor = createMusterChatEditor(tui);
-  const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines);
+  const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines, options.onSteer);
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
   editor.onSubmit = (text) => {
     void sink.submit(text);
@@ -953,6 +1017,17 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   return {
     input(data) {
       if (options.onDecisionKey?.(data, sink)) return;
+      if (sink.running && isQueueFollowUpKey(data)) {
+        const text = editor.getText().trim();
+        editor.setText("");
+        if (text) void sink.queueFollowUp(text);
+        return;
+      }
+      if (isEditQueuedKey(data) && !editor.getText()) {
+        const last = sink.followUps.takeLast();
+        if (last !== undefined) editor.setText(last);
+        return;
+      }
       if (data === "\x04") {
         sink.toggleLiveDiff();
         return;
@@ -987,7 +1062,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       await sink.submit(text);
     },
     visible(width = options.width ?? 120) {
-      return [...sink.transcriptLines, ...renderMusterComposer(editor, width)];
+      return [...sink.transcriptLines, ...renderQueuedBand(sink.followUps.queued, width), ...renderMusterComposer(editor, width)];
     },
     text() {
       return editor.getText();
@@ -1198,7 +1273,7 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   const terminal = new SuspendableProcessTerminal();
   const tui = new TUI(terminal, true);
   const editor = createMusterChatEditor(tui);
-  const screen = new MusterChatScreen(tui, editor, options.statusLine, options.headerLines ?? [], options.initialLines ?? [], options.onInterrupt);
+  const screen = new MusterChatScreen(tui, editor, options.statusLine, options.headerLines ?? [], options.initialLines ?? [], options.onInterrupt, options.onSteer);
   const boardMode = options.board ? new BoardModeHost(tui, terminal, screen, editor, options.board) : undefined;
   screen.onOpenBoard = (force) => boardMode?.open(force) ?? Promise.resolve(false);
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
@@ -1227,6 +1302,21 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       editor.setText("");
       tui.requestRender(true);
       return { consume: true };
+    }
+    if (screen.running && isQueueFollowUpKey(data)) {
+      const text = editor.getText().trim();
+      editor.setText("");
+      if (text) void screen.queueFollowUp(text);
+      tui.requestRender(true);
+      return { consume: true };
+    }
+    if (isEditQueuedKey(data) && !editor.getText()) {
+      const last = screen.followUps.takeLast();
+      if (last !== undefined) {
+        editor.setText(last);
+        tui.requestRender(true);
+        return { consume: true };
+      }
     }
     if (data === "\x04") {
       screen.toggleLiveDiff();
@@ -1416,6 +1506,7 @@ class MusterChatScreen implements Component, MusterChatSink {
   private liveDiffOverlay: LiveFileOverlay | undefined;
   private liveDiffHandle: OverlayHandle | undefined;
   private suppressRawLiveDiffEscape = false;
+  readonly followUps: RunningTurnInput;
   exited = false;
   onStop?: () => void;
   onOpenBoard?: (force?: boolean) => Promise<boolean>;
@@ -1427,7 +1518,9 @@ class MusterChatScreen implements Component, MusterChatSink {
     private headerLines: readonly string[],
     initialLines: readonly string[],
     private readonly onInterrupt?: () => boolean | Promise<boolean>,
+    onSteer?: (text: string) => boolean | Promise<boolean>,
   ) {
+    this.followUps = new RunningTurnInput(onSteer);
     this.lines = [...initialLines];
   }
 
@@ -1660,21 +1753,46 @@ class MusterChatScreen implements Component, MusterChatSink {
       this.stop();
       return;
     }
-    this.editor.disableSubmit = true;
+    // The composer stays live during a turn: Enter steers the running turn
+    // (or queues when the runtime cannot steer); Ctrl+Q always queues.
+    if (this.turnRunning) {
+      this.editor.addToHistory(value);
+      await this.followUps.route(value, "steer", (line) => this.appendLine(line));
+      this.tui.requestRender();
+      return;
+    }
     this.turnRunning = true;
     this.interruptRequested = false;
     this.editor.addToHistory(value);
     this.appendUser(value);
+    let keepGoing = true;
     try {
-      const keepGoing = await onSubmit(value, this);
+      keepGoing = await onSubmit(value, this);
       if (!keepGoing) this.stop();
     } catch (error) {
       this.appendLine(red(error instanceof Error ? error.message : String(error)));
     } finally {
       this.turnRunning = false;
-      this.editor.disableSubmit = false;
       this.clearStatus();
+      if (this.interruptRequested) {
+        // An interrupt is a change of mind: queued follow-ups come back for editing.
+        const back = this.followUps.drain();
+        if (back.length) this.editor.setText(back.join("\n"));
+      } else if (keepGoing && !this.stopped) {
+        const next = this.followUps.takeNext();
+        if (next !== undefined) void this.submit(next, onSubmit);
+      }
+      this.tui.requestRender();
     }
+  }
+
+  get running(): boolean {
+    return this.turnRunning;
+  }
+
+  async queueFollowUp(text: string): Promise<void> {
+    await this.followUps.route(text, "queue", (line) => this.appendLine(line));
+    this.tui.requestRender();
   }
 
   interruptTurn(): boolean {
@@ -1699,7 +1817,7 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   render(width: number): string[] {
     const frameWidth = Math.max(40, Math.min(width, 240));
-    const composer = renderMusterComposer(this.editor, frameWidth);
+    const composer = [...renderQueuedBand(this.followUps.queued, frameWidth), ...renderMusterComposer(this.editor, frameWidth)];
     // The status row arrives pre-styled (formatStatusLine owns spinner + dim);
     // re-wrapping it in dim() would reset the color half-way through the row.
     const status = this.status ? [truncateToWidth(this.status, frameWidth, "")] : [];
@@ -1808,8 +1926,20 @@ class HarnessSink implements MusterChatSink {
     private readonly onSubmit?: (text: string, sink: MusterChatSink) => Promise<boolean>,
     private readonly onInterrupt?: () => boolean | Promise<boolean>,
     initialLines: readonly string[] = [],
+    onSteer?: (text: string) => boolean | Promise<boolean>,
   ) {
     this.transcriptLines.push(...initialLines);
+    this.followUps = new RunningTurnInput(onSteer);
+  }
+
+  readonly followUps: RunningTurnInput;
+
+  get running(): boolean {
+    return this.turnRunning;
+  }
+
+  async queueFollowUp(text: string): Promise<void> {
+    await this.followUps.route(text, "queue", (line) => this.appendLine(line));
   }
 
   appendLine(line: string): void {
@@ -1868,6 +1998,11 @@ class HarnessSink implements MusterChatSink {
   async submit(text: string): Promise<boolean> {
     const value = text.trim();
     if (!value) return true;
+    if (this.turnRunning && !isExitCommand(value)) {
+      this.editor.addToHistory(value);
+      await this.followUps.route(value, "steer", (line) => this.appendLine(line));
+      return true;
+    }
     this.editor.addToHistory(value);
     this.appendUser(value);
     if (isExitCommand(value)) {
@@ -1876,11 +2011,20 @@ class HarnessSink implements MusterChatSink {
     }
     this.turnRunning = true;
     this.interruptRequested = false;
+    let keepGoing = true;
     try {
-      return await (this.onSubmit?.(value, this) ?? Promise.resolve(true));
+      keepGoing = await (this.onSubmit?.(value, this) ?? Promise.resolve(true));
+      return keepGoing;
     } finally {
       this.turnRunning = false;
       this.clearStatus();
+      if (this.interruptRequested) {
+        const back = this.followUps.drain();
+        if (back.length) this.editor.setText(back.join("\n"));
+      } else if (keepGoing) {
+        const next = this.followUps.takeNext();
+        if (next !== undefined) void this.submit(next);
+      }
     }
   }
 

@@ -232,6 +232,7 @@ import {
   clearCodexAppServerConversation,
   readGatewayCodexWarmThreadCount,
   interruptActiveCodexTurn,
+  steerActiveCodexTurn,
   discoverCodexSessions,
   importCodexSession,
   matchCodexThread,
@@ -1512,6 +1513,9 @@ async function interactiveChat(state: ChatState): Promise<void> {
       statusLine: async () => "",
       board: createChatBoardController(state),
       onInterrupt: () => interruptChatTurn(),
+      // Codex app-server turns take `turn/steer`; other runtimes return false
+      // and the composer queues the text as the next turn instead.
+      onSteer: (text) => steerActiveCodexTurn(text, "cli-chat", chatConversationKey(state.sessionName)).catch(() => false),
       onDecisionKey: (data, sink) => handleChatDecisionKey(data, state, sink),
       onSubmit: async (text, sink) => {
         state.statusSink = sink;
