@@ -1129,6 +1129,8 @@ rl.on("line", (line) => {
     const p = (extra) => ({ threadId, turnId, ...extra });
     send({ id: msg.id, result: { turn: { id: turnId, status: "inProgress" } } });
     send({ method: "item/started", params: p({ item: { type: "agentMessage", id: "m1", text: "" } }) });
+    send({ method: "item/reasoning/summaryTextDelta", params: p({ itemId: "r1", summaryIndex: 0, delta: "Finding pytest" }) });
+    send({ method: "item/reasoning/summaryTextDelta", params: p({ itemId: "r1", summaryIndex: 1, delta: "Running tests" }) });
     send({ method: "item/agentMessage/delta", params: p({ itemId: "m1", delta: "I will run pytest." }) });
     send({ method: "item/completed", params: p({ item: { type: "agentMessage", id: "m1", text: "I will run pytest." } }) });
     send({ method: "thread/tokenUsage/updated", params: p({ tokenUsage: { last: { inputTokens: 100, cachedInputTokens: 50, outputTokens: 10, reasoningOutputTokens: 2 } } }) });
@@ -1146,6 +1148,7 @@ rl.on("line", (line) => {
   try {
     const deltas: string[] = [];
     const tools: Array<Record<string, unknown>> = [];
+    const reasoning: string[] = [];
     const result = await runCodexAppServer({
       prompt: "fix it",
       cwd: dir,
@@ -1154,7 +1157,9 @@ rl.on("line", (line) => {
       keepAlive: false,
       onDelta: (delta) => deltas.push(delta),
       onToolEvent: (event) => tools.push({ ...event }),
+      onReasoningDelta: (delta) => reasoning.push(delta),
     });
+    assert.equal(reasoning.join(""), "Finding pytest\n\nRunning tests", "summary parts are separated");
     assert.equal(result.status, "completed");
     assert.equal(deltas.join(""), "I will run pytest.\n\nadd now adds.");
     assert.deepEqual(tools.map((event) => [event.phase, event.kind, event.title]), [["start", "command", "pytest -q"], ["end", "command", "pytest -q"]]);

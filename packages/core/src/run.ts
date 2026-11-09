@@ -1,3 +1,4 @@
+import type { AgentToolEvent } from "./tool-events.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
@@ -236,6 +237,8 @@ export interface RunOptions {
   readonly onDelta?: (text: string) => void;
   /** Provider-visible reasoning summary deltas. Raw hidden reasoning is never forwarded. */
   readonly onReasoningDelta?: (text: string) => void;
+  /** Tool activity (commands, MCP calls, searches) while the turn runs; file edits come from the workspace observer. */
+  readonly onToolEvent?: (event: AgentToolEvent) => void;
 }
 
 export interface RunOutcome {
@@ -660,6 +663,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options) => {
           rotateThread: rotateWarmThread,
           onDelta: options.onDelta,
           onReasoningDelta: options.onReasoningDelta,
+          ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
           command: leanCommand,
         })
       : await runCodex({

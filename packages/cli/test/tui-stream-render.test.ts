@@ -454,3 +454,20 @@ test("narration painter paints command cells in order with exit status and outpu
     else process.env.NO_COLOR = previous;
   }
 });
+
+// Spec: MUS-SPEC-01-1C (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1c--separate-assistant-messages-never-glue-together)
+test("narration painter gives each reasoning summary part its own row", () => {
+  const previous = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line) });
+    painter.reasoning("Finding pytest environment");
+    painter.reasoning("\n\nRunning an isolated package");
+    painter.finish();
+    assert.deepEqual(plain(lines), ["✻ Finding pytest environment", "✻ Running an isolated package"]);
+  } finally {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  }
+});

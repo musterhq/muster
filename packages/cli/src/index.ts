@@ -2811,9 +2811,20 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   const liveFileTurn = new LiveFileTurnAccumulator();
   state.liveFileTurn = liveFileTurn;
   state.statusSink?.setLiveDiffTurn(liveFileTurn);
+  // Created before the diff feed: a diff card first flushes the narration that
+  // preceded the edit, so cards land where the edit happened.
+  const painter = state.statusSink
+    ? createNarrationPainter({
+        emit: (line) => emitChatLine(state, line),
+        reasoningMode: state.reasoningMode ?? "compact",
+      })
+    : undefined;
   const liveDiff = await startLiveDiffFeed({
     cwd: workspaceCwd,
-    emit: (line) => emitChatLine(state, line),
+    emit: (line) => {
+      painter?.flush();
+      emitChatLine(state, line);
+    },
     enabled: liveDiffEnabled(state),
     onPatch: (event) => {
       let currentContent = "";
@@ -2836,17 +2847,13 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // Defect #3: the parent model's narration streams into the transcript while
   // the turn runs. onDelta/onReasoningDelta already arrive in-process; the
   // painter coalesces them fence-aware so a code block never splits mid-fence.
-  const painter = state.statusSink
-    ? createNarrationPainter({
-        emit: (line) => emitChatLine(state, line),
-        reasoningMode: state.reasoningMode ?? "compact",
-      })
-    : undefined;
+  // Tool activity (commands, MCP calls) paints as cells between the blocks.
   let outcome: RunOutcome;
   try {
     outcome = await executeRun(config, {
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
+      onToolEvent: painter ? (event) => painter.tool(event) : undefined,
       prompt: agentId ? `Agent route: ${agentId}\n\n${prompt}` : prompt,
       turnContext: state.pendingContinuityContext,
       // The managed-runtime plan branch is the ONLY one that honors an explicit

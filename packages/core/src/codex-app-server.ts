@@ -1,3 +1,4 @@
+import { codexItemToToolEvent, type AgentToolEvent } from "./tool-events.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -49,6 +50,8 @@ export interface CodexAppServerRunInput {
   readonly onDelta?: (text: string) => void;
   /** Provider-visible reasoning summary deltas. Raw hidden reasoning is never forwarded. */
   readonly onReasoningDelta?: (text: string) => void;
+  /** Tool activity (commands, MCP calls, web searches) of the parent turn, in provider order. */
+  readonly onToolEvent?: (event: AgentToolEvent) => void;
   /**
    * Every `item/*` and `turn/*` notification, raw. This is how an IDE paints
    * streaming file edits (`item/fileChange/outputDelta` carries the patch text
@@ -387,6 +390,7 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
           input.onReasoningDelta?.(text);
         },
         onActivity: () => { providerActivity = true; },
+        ...(input.onToolEvent ? { onToolEvent: input.onToolEvent } : {}),
         ...(input.onEvent ? { onEvent: (method: string, params: Record<string, unknown>) => { providerActivity = true; input.onEvent?.(method, params); } } : {}),
         ...(input.onRequest ? { onRequest: input.onRequest } : {}),
       });
@@ -920,6 +924,7 @@ class CodexAppServerClient {
     readonly onTurnAccepted?: CodexAppServerRunInput["onTurnAccepted"];
     readonly onDelta?: (text: string) => void;
     readonly onReasoningDelta?: (text: string) => void;
+    readonly onToolEvent?: (event: AgentToolEvent) => void;
     readonly onActivity?: () => void;
     readonly onEvent?: (method: string, params: Record<string, unknown>) => void;
     readonly onRequest?: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
@@ -990,6 +995,9 @@ class CodexAppServerClient {
     let finalMessage = "";
     let firstDeltaMs: number | undefined;
     let tokenUsage: CodexAppServerRunResult["tokenUsage"] | undefined;
+    let lastMessageItemId: string | undefined;
+    let lastDeltaText = "";
+    let lastReasoningPart: string | undefined;
     // Raw events remain observable for multi-agent graph consumers, but the
     // synthesized parent turn must never consume a child's output. Older
     // servers omitted one or both IDs, so a missing ID remains compatible.
@@ -1051,14 +1059,32 @@ class CodexAppServerClient {
           const delta = stringValue(params.delta) ?? "";
           if (delta) {
             firstDeltaMs ??= Date.now() - started;
+            // Each agentMessage item is its own paragraph; without the break,
+            // "…run pytest." and "add currently…" stream as one sentence.
+            const itemId = stringValue(params.itemId);
+            if (itemId && lastMessageItemId && itemId !== lastMessageItemId && !/\n\s*$/.test(lastDeltaText)) input.onDelta?.("\n\n");
+            if (itemId) lastMessageItemId = itemId;
+            lastDeltaText = delta;
             input.onDelta?.(delta);
           }
+          continue;
+        }
+        if (method === "item/started") {
+          if (!belongsToActiveTurn(params)) continue;
+          const event = codexItemToToolEvent(asRecord(params.item), "start");
+          if (event) input.onToolEvent?.(event);
           continue;
         }
         if (method === "item/reasoning/summaryTextDelta") {
           if (!belongsToActiveTurn(params)) continue;
           const delta = stringValue(params.delta) ?? "";
-          if (delta) input.onReasoningDelta?.(delta);
+          if (delta) {
+            // A new summary part (or item) is a new thought, not a continuation.
+            const part = `${stringValue(params.itemId) ?? ""}#${numberValue(params.summaryIndex) ?? 0}`;
+            if (lastReasoningPart !== undefined && part !== lastReasoningPart) input.onReasoningDelta?.("\n\n");
+            lastReasoningPart = part;
+            input.onReasoningDelta?.(delta);
+          }
           continue;
         }
         if (method === "item/completed") {
@@ -1067,16 +1093,23 @@ class CodexAppServerClient {
           if (item.type === "agentMessage") {
             finalMessage = stringValue(item.text) ?? finalMessage;
           }
+          const event = codexItemToToolEvent(item, "end");
+          if (event) input.onToolEvent?.(event);
           continue;
         }
         if (method === "thread/tokenUsage/updated") {
           if (!belongsToActiveTurn(params)) continue;
+          // `last` is one model call; a turn makes several, so the turn's
+          // usage is their sum (reporting only `last` showed "74 out" for a
+          // turn that wrote a whole test file).
           const last = asRecord(asRecord(params.tokenUsage).last);
+          const add = (prior: number | undefined, next: number | undefined): number | undefined =>
+            prior === undefined && next === undefined ? undefined : (prior ?? 0) + (next ?? 0);
           tokenUsage = {
-            inputTokens: numberValue(last.inputTokens),
-            cachedInputTokens: numberValue(last.cachedInputTokens),
-            outputTokens: numberValue(last.outputTokens),
-            reasoningOutputTokens: numberValue(last.reasoningOutputTokens),
+            inputTokens: add(tokenUsage?.inputTokens, numberValue(last.inputTokens)),
+            cachedInputTokens: add(tokenUsage?.cachedInputTokens, numberValue(last.cachedInputTokens)),
+            outputTokens: add(tokenUsage?.outputTokens, numberValue(last.outputTokens)),
+            reasoningOutputTokens: add(tokenUsage?.reasoningOutputTokens, numberValue(last.reasoningOutputTokens)),
           };
           continue;
         }

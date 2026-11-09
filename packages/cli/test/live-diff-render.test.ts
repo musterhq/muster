@@ -437,9 +437,12 @@ test("the real observer is constructed with the .muster ignore merged over calle
     createObserver: fake.create,
     observerOptions: { ignore: ["vendor"] },
   });
-  const ignore = fake.control().options.ignore;
-  assert.ok(Array.isArray(ignore), "list matchers merge into a list");
-  assert.deepEqual(ignore, [".muster", "vendor"]);
+  const ignore = fake.control().options.ignore as (relPath: string) => boolean;
+  assert.equal(typeof ignore, "function");
+  assert.equal(ignore(".muster/data/tokens.jsonl"), true, "internal paths stay ignored");
+  assert.equal(ignore("vendor/lib.js"), true, "caller list ignores still apply");
+  assert.equal(ignore("__pycache__/a.pyc"), true, "build artifacts are ignored");
+  assert.equal(ignore("src/vendor.ts"), false, "ordinary files are observed");
 
   const fnFake = fakeObserver();
   await startLiveDiffFeed({
