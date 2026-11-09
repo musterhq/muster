@@ -244,6 +244,8 @@ import {
   interruptActiveCodexTurn,
   queryCodexAppServer,
   steerActiveCodexTurn,
+  undoWorkspacePatches,
+  type WorkspacePatchEvent,
   ACCESS_MODES,
   isAccessMode,
   type AccessMode,
@@ -1288,6 +1290,8 @@ interface ChatState {
   activeProvider?: ModelProvider;
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
+  /** Observer events of the last turn that changed files (`/undo`). */
+  lastTurnPatches?: readonly WorkspacePatchEvent[];
   /** How much turns may do without asking (`/access`); unset means auto-edit. */
   accessMode?: AccessMode;
   /** Window occupancy on the latest model call (status bar `ctx N%`). */
@@ -2227,6 +2231,9 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
     case "live-diff":
       toggleChatLiveDiff(args, state);
       return true;
+    case "undo":
+      await undoLastChatTurn(state);
+      return true;
     case "access":
       setChatAccessMode(args, state);
       return true;
@@ -2868,6 +2875,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   const workspaceCwd = chatWorkspaceCwd(state);
   const liveFileTurn = new LiveFileTurnAccumulator();
   state.liveFileTurn = liveFileTurn;
+  const turnPatches: WorkspacePatchEvent[] = [];
   state.statusSink?.setLiveDiffTurn(liveFileTurn);
   // Created before the diff feed: a diff card first flushes the narration that
   // preceded the edit, so cards land where the edit happened.
@@ -2890,6 +2898,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     },
     enabled: liveDiffEnabled(state),
     onPatch: (event) => {
+      turnPatches.push(event);
       let currentContent = "";
       try {
         currentContent = readFileSync(resolve(event.root, event.path), "utf8");
@@ -2961,6 +2970,8 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     stopWorking();
     await liveDiff.finish().catch(() => {});
   }
+  // /undo works on the most recent turn that changed files.
+  if (turnPatches.length) state.lastTurnPatches = turnPatches;
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
@@ -5067,6 +5078,22 @@ async function chatAgentOptions(): Promise<string[]> {
   const namedAgents = config.agents?.list?.map((agent) => agent.id) ?? [];
   const runtimeAgents = Object.keys(config.runtimes);
   return [...new Set([...runtimeAgents, ...namedAgents])];
+}
+
+async function undoLastChatTurn(state: ChatState): Promise<void> {
+  const patches = state.lastTurnPatches;
+  if (!patches?.length) {
+    console.log(color("Nothing to undo: the last turn changed no files.", "dim"));
+    return;
+  }
+  const result = await undoWorkspacePatches(patches);
+  state.lastTurnPatches = undefined;
+  const rows = [
+    `${color("↺", result.restored.length ? "green" : "yellow")} Undid ${result.restored.length} ${result.restored.length === 1 ? "file" : "files"}${result.skipped.length ? `, skipped ${result.skipped.length}` : ""}`,
+    ...result.restored.map((file) => `  ${color("⎿", "dim")} ${file.path} ${color(`(reverted +${file.additions} −${file.deletions})`, "dim")}`),
+    ...result.skipped.map((file) => `  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`),
+  ];
+  for (const row of rows) console.log(row);
 }
 
 function parseChatAccessMode(value: string | undefined): AccessMode | undefined {
