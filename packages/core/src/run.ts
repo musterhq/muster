@@ -554,6 +554,8 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
       resume: reuse ? true : options.resume,
       pluginDirs: prompts.claudePluginDirs,
       ...(mcpFile ? { mcpConfig: mcpFile.path } : {}),
+      ...(options.onDelta ? { onDelta: options.onDelta } : {}),
+      ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
     });
   } finally {
     await mcpFile?.dispose().catch(() => {});
@@ -578,11 +580,13 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
     }
   }
   const responseText = claudeResult.stdout.trim();
-  if (options.onDelta && claudeResult.status === "completed") {
-    for (const chunk of synthesizeDeltas(responseText)) options.onDelta(chunk);
-  }
+  // In stream-json mode the deltas already went out live; only plain-text
+  // runs synthesize them.
   return {
     responseText,
+    ...(claudeResult.usage
+      ? { tokenUsage: { inputTokens: claudeResult.usage.inputTokens, cachedInputTokens: claudeResult.usage.cachedInputTokens, outputTokens: claudeResult.usage.outputTokens } }
+      : {}),
     status: claudeResult.status,
     errorMessage: claudeResult.status === "failed" ? (claudeResult.errorMessage || claudeResult.stderr.trim() || "claude command failed") : undefined,
     route,
