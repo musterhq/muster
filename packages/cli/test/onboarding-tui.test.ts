@@ -64,12 +64,13 @@ test("onboarding applies real providers, plugins, MCPs, channels, memory policy,
   assert.equal(config.runtimes.native.provider, "codex");
   assert.equal(config.runtimes.native.routes.simple_qa.provider, "codex");
 
-  assert.ok(config.plugins?.allow?.includes("frappe-federated-bridge"));
+  assert.ok(!config.plugins?.allow?.includes("frappe-federated-bridge"), "high-risk plugins are not enabled silently");
+
   assert.ok(config.plugins?.allow?.includes("web-frameworks"));
   assert.ok(config.plugins?.allow?.includes("github"));
-  assert.ok(config.plugins?.allow?.includes("browser"));
+  assert.ok(!config.plugins?.allow?.includes("browser"), "browser is high risk: opt-in");
   assert.ok(config.plugins?.allow?.includes("artifact-studio"));
-  assert.ok(config.plugins?.load?.paths?.some((path) => /(?:capability|builtin)-packs[\\/]frappe/.test(path)));
+  assert.ok(!config.plugins?.load?.paths?.some((path) => /(?:capability|builtin)-packs[\\/]frappe/.test(path)), "frappe pack is opt-in (high risk)");
 
   assert.equal(config.tools?.mcp?.servers?.git?.transport.kind, "stdio");
   assert.equal(config.tools?.mcp?.servers?.sqlite?.transport.kind, "stdio");
@@ -90,6 +91,7 @@ test("onboarding applies real providers, plugins, MCPs, channels, memory policy,
   assert.ok(workspaceProfile.nextActions.some((action) => action.id === "openai" && action.url?.includes("platform.openai.com")));
   assert.ok(workspaceProfile.nextActions.some((action) => action.id === "notion" && action.command === "muster mcp oauth setup notion"));
 
+  assert.ok(workspaceProfile.nextActions.some((action) => action.id === "frappe-federated-bridge" && action.command === "muster plugins enable frappe-federated-bridge"));
   assert.equal(globalProfile.lastWorkspaceProfilePath, onboardingProfilePath(cwd));
   assert.ok(globalProfile.configured.includes("memory:scoped-policy"));
 });
@@ -168,7 +170,7 @@ test("the setup surface names runnable commands and never fakes an input field",
 });
 
 test("the memory step writes an ENFORCED policy, not only persona prose", async () => {
-  for (const [selection, expected] of [[["never"], "never"], [["ask"], "ask"], [["project"], "auto"], [["ask", "never"], "never"]] as const) {
+  for (const [selection, expected] of [[["never"], "never"], [["ask"], "ask"], [["project"], "ask"], [["auto"], "auto"], [["ask", "never"], "never"]] as const) {
     const cwd = await mkdtemp(join(tmpdir(), "muster-onboarding-memory-"));
     const home = await mkdtemp(join(tmpdir(), "muster-onboarding-memory-home-"));
     const state = onboardingStateForSelections({ memory: [...selection] });
@@ -190,5 +192,59 @@ test("the memory step writes an ENFORCED policy, not only persona prose", async 
       (error: unknown) => error instanceof MemoryPolicyError && error.policy === expected,
       `memory:${selection.join("+")} must block an unconsented durable write`,
     );
+  }
+});
+
+test("Claude Code does not add the API preset, high-risk plugins are not enabled silently, and write policies are exclusive", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-onboarding-claude-"));
+  const home = await mkdtemp(join(tmpdir(), "muster-onboarding-claude-home-"));
+  const state = onboardingStateForSelections({ provider: ["claude"], integrations: [] });
+  const applied = await applyOnboardingProfile(state, cwd, home);
+  const config = await loadConfig(cwd);
+  assert.ok(!applied.configured.includes("provider:anthropic"));
+  assert.equal(Object.keys(config.providers ?? {}).includes("anthropic"), false);
+  assert.equal(config.tools?.mcp?.servers?.git, undefined, "git MCP is no longer added unasked");
+  assert.equal(config.tools?.mcp?.servers?.sqlite, undefined);
+
+});
+
+test("quit asks before discarding choices, finish lists what it will write, and the checklist waits for a key", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-onboarding-quit-"));
+  const input = fakeTtyInput();
+  const { output, read } = fakeTtyOutput();
+  const running = runMusterOnboardingTui(["--no-chat", "--no-color"], { cwd, input, output });
+  await tick();
+  input.write(" "); await tick();
+  input.write("q"); await tick();
+  assert.match(read(), /Discard your choices and quit\?/);
+  input.write("n"); await tick();
+  input.write("\x03"); await tick();
+  input.write("y");
+  assert.equal((await running).saved, false);
+
+  const state = onboardingStateForSelections({ purpose: ["code"], memory: ["never"] });
+  const finish = renderOnboarding(state, 120, false);
+  assert.match(finish, /Will write/);
+  assert.match(finish, /memory write policy: never/);
+  assert.match(finish, /Nothing is saved until you press Enter/);
+
+  const fakeHome = await mkdtemp(join(tmpdir(), "muster-onboarding-quit-home-"));
+  const previousHome = process.env.MUSTER_ONBOARDING_HOME;
+  process.env.MUSTER_ONBOARDING_HOME = fakeHome;
+  try {
+  const input2 = fakeTtyInput();
+  const second = fakeTtyOutput();
+  let settled = false;
+  const saving = runMusterOnboardingTui(["--no-chat", "--no-color"], { cwd, input: input2, output: second.output }).then((r) => { settled = true; return r; });
+  await tick();
+  input2.write("s");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(settled, false, "the post-save checklist stays up until a key is pressed");
+  assert.match(second.read(), /Saved\. Press any key to continue\./);
+  input2.write("x");
+  assert.equal((await saving).saved, true);
+  } finally {
+    if (previousHome === undefined) delete process.env.MUSTER_ONBOARDING_HOME;
+    else process.env.MUSTER_ONBOARDING_HOME = previousHome;
   }
 });

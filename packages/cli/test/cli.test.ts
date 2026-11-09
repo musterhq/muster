@@ -160,7 +160,9 @@ test("CLI onboarding preview exposes setup controls, impacts, and separate chann
 
   const memory = onboardingBodyText((await runCli(["onboarding", "--preview", "--step", "memory"], cwd)).stdout);
   assert.match(memory, /Recall strictness/);
-  assert.match(memory, /Maximum privacy/);
+  // The write policy is ONE choice: the preview pre-selects exactly one of them.
+  const policies = ["Ask before saving", "Save automatically", "Never save automatically"].filter((label) => new RegExp(`✓ ${label}`).test(memory));
+  assert.deepEqual(policies, ["Ask before saving"]);
 
   const colored = await runCli(["onboard", "--preview", "--step", "channels", "--color=always"], cwd);
   assert.match(colored.stdout, /\x1b\[/);

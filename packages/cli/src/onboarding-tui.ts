@@ -18,6 +18,7 @@ import {
   type McpServerConfig,
   type MemoryWritePolicy,
 } from "@musterhq/core";
+import { detectProviders, type DetectedProviders } from "./onboarding-detect.js";
 import { initGatewayConfig, saveGatewayConfig, type GatewayConfig } from "@musterhq/gateway";
 
 type StepId = "purpose" | "style" | "provider" | "integrations" | "channels" | "memory" | "finish";
@@ -60,6 +61,12 @@ interface OnboardingState {
   cursor: number;
   selected: Record<StepId, Set<string>>;
   saved?: boolean;
+  /** Set while the quit prompt ("discard your choices?") is showing. */
+  confirmQuit?: boolean;
+  /** Result of the read-only provider scan; undefined until it finishes. */
+  detected?: DetectedProviders;
+  /** Set after save: the checklist stays up until a key is pressed. */
+  awaitingAck?: boolean;
   applied?: OnboardingApplyResult;
 }
 
@@ -178,6 +185,7 @@ const steps: readonly Step[] = [
       choice("preferences", "Remember my preferences", "Tone, workflow, provider, and answer preferences.", "personal", "peach", "Preference memory personalizes the interface without leaking work data.", controls("Recall strictness", "Balanced", "Retention", "Until removed")),
       choice("site", "Remember app/site context", "Index Frappe or web-app context with graph links and receipts.", "plugin context", "lime", "Site memory helps app-aware answers but should be rebuilt when metadata changes.", controls("Index depth", "Graph", "Refresh", "On demand")),
       choice("ask", "Ask before saving", "Show what will be remembered before writing durable memory.", "consent", "cyan", "Durable memory writes require confirmation, reducing accidental personalization.", controls("Durable writes", "Ask first", "Receipt detail", "Compact"), ["muster memory status"]),
+      choice("auto", "Save automatically", "Let Muster write durable memory without asking each time.", "hands-off", "peach", "Fastest personalization, but memory can fill with facts you never reviewed.", controls("Durable writes", "Automatic", "Receipt detail", "Compact")),
       choice("never", "Never save automatically", "Use the assistant without durable memory writes.", "private", "lavender", "Maximum privacy, but Muster will not personalize future sessions unless context is re-provided.", controls("Durable writes", "Disabled", "Retention", "None"), ["muster memory status"]),
     ],
   },
@@ -217,17 +225,19 @@ function channelCommands(id: string): readonly string[] {
   return commands[id] ?? [];
 }
 
-export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
+export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders> } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
   const output = options.output ?? process.stdout;
   const input = options.input ?? process.stdin;
   const width = Math.max(88, output.columns ?? 112);
   const state = initialState();
   const cwd = options.cwd ?? process.cwd();
   const useColor = shouldUseOnboardingColor(args, input, output);
+  const detection = (options.detect ?? detectProviders)().catch(() => undefined);
   if (args.includes("--preview") || !input.isTTY || !output.isTTY) {
     const previewStep = readPreviewStep(args);
     if (previewStep !== undefined) state.stepIndex = previewStep;
     preselectCurrentStep(state);
+    state.detected = await detection;
     output.write(`${renderOnboarding(state, width, useColor)}\n`);
     return { saved: false, handoffToChat: false };
   }
@@ -244,14 +254,36 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
     output.write(`\x1b[H\x1b[2J${frame}\x1b[J`);
   };
   render();
+  // Detection runs behind the first paint; keys work immediately and the rows fill in when it lands.
+  void detection.then((detected) => {
+    if (!detected || state.saved) return;
+    state.detected = detected;
+    preselectDetectedProviders(state);
+    render();
+  });
   const result = await new Promise<{ saved: boolean; handoffToChat: boolean }>((resolve) => {
     const onKeypress = async (_chunk: string, key: { name?: string; ctrl?: boolean }) => {
-      if (key.ctrl && key.name === "c") {
+      if (state.awaitingAck) {
         cleanup();
-        resolve({ saved: false, handoffToChat: false });
+        resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
         return;
       }
-      if (key.name === "q") {
+      if (state.confirmQuit) {
+        if (key.name === "y") {
+          cleanup();
+          resolve({ saved: false, handoffToChat: false });
+          return;
+        }
+        state.confirmQuit = false;
+        render();
+        return;
+      }
+      if ((key.ctrl && key.name === "c") || key.name === "q") {
+        if (hasAnySelection(state)) {
+          state.confirmQuit = true;
+          render();
+          return;
+        }
         cleanup();
         resolve({ saved: false, handoffToChat: false });
         return;
@@ -264,9 +296,10 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
         applyCodingDefaults(state);
         state.applied = await applyOnboardingProfile(state, cwd);
         state.saved = true;
+        state.awaitingAck = true;
+        state.stepIndex = steps.length;
+        state.confirmQuit = false;
         render();
-        cleanup();
-        resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
         return;
       }
       if (key.name === "up") moveCursor(state, -1);
@@ -277,9 +310,9 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
         if (currentStep(state).id === "finish") {
           state.applied = await applyOnboardingProfile(state, cwd);
           state.saved = true;
+          state.awaitingAck = true;
+          state.confirmQuit = false;
           render();
-          cleanup();
-          resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
           return;
         } else {
           next(state);
@@ -372,12 +405,21 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
     "",
     ...renderChoices(step, state, mainWidth, useColor),
     "",
-    ...renderSetupSurface(selectedChoices, active, mainWidth, useColor),
+    ...renderSetupSurface(selectedChoices, active, mainWidth, useColor, step.id === "provider" ? state.detected : undefined),
   ];
   const rail = summaryRailLines(state, railWidth || inner, useColor);
   const body = railWidth
     ? zipRail(main, rail, mainWidth, useColor)
     : [...main, "", ...rail];
+  if (state.confirmQuit) {
+    return [
+      borderTop("Muster onboarding", bodyWidth, useColor),
+      ...body.map((line) => frame(line, bodyWidth, useColor)),
+      frame("", bodyWidth, useColor),
+      frame(`${paint("Discard your choices and quit?", "warn", useColor)}  ${paint("y", "lime", useColor)} discard  ${paint("any other key", "lime", useColor)} keep going`, bodyWidth, useColor),
+      borderBottom(bodyWidth, useColor),
+    ].join("\n");
+  }
   return [
     borderTop("Muster onboarding", bodyWidth, useColor),
     ...body.map((line) => frame(line, bodyWidth, useColor)),
@@ -433,7 +475,8 @@ function zipRail(main: readonly string[], rail: readonly string[], mainWidth: nu
 function renderChoices(step: Step, state: OnboardingState, width: number, useColor: boolean): string[] {
   const rows: string[] = [];
   for (let index = 0; index < step.choices.length; index += 1) {
-    const item = step.choices[index];
+    const detected = step.id === "provider" ? state.detected?.[step.choices[index]!.id] : undefined;
+    const item = detected ? { ...step.choices[index]!, badge: detected.badge, tone: (detected.ready ? "lime" : "peach") as Tone } : step.choices[index]!;
     const checked = state.selected[step.id].has(item.id);
     const focused = index === state.cursor;
     const marker = checked ? "✓" : "◇";
@@ -444,7 +487,7 @@ function renderChoices(step: Step, state: OnboardingState, width: number, useCol
   return rows;
 }
 
-function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, width: number, useColor: boolean): string[] {
+function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, width: number, useColor: boolean, detected?: DetectedProviders): string[] {
   if (!selectedChoices.length) {
     return [
       paint("Selected setup", "cyan", useColor),
@@ -462,7 +505,7 @@ function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, 
     for (const control of item.controls) lines.push(`  ${control.label}: ${paint(control.value, "lime", useColor)}`);
     // Honest next action, never a fake input: the command is printed in full
     // (wrapped, never truncated) so it can be copied and run verbatim.
-    for (const command of (item.configureLater ?? []).slice(0, 4)) {
+    for (const command of detected?.[item.id]?.ready ? [] : (item.configureLater ?? []).slice(0, 4)) {
       const rows = wrap(`configure later: ${command}`, Math.max(20, width - 2));
       for (const [row, line] of rows.entries()) lines.push(`  ${row === 0 ? "" : "  "}${paint(line, "peach", useColor)}`);
     }
@@ -487,7 +530,8 @@ function renderFinish(state: OnboardingState, width: number, useColor: boolean):
     ...profileImpacts(state).map((impact) => frame(`${paint("Impact", "lime", useColor)} ${impact}`, bodyWidth, useColor)),
     frame("", bodyWidth, useColor),
     ...renderAppliedSetup(state, bodyWidth, useColor),
-    frame(state.saved ? paint("Saved profile and applied available setup. Opening chat...", "lime", useColor) : `${paint("Enter", "lime", useColor)} save/apply setup  ${paint("Esc", "lime", useColor)} back  ${paint("q", "lime", useColor)} quit`, bodyWidth, useColor),
+    ...(state.saved ? [] : plannedWrites(state).map((line, index) => frame(`${index === 0 ? paint("Will write", "cyan", useColor) : "          "} ${line}`, bodyWidth, useColor))),
+    frame(state.confirmQuit ? `${paint("Discard your choices and quit?", "warn", useColor)}  ${paint("y", "lime", useColor)} discard  ${paint("any other key", "lime", useColor)} keep going` : state.saved ? paint(state.awaitingAck ? "Saved. Press any key to continue." : "Saved profile and applied available setup.", "lime", useColor) : `${paint("Enter", "lime", useColor)} save/apply setup  ${paint("Esc", "lime", useColor)} back  ${paint("q", "lime", useColor)} quit`, bodyWidth, useColor),
     borderBottom(bodyWidth, useColor),
   ];
   return lines.join("\n");
@@ -514,11 +558,23 @@ function currentStep(state: OnboardingState): Step | { id: "finish"; eyebrow: st
   return steps[state.stepIndex]!;
 }
 
+/** Detected, ready routes start ticked so the common case is one Enter. */
+export function preselectDetectedProviders(state: OnboardingState): void {
+  if (!state.detected || state.selected.provider.size) return;
+  for (const [id, status] of Object.entries(state.detected)) if (status.ready) state.selected.provider.add(id);
+}
+
+function hasAnySelection(state: OnboardingState): boolean {
+  return Object.values(state.selected).some((set) => set.size > 0);
+}
+
 function moveCursor(state: OnboardingState, delta: number): void {
   const step = currentStep(state);
   if (!step.choices.length) return;
   state.cursor = (state.cursor + delta + step.choices.length) % step.choices.length;
 }
+
+const MEMORY_POLICY_IDS: ReadonlySet<string> = new Set(["ask", "never", "auto"]);
 
 function toggleCurrent(state: OnboardingState): void {
   const step = currentStep(state);
@@ -526,13 +582,21 @@ function toggleCurrent(state: OnboardingState): void {
   if (!item) return;
   const set = state.selected[step.id];
   if (set.has(item.id)) set.delete(item.id);
-  else set.add(item.id);
+  else {
+    // The three write policies are one choice, not three toggles.
+    if (step.id === "memory" && MEMORY_POLICY_IDS.has(item.id)) for (const id of MEMORY_POLICY_IDS) set.delete(id);
+    set.add(item.id);
+  }
 }
 
 function preselectCurrentStep(state: OnboardingState): void {
   const step = currentStep(state);
   if (!step.choices.length) return;
-  for (const choice of step.choices) state.selected[step.id].add(choice.id);
+  for (const choice of step.choices) {
+    // Exclusive memory write policy: pre-select the consent-first one only.
+    if (step.id === "memory" && MEMORY_POLICY_IDS.has(choice.id) && choice.id !== "ask") continue;
+    state.selected[step.id].add(choice.id);
+  }
 }
 
 function next(state: OnboardingState): void {
@@ -603,7 +667,6 @@ async function applyProviderSelections(state: OnboardingState, cwd: string, conf
     addAction({ kind: "provider", id: "anthropic", label: "Anthropic API key", command: "export ANTHROPIC_API_KEY=...", url: "https://console.anthropic.com/settings/keys", env: ["ANTHROPIC_API_KEY"], note: "Native Claude API route is configured and becomes usable once the env var exists." });
   }
   if (selected.has("claude")) {
-    await addPresetProvider("anthropic", {}, cwd);
     configured.push("provider:claude-code-ready");
     addAction({ kind: "provider", id: "claude-code", label: "Claude Code login", command: "claude login", url: "https://docs.anthropic.com/en/docs/claude-code/setup", note: "Muster will route Claude Code workflows through local Claude Code auth when available." });
   }
@@ -619,7 +682,12 @@ async function applyPluginSelections(state: OnboardingState, cwd: string, config
   for (const id of pluginIds) {
     const plugin = catalog.find((entry) => entry.id === id || entry.aliases?.includes(id));
     if (!plugin) continue;
-    await enableBuiltinPlugin(plugin.id, cwd, { allowHighRisk: true });
+    if (plugin.risk === "high") {
+      // High-risk plugins are never enabled silently; the user opts in explicitly.
+      addAction({ kind: "plugin", id: plugin.id, label: `${plugin.id} (high risk, not enabled)`, command: `muster plugins enable ${plugin.id}`, note: "High-risk plugins need an explicit enable; review muster plugins inspect first." });
+      continue;
+    }
+    await enableBuiltinPlugin(plugin.id, cwd);
     configured.push(`plugin:${plugin.id}`);
     const env = setupEnv(plugin.setup);
     for (const url of plugin.setup?.setupUrls ?? []) {
@@ -688,8 +756,8 @@ async function applyChannelSelections(state: OnboardingState, cwd: string, confi
  */
 export function memoryPolicyForSelections(state: OnboardingState): MemoryWritePolicy {
   if (state.selected.memory.has("never")) return "never";
-  if (state.selected.memory.has("ask")) return "ask";
-  return "auto";
+  if (state.selected.memory.has("auto")) return "auto";
+  return "ask";
 }
 
 async function applyMemorySelections(state: OnboardingState, cwd: string, configured: string[]): Promise<void> {
@@ -746,8 +814,24 @@ function labelsFor(state: OnboardingState, stepId: StepId): string[] {
   return step?.choices.filter((item) => selected.has(item.id)).map((item) => item.label) ?? [];
 }
 
+/** What Enter will write, computed from the same selection helpers the apply step uses. */
+export function plannedWrites(state: OnboardingState): string[] {
+  const catalog = listBuiltinPlugins();
+  const plugins = pluginsForSelections(state).map((id) => catalog.find((entry) => entry.id === id || entry.aliases?.includes(id))).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const enabled = plugins.filter((entry) => entry.risk !== "high").map((entry) => entry.id);
+  const optIn = plugins.filter((entry) => entry.risk === "high").map((entry) => entry.id);
+  const lines = [`config: <workspace>/.muster/config.json, profile: ~/.muster/onboarding-profile.json`];
+  lines.push(`memory write policy: ${memoryPolicyForSelections(state)}`);
+  if (enabled.length) lines.push(`plugins enabled: ${enabled.join(", ")}`);
+  if (optIn.length) lines.push(`plugins left off (high risk, enable yourself): ${optIn.join(", ")}`);
+  const mcp = mcpForSelections(state);
+  if (mcp.length) lines.push(`MCP servers: ${mcp.join(", ")}`);
+  if (state.selected.channels.size) lines.push(`gateway config for: ${[...state.selected.channels].join(", ")}`);
+  return lines;
+}
+
 function profileImpacts(state: OnboardingState): string[] {
-  const impacts = ["Muster will show setup before saving anything."];
+  const impacts = ["Nothing is saved until you press Enter on the finish screen."];
   if (state.selected.style.has("tokens")) impacts.push("Low-token retrieval will run before old context is added.");
   if (state.selected.style.has("privacy")) impacts.push("Tenant/user/workspace/session scopes stay visible.");
   if (state.selected.integrations.has("frappe")) impacts.push("Frappe answers will prefer module, DocType, field, and workflow context.");
@@ -763,11 +847,11 @@ function renderAppliedSetup(state: OnboardingState, width: number, useColor: boo
     frame(`${paint("Config", "cyan", useColor)} ${state.applied.configPath}`, width, useColor),
   ];
   if (state.applied.gatewayPath) lines.push(frame(`${paint("Gateway", "cyan", useColor)} ${state.applied.gatewayPath}`, width, useColor));
-  for (const action of state.applied.nextActions.slice(0, 6)) {
+  for (const action of state.applied.nextActions.slice(0, 14)) {
     const target = action.command ?? action.url ?? action.label;
     lines.push(frame(`${paint("Next", "peach", useColor)} ${action.label}: ${target}`, width, useColor));
   }
-  if (state.applied.nextActions.length > 6) lines.push(frame(paint(`+${state.applied.nextActions.length - 6} more setup actions saved in onboarding profile`, "warn", useColor), width, useColor));
+  if (state.applied.nextActions.length > 14) lines.push(frame(paint(`+${state.applied.nextActions.length - 14} more setup actions saved in onboarding profile`, "warn", useColor), width, useColor));
   lines.push(frame("", width, useColor));
   return lines;
 }
@@ -802,7 +886,7 @@ function pluginsForSelections(state: OnboardingState): string[] {
 }
 
 function mcpForSelections(state: OnboardingState): string[] {
-  const ids = new Set<string>(["git", "sqlite"]);
+  const ids = new Set<string>();
   if (state.selected.purpose.has("code") || state.selected.integrations.has("github")) ids.add("github");
   if (state.selected.integrations.has("browser")) ids.add("browser");
   if (state.selected.integrations.has("web") || state.selected.purpose.has("research")) ids.add("parallel-search");
