@@ -73,3 +73,30 @@ test("ctrl+o expands every tool cell and collapses it again", () => withNoColor(
   chat.input("\x0f");
   assert.deepEqual(plain(chat.transcript()), collapsed, "a second press restores the collapsed view");
 }));
+
+// Spec: MUS-SPEC-01-3A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-3a--tool-and-diff-cards-sit-on-a-full-width-band-failures-are-tinted)
+test("cards render as full-width bands, failures tinted, separated by a gap", async () => {
+  const { renderTranscriptLine, cardRow, CARD_BAND_RGB, CARD_FAILURE_BAND_RGB } = await import("../src/chat-tui.js");
+  const previous = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line), block: (_id, render) => lines.push(...render(false)) });
+    painter.tool({ phase: "end", id: "ok", kind: "command", title: "pytest -q", exitCode: 0, output: "1 passed" });
+    painter.tool({ phase: "end", id: "bad", kind: "command", title: "make build", exitCode: 2, failed: true, output: "error: boom" });
+    const rows = lines.flatMap((line) => renderTranscriptLine(line, 100, 100));
+    const visible = (row: string) => row.replace(/\x1b\[[0-9;]*m/g, "");
+    const okRows = rows.filter((_, index) => index >= 1 && index <= 3);
+    for (const row of okRows) {
+      assert.ok(row.includes(`48;2;${CARD_BAND_RGB}m`), `band on: ${visible(row)}`);
+      assert.equal(visible(row).length, 100, "band covers the full width");
+    }
+    const failRows = rows.filter((row) => visible(row).includes("make build") || visible(row).includes("error: boom"));
+    assert.equal(failRows.length, 2);
+    for (const row of failRows) assert.ok(row.includes(`48;2;${CARD_FAILURE_BAND_RGB}m`));
+    assert.ok(rows.some((row, index) => visible(row).trim() === "" && !row.includes("48;2;") && index > 0), "a gap separates the cards");
+    assert.equal(visible(renderTranscriptLine(cardRow("  ⎿ exit 0", "tool"), 100, 100)[0]!).trimEnd(), "  ⎿ exit 0");
+  } finally {
+    if (previous !== undefined) process.env.NO_COLOR = previous;
+  }
+});

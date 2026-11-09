@@ -283,8 +283,13 @@ export function formatEarlierHistoryLine(count: number): string {
 
 /** Full-row user distinction. Width is visible terminal columns. */
 export function bandUserRow(row: string, width: number): string {
+  return bandRow(row, width, USER_BAND_RGB);
+}
+
+/** Paint one row's full width (padding included) with a background colour. */
+export function bandRow(row: string, width: number, rgb: string): string {
   if (!enabled()) return row + " ".repeat(Math.max(0, width - visibleWidth(row)));
-  const band = `\x1b[48;2;${USER_BAND_RGB}m`;
+  const band = `\x1b[48;2;${rgb}m`;
   // Inline foreground spans reset SGR. Reapply the band after every reset so
   // the user's words and the row padding do not fall back to the terminal's
   // normal background halfway across the line.

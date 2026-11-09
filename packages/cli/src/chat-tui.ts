@@ -28,6 +28,7 @@ import { LiveFileOverlay, LiveFileTurnAccumulator, renderLiveFilePlain } from ".
 import { BoardScreen, parseSgrMouseSequence, stripMouseSequences, type SgrMouseEvent } from "./board-screen.js";
 import { openFileWithEditorGuard, TaskView } from "./task-view.js";
 import {
+  bandRow,
   bandUserRow,
   missionStatusGlyph as sharedMissionStatusGlyph,
   renderChip,
@@ -722,13 +723,15 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     if (options.block && bullets) {
       const name = toolCellName(event);
       const title = toolCellTitle(event);
+      // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
-        options.block(`tool:${event.id}`, () => [formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`]);
+        options.block(`tool:${event.id}`, () => ["", ...[formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`].map((row) => cardRow(row))]);
       } else {
-        options.block(`tool:${event.id}`, (expanded) => [
+        const tone: CardTone = event.failed ? "failure" : "tool";
+        options.block(`tool:${event.id}`, (expanded) => ["", ...[
           formatToolLine(name, title, event.failed ? "failure" : "success"),
           ...formatToolEndLines(event, TOOL_RESULT_MAX_LINES, { expanded, expandable: true }),
-        ]);
+        ].map((row) => cardRow(row, tone))]);
       }
       return;
     }
@@ -824,6 +827,34 @@ function toolCellTitle(event: AgentToolEvent, max = 96): string {
 }
 
 /** Result rows under a finished tool: `⎿ exit 1 · 1.2s`, then the output TAIL (errors live at the end). */
+/** Card backgrounds: a quiet neutral band, and a red tint for a failed tool. */
+export const CARD_BAND_RGB = "32;33;37";
+export const CARD_FAILURE_BAND_RGB = "58;30;34";
+
+export type CardTone = "tool" | "failure";
+const CARD_MARK = /^\u0000band:(tool|failure)\u0000/;
+
+/** Mark a transcript row as part of a card; the screen paints it as a full-width band. */
+export function cardRow(text: string, tone: CardTone = "tool"): string {
+  return `\u0000band:${tone}\u0000${text}`;
+}
+
+/** The row without its card mark (what tests, logs and plain surfaces see). */
+export function stripCardMark(line: string): string {
+  return line.replace(CARD_MARK, "");
+}
+
+/**
+ * One transcript line → wrapped screen rows. Card rows become full-width
+ * bands; everything else wraps as before. Pure, so the band is testable.
+ */
+export function renderTranscriptLine(line: string, frameWidth: number, padTo: number): string[] {
+  const mark = line.match(CARD_MARK);
+  if (!mark) return wrapLine(line, frameWidth);
+  const rgb = mark[1] === "failure" ? CARD_FAILURE_BAND_RGB : CARD_BAND_RGB;
+  return wrapLine(line.slice(mark[0].length), frameWidth).map((row) => bandRow(row, padTo, rgb));
+}
+
 /** Rows shown for one tool's output when Ctrl+O has expanded it; beyond this a count is shown. */
 export const TOOL_RESULT_EXPANDED_MAX_LINES = 400;
 
@@ -2019,7 +2050,9 @@ class MusterChatScreen implements Component, MusterChatSink {
       const wasUser = cache.bandOpen;
       if (isUserTranscriptLine(line)) cache.bandOpen = true;
       else if (!plain.startsWith("  ")) cache.bandOpen = false;
-      const rows = wrapLine(line, frameWidth).map((row) => cache.bandOpen ? bandUserRow(row, padTo) : row);
+      const rows = CARD_MARK.test(line)
+        ? renderTranscriptLine(line, frameWidth, padTo)
+        : wrapLine(line, frameWidth).map((row) => cache.bandOpen ? bandUserRow(row, padTo) : row);
       // THE GAP, enforced at the renderer so no append site can regress it.
       if (wasUser && !cache.bandOpen && plain.trim() !== "") rows.unshift("");
       cache.rows.push(...rows);
@@ -2039,7 +2072,7 @@ class MusterChatScreen implements Component, MusterChatSink {
 class HarnessSink implements MusterChatSink {
   private readonly store = new TranscriptStore();
   get transcriptLines(): string[] {
-    return this.store.lines;
+    return this.store.lines.map(stripCardMark);
   }
   exited = false;
   statusRow = "";

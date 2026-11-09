@@ -81,3 +81,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** chat harness.
 - **Known gaps:** diff cards keep their own collapse rule for now.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-3A — Tool and diff cards sit on a full-width band; failures are tinted
+
+- **Precondition:** chat TUI with color; a finished command cell (success), a failed command cell, and a diff card.
+- **Action:** render the transcript rows at width 100.
+- **Expected result:** every row of a card is painted with the card background across the full width (padding included); a failed command's rows use the failure tint; a blank unbanded row separates consecutive cards; the visible text of each row is unchanged.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "cards render as full-width bands, failures tinted, separated by a gap"
+- **Environment:** pure row renderer used by the chat screen (`renderTranscriptLine`), truecolor.
+- **Known gaps:** NO_COLOR terminals get no band (text only).
+- **Evidence:** UNVERIFIED

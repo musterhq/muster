@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, createMusterAutocompleteProvider, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, createMusterAutocompleteProvider, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -2834,7 +2834,11 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     cwd: workspaceCwd,
     emit: (line) => {
       painter?.flush();
-      emitChatLine(state, line);
+      // In the TUI a diff card is a card like a tool cell: a gap, then a band.
+      // The summary and notices stay plain rows.
+      const plain = stripAnsi(line);
+      if (state.statusSink && /^⏺/.test(plain)) emitChatLine(state, "");
+      emitChatLine(state, state.statusSink && /^(⏺|\s{2})/.test(plain) ? cardRow(line) : line);
     },
     enabled: liveDiffEnabled(state),
     onPatch: (event) => {
