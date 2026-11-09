@@ -122,6 +122,13 @@ export interface CodexAppServerRunResult {
     readonly outputTokens?: number;
     readonly reasoningOutputTokens?: number;
   };
+  /** How full the model's window was on the latest call (prompt tokens of that call). */
+  readonly context?: ContextOccupancy;
+}
+
+export interface ContextOccupancy {
+  readonly usedTokens: number;
+  readonly windowTokens: number;
 }
 
 interface PendingRequest {
@@ -429,6 +436,7 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
       fallbackEligible: turn.errorMessage ? !providerActivity : false,
       hadActivity: providerActivity,
       tokenUsage: turn.tokenUsage,
+      ...(turn.context ? { context: turn.context } : {}),
     } as const;
     if (turn.errorMessage) {
       lease.session.client.close();
@@ -953,6 +961,7 @@ class CodexAppServerClient {
     readonly turnId?: string;
     readonly failure?: CodexAppServerRunResult["failure"];
     readonly tokenUsage?: CodexAppServerRunResult["tokenUsage"];
+    readonly context?: ContextOccupancy;
   }> {
     const started = Date.now();
     // A prior completed turn must not make a later pre-dispatch failure look
@@ -1010,6 +1019,7 @@ class CodexAppServerClient {
     let finalMessage = "";
     let firstDeltaMs: number | undefined;
     let tokenUsage: CodexAppServerRunResult["tokenUsage"] | undefined;
+    let context: ContextOccupancy | undefined;
     let lastMessageItemId: string | undefined;
     let lastDeltaText = "";
     let lastReasoningPart: string | undefined;
@@ -1118,6 +1128,9 @@ class CodexAppServerClient {
           // usage is their sum (reporting only `last` showed "74 out" for a
           // turn that wrote a whole test file).
           const last = asRecord(asRecord(params.tokenUsage).last);
+          const window = numberValue(asRecord(params.tokenUsage).modelContextWindow);
+          const used = numberValue(last.inputTokens);
+          if (window && used !== undefined) context = { usedTokens: used, windowTokens: window };
           const add = (prior: number | undefined, next: number | undefined): number | undefined =>
             prior === undefined && next === undefined ? undefined : (prior ?? 0) + (next ?? 0);
           tokenUsage = {
@@ -1135,12 +1148,12 @@ class CodexAppServerClient {
           const status = stringValue(turn.status);
           if (turnId && stringValue(turn.id) && stringValue(turn.id) !== turnId) continue;
           if (status && status !== "completed" && status !== "interrupted") {
-            return { finalMessage, firstDeltaMs, turnId, errorMessage: stringValue(error.message) ?? `codex turn ended with status ${status}`, tokenUsage };
+            return { finalMessage, firstDeltaMs, turnId, errorMessage: stringValue(error.message) ?? `codex turn ended with status ${status}`, tokenUsage, context };
           }
           if (input.signal?.aborted) {
-            return { finalMessage, firstDeltaMs, turnId, errorMessage: "Codex turn was interrupted.", failure: { kind: "aborted" }, tokenUsage };
+            return { finalMessage, firstDeltaMs, turnId, errorMessage: "Codex turn was interrupted.", failure: { kind: "aborted" }, tokenUsage, context };
           }
-          return { finalMessage, firstDeltaMs, turnId, tokenUsage };
+          return { finalMessage, firstDeltaMs, turnId, tokenUsage, context };
         }
       }
       if (input.signal?.aborted) {

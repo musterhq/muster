@@ -251,6 +251,8 @@ export interface RunOutcome {
   readonly plan: RunPlan;
   readonly episode: EpisodeRecord;
   readonly tokens: TokenRecord;
+  /** Window occupancy on the latest model call, when the runtime reports it. */
+  readonly context?: { readonly usedTokens: number; readonly windowTokens: number };
   readonly recalled: ContextObject[];
   readonly recallReceipt?: SearchMemoryReceiptResult;
   readonly timings?: RunTimingBreakdown;
@@ -464,6 +466,7 @@ interface AttemptResult {
     readonly cachedInputTokens?: number;
     readonly outputTokens?: number;
   };
+  readonly context?: { readonly usedTokens: number; readonly windowTokens: number };
 }
 
 function normalizeNativeTransport(value: string | undefined): "auto" | "warm" | "exec" {
@@ -783,6 +786,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
         ? ("fallbackEligible" in finalCodexResult ? (finalCodexResult.fallbackEligible ?? false) : false)
         : undefined,
       tokenUsage: "tokenUsage" in finalCodexResult ? finalCodexResult.tokenUsage : undefined,
+      ...("context" in finalCodexResult && finalCodexResult.context ? { context: finalCodexResult.context } : {}),
     };
   } finally {
     if (instructionsFile) await rm(instructionsFile, { force: true }).catch(() => {});
@@ -1302,5 +1306,5 @@ export async function executeRun(config: MusterConfig, options: RunOptions): Pro
     persistMs,
   };
 
-  return { plan, episode, tokens, recalled, recallReceipt, timings, fallbackUsed, piResult: attempt.piResult, codexThreadId: attempt.codexThreadId };
+  return { plan, episode, tokens, recalled, recallReceipt, timings, fallbackUsed, piResult: attempt.piResult, codexThreadId: attempt.codexThreadId, ...(attempt.context ? { context: attempt.context } : {}) };
 }
