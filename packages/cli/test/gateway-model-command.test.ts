@@ -52,3 +52,40 @@ test("--model provider:model runs on the gateway provider and unknown providers 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-07-2A (docs/spec/clauses/07-gateway-models.md#mus-spec-07-2a--the-model-picker-lists-the-models-codex-offers-today)
+test("the model picker lists Codex's live models and falls back when Codex cannot list them", { timeout: 120_000 }, async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-model-list-"));
+  const bin = join(cwd, "bin");
+  await mkdir(bin, { recursive: true });
+  const writeFake = (models: string[] | "fail") => writeFile(join(bin, "codex"), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "login") process.exit(0);
+if (args[0] !== "app-server") process.exit(0);
+const readline = require("node:readline");
+const rl = readline.createInterface({ input: process.stdin });
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+rl.on("line", (line) => {
+  const m = JSON.parse(line);
+  if (m.method === "initialize") send({ id: m.id, result: { userAgent: "fake" } });
+  else if (m.method === "model/list") ${models === "fail" ? 'send({ id: m.id, error: { code: -32000, message: "nope" } })' : `send({ id: m.id, result: { data: ${JSON.stringify(models.map((id) => ({ id, model: id, displayName: id })))} } })`};
+});
+`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(cwd, "codex-home"), MUSTER_ONBOARDING_HOME: join(cwd, ".test-home"), MUSTER_SKIP_ONBOARDING: "1" };
+  delete (env as Record<string, string | undefined>).FORCE_COLOR;
+  (env as Record<string, string>).MUSTER_CODEX_COMMAND = join(bin, "codex");
+  try {
+    await writeFake(["gpt-7-test", "gpt-7-mini-test"]);
+    await execFileAsync("tsx", [cliPath, "init"], { cwd, env });
+    const live = (await execFileAsync("tsx", [cliPath, "chat", "/model"], { cwd, env, timeout: 60_000 })).stdout;
+    assert.match(live, /gpt-7-test/);
+    assert.match(live, /gpt-7-mini-test/);
+    assert.doesNotMatch(live, /5\.6 Luna/, "the stale built-in list is not shown when Codex lists models");
+    await writeFake("fail");
+    const fallback = (await execFileAsync("tsx", [cliPath, "chat", "/model"], { cwd, env, timeout: 60_000 })).stdout;
+    assert.doesNotMatch(fallback, /gpt-7-test/);
+    assert.match(fallback, /codex\s+\S/, "a fallback list is still shown");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

@@ -56,10 +56,10 @@ export const CODEX_MODELS: readonly CatalogModel[] = [
 ] as const;
 
 export const CLAUDE_MODELS: readonly CatalogModel[] = [
-  { provider: "claude", value: "claude-fable-5", label: "Fable 5" },
-  { provider: "claude", value: "claude-opus-5", label: "Opus 5" },
-  { provider: "claude", value: "claude-sonnet-5", label: "Sonnet 5" },
-  { provider: "claude", value: "claude-haiku-4-5", label: "Haiku 4.5" },
+  { provider: "claude", value: "claude-fable-5-1", label: "Fable 5.1" },
+  { provider: "claude", value: "claude-opus-5-5", label: "Opus 5.5" },
+  { provider: "claude", value: "claude-sonnet-5-5", label: "Sonnet 5.5" },
+  { provider: "claude", value: "claude-haiku-5-5", label: "Haiku 5.5" },
 ] as const;
 
 export const EFFORT_OPTIONS: readonly EffortOption[] = [
@@ -71,10 +71,18 @@ export const EFFORT_OPTIONS: readonly EffortOption[] = [
   { value: "ultra", label: "Ultra", hint: "Consumes usage limits faster" },
 ] as const;
 
+/** Models Codex reported via `model/list` this session; they replace the built-in fallback. */
+const liveCodexModels: CatalogModel[] = [];
+
+export function rememberLiveCodexModels(models: readonly { readonly id: string; readonly label?: string }[]): void {
+  liveCodexModels.length = 0;
+  for (const model of models) liveCodexModels.push({ provider: "codex", value: model.id, label: model.label || model.id });
+}
+
 export function buildComposerCatalog(auth: { readonly codex: boolean; readonly claude: boolean }): ComposerCatalog {
   return {
     models: [
-      ...(auth.codex ? CODEX_MODELS : []),
+      ...(auth.codex ? (liveCodexModels.length ? liveCodexModels : CODEX_MODELS) : []),
       ...(auth.claude ? CLAUDE_MODELS : []),
     ],
     efforts: EFFORT_OPTIONS,
@@ -84,7 +92,7 @@ export function buildComposerCatalog(auth: { readonly codex: boolean; readonly c
 export function modelProvider(model: string | undefined): ModelProvider | undefined {
   if (!model) return undefined;
   if (CLAUDE_MODELS.some((item) => item.value === model) || model.startsWith("claude-")) return "claude";
-  if (CODEX_MODELS.some((item) => item.value === model) || model.startsWith("gpt-")) return "codex";
+  if (CODEX_MODELS.some((item) => item.value === model) || liveCodexModels.some((item) => item.value === model) || model.startsWith("gpt-")) return "codex";
   return undefined;
 }
 
@@ -119,7 +127,7 @@ export function modelDisplayLabel(model: string | undefined): string {
   if (!model) return "model";
   const gateway = model.match(/^([A-Za-z0-9_-]+):(.+\/.+)$/);
   if (gateway) return `${gateway[1]} · ${gateway[2]}`;
-  return [...CODEX_MODELS, ...CLAUDE_MODELS].find((item) => item.value === model)?.label ?? model;
+  return [...liveCodexModels, ...CODEX_MODELS, ...CLAUDE_MODELS].find((item) => item.value === model)?.label ?? model;
 }
 
 export function effortDisplayLabel(value: EffortValue | undefined): string {
