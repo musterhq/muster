@@ -19,6 +19,7 @@ import {
   type MemoryWritePolicy,
 } from "@musterhq/core";
 import { detectProviders, type DetectedProviders } from "./onboarding-detect.js";
+import { formatSeconds, providerConfigFor, verifyRoute, verifyTargetFor, type RouteVerifier, type VerifyOutcome, type VerifyTarget } from "./onboarding-verify.js";
 import { initGatewayConfig, saveGatewayConfig, type GatewayConfig } from "@musterhq/gateway";
 
 type StepId = "purpose" | "style" | "provider" | "integrations" | "channels" | "memory" | "finish";
@@ -68,6 +69,20 @@ interface OnboardingState {
   /** Set after save: the checklist stays up until a key is pressed. */
   awaitingAck?: boolean;
   applied?: OnboardingApplyResult;
+  /**
+   * Live verification of the model step. Results outlive the step: the finish
+   * screen and the saved profile report them, and a failed route is never
+   * written as the default.
+   */
+  verify?: VerificationState;
+}
+
+interface VerificationState {
+  running: boolean;
+  /** Route ids in the order they were checked (failed-and-skipped ones stay listed). */
+  order: string[];
+  targets: Record<string, VerifyTarget>;
+  results: Record<string, VerifyOutcome>;
 }
 
 interface OnboardingApplyResult {
@@ -77,6 +92,8 @@ interface OnboardingApplyResult {
   readonly gatewayPath?: string;
   readonly configured: readonly string[];
   readonly nextActions: readonly SetupAction[];
+  /** The route written as the runtime default; null when none was verified. */
+  readonly defaultRoute: string | null;
 }
 
 interface SetupAction {
@@ -225,19 +242,27 @@ function channelCommands(id: string): readonly string[] {
   return commands[id] ?? [];
 }
 
-export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders> } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
+export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders>; verify?: RouteVerifier } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
   const output = options.output ?? process.stdout;
   const input = options.input ?? process.stdin;
   const width = Math.max(88, output.columns ?? 112);
   const state = initialState();
   const cwd = options.cwd ?? process.cwd();
   const useColor = shouldUseOnboardingColor(args, input, output);
+  const verifier = options.verify ?? verifyRoute;
   const detection = (options.detect ?? detectProviders)().catch(() => undefined);
   if (args.includes("--preview") || !input.isTTY || !output.isTTY) {
     const previewStep = readPreviewStep(args);
     if (previewStep !== undefined) state.stepIndex = previewStep;
-    preselectCurrentStep(state);
     state.detected = await detection;
+    const stepId = currentStep(state).id;
+    // The model step previews the machine's best guess, not every row ticked.
+    if ((stepId === "provider" || stepId === "finish") && state.detected) preselectDetectedProviders(state);
+    else preselectCurrentStep(state);
+    if (args.includes("--verify") && (stepId === "provider" || stepId === "finish")) {
+      await verifySelectedRoutes(state, verifier, () => undefined);
+      if (stepId === "finish") skipFailedRoutes(state);
+    }
     output.write(`${renderOnboarding(state, width, useColor)}\n`);
     return { saved: false, handoffToChat: false };
   }
@@ -302,11 +327,27 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
         render();
         return;
       }
+      const onModelStep = currentStep(state).id === "provider";
+      const showingResults = onModelStep && state.verify && !state.verify.running;
+      if (onModelStep && state.verify?.running && key.name !== "escape") return;
       if (key.name === "up") moveCursor(state, -1);
       else if (key.name === "down") moveCursor(state, 1);
-      else if (key.name === "space") toggleCurrent(state);
-      else if (key.name === "escape") back(state);
-      else if (key.name === "return" || key.name === "enter") {
+      else if (key.name === "space") {
+        toggleCurrent(state);
+        // A changed selection has not been verified.
+        if (onModelStep) state.verify = undefined;
+      } else if (key.name === "escape") {
+        if (onModelStep) state.verify = undefined;
+        back(state);
+      } else if (showingResults && key.name === "e") {
+        editFailedRoutes(state);
+      } else if (showingResults && key.name === "k") {
+        skipFailedRoutes(state);
+        next(state);
+      } else if (showingResults && key.name === "r") {
+        retryFailedRoutes(state);
+        void verifySelectedRoutes(state, verifier, render);
+      } else if (key.name === "return" || key.name === "enter") {
         if (currentStep(state).id === "finish") {
           state.applied = await applyOnboardingProfile(state, cwd);
           state.saved = true;
@@ -314,7 +355,11 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
           state.confirmQuit = false;
           render();
           return;
+        } else if (onModelStep && unverifiedSelectedRoutes(state).length) {
+          // Nothing is "done" until it answered: verify before leaving the step.
+          void verifySelectedRoutes(state, verifier, render);
         } else {
+          if (onModelStep) skipFailedRoutes(state);
           next(state);
         }
       } else {
@@ -330,6 +375,63 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
     input.on("keypress", onKeypress);
   });
   return result;
+}
+
+/** Selected model-step rows that are live routes and have no result yet. */
+function unverifiedSelectedRoutes(state: OnboardingState): VerifyTarget[] {
+  const targets: VerifyTarget[] = [];
+  for (const item of choicesFor(providerStep(), state)) {
+    if (!state.selected.provider.has(item.id) || state.verify?.results[item.id]) continue;
+    const target = verifyTargetFor(item.id, item.label, state.detected?.[item.id]);
+    if (target) targets.push(target);
+  }
+  return targets;
+}
+
+/**
+ * Check every unverified selected route at once. Each result redraws as it
+ * lands, so a slow route never hides a fast one's answer.
+ */
+async function verifySelectedRoutes(state: OnboardingState, verifier: RouteVerifier, render: () => void): Promise<void> {
+  const pending = unverifiedSelectedRoutes(state);
+  if (!pending.length) return;
+  const verify: VerificationState = state.verify ?? { running: true, order: [], targets: {}, results: {} };
+  verify.running = true;
+  for (const target of pending) {
+    verify.targets[target.id] = target;
+    if (!verify.order.includes(target.id)) verify.order.push(target.id);
+  }
+  state.verify = verify;
+  render();
+  await Promise.all(pending.map(async (target) => {
+    const outcome = await verifier(target).catch((error: unknown): VerifyOutcome => ({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    if (state.verify !== verify) return;
+    verify.results[target.id] = outcome;
+    render();
+  }));
+  if (state.verify !== verify) return;
+  verify.running = false;
+  render();
+}
+
+function failedRouteIds(state: OnboardingState): string[] {
+  return Object.entries(state.verify?.results ?? {}).filter(([, outcome]) => !outcome.ok).map(([id]) => id);
+}
+
+/** Skip: a failed route leaves the selection (it stays in the report). */
+function skipFailedRoutes(state: OnboardingState): void {
+  for (const id of failedRouteIds(state)) state.selected.provider.delete(id);
+}
+
+function editFailedRoutes(state: OnboardingState): void {
+  const failed = failedRouteIds(state);
+  const index = choicesFor(providerStep(), state).findIndex((item) => item.id === failed[0]);
+  state.verify = undefined;
+  if (index >= 0) state.cursor = index;
+}
+
+function retryFailedRoutes(state: OnboardingState): void {
+  for (const id of failedRouteIds(state)) delete state.verify!.results[id];
 }
 
 /**
@@ -390,8 +492,9 @@ export const ONBOARDING_OPTIONAL_HINT = "every step optional — s starts coding
 export function renderOnboarding(state: OnboardingState = initialState(), width = 112, useColor = false): string {
   const step = currentStep(state);
   if (step.id === "finish") return renderFinish(state, width, useColor);
-  const selectedChoices = step.choices.filter((item) => state.selected[step.id].has(item.id));
-  const active = step.choices[state.cursor] ?? step.choices[0];
+  const choices = choicesFor(step, state);
+  const selectedChoices = choices.filter((item) => state.selected[step.id].has(item.id));
+  const active = choices[state.cursor] ?? choices[0]!;
   const bodyWidth = Math.max(70, width - 4);
   const inner = bodyWidth - 4;
   const railWidth = inner >= SUMMARY_RAIL_MIN_INNER ? SUMMARY_RAIL_WIDTH : 0;
@@ -405,7 +508,9 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
     "",
     ...renderChoices(step, state, mainWidth, useColor),
     "",
-    ...renderSetupSurface(selectedChoices, active, mainWidth, useColor, step.id === "provider" ? state.detected : undefined),
+    ...(step.id === "provider" && state.verify
+      ? renderVerifyPanel(state, mainWidth, useColor)
+      : renderSetupSurface(selectedChoices, active, mainWidth, useColor, step.id === "provider" ? state.detected : undefined)),
   ];
   const rail = summaryRailLines(state, railWidth || inner, useColor);
   const body = railWidth
@@ -474,17 +579,53 @@ function zipRail(main: readonly string[], rail: readonly string[], mainWidth: nu
 
 function renderChoices(step: Step, state: OnboardingState, width: number, useColor: boolean): string[] {
   const rows: string[] = [];
-  for (let index = 0; index < step.choices.length; index += 1) {
-    const detected = step.id === "provider" ? state.detected?.[step.choices[index]!.id] : undefined;
-    const item = detected ? { ...step.choices[index]!, badge: detected.badge, tone: (detected.ready ? "lime" : "peach") as Tone } : step.choices[index]!;
+  const choices = choicesFor(step, state);
+  // The provider step carries longer detected labels ("Anthropic-compatible proxy").
+  const labelWidth = Math.max(24, ...choices.map((item) => item.label.length));
+  const badgeWidth = Math.max(14, ...choices.map((item) => item.badge.length));
+  for (let index = 0; index < choices.length; index += 1) {
+    const detected = step.id === "provider" ? state.detected?.[choices[index]!.id] : undefined;
+    const item = detected ? { ...choices[index]!, badge: detected.badge, tone: (detected.ready ? "lime" : "peach") as Tone } : choices[index]!;
     const checked = state.selected[step.id].has(item.id);
     const focused = index === state.cursor;
     const marker = checked ? "✓" : "◇";
-    const text = `${marker} ${item.label.padEnd(24)} ${item.badge.padEnd(14)} ${item.detail}`;
-    const selectedRow = truncate(` ${text}`, width).padEnd(width);
-    rows.push(focused ? paint(selectedRow, "selection", useColor) : `${paint(marker, item.tone, useColor)} ${paint(item.label.padEnd(24), "text", useColor)} ${paint(item.badge.padEnd(14), item.tone, useColor)} ${paint(truncate(item.detail, Math.max(0, width - 44)), "dim", useColor)}`);
+    const text = `${marker} ${item.label.padEnd(labelWidth)} ${item.badge.padEnd(badgeWidth)} ${item.detail}`;
+    const selectedRow = truncate(text, width).padEnd(width);
+    rows.push(focused ? paint(selectedRow, "selection", useColor) : `${paint(marker, item.tone, useColor)} ${paint(item.label.padEnd(labelWidth), "text", useColor)} ${paint(item.badge.padEnd(badgeWidth), item.tone, useColor)} ${paint(truncate(item.detail, Math.max(0, width - labelWidth - badgeWidth - 4)), "dim", useColor)}`);
   }
   return rows;
+}
+
+/** Live results of the model step: one row per route, the real error on failure. */
+function renderVerifyPanel(state: OnboardingState, width: number, useColor: boolean): string[] {
+  const verify = state.verify!;
+  const done = verify.order.filter((id) => verify.results[id]);
+  const replied = done.filter((id) => verify.results[id]!.ok).length;
+  const failed = done.length - replied;
+  const lines = [verify.running
+    ? `${paint("Verifying", "cyan", useColor)} ${verify.order.length} route${verify.order.length === 1 ? "" : "s"} with one tiny real request each…`
+    : `${paint("Verified", "cyan", useColor)} ${replied} of ${verify.order.length} route${verify.order.length === 1 ? "" : "s"} replied`];
+  for (const id of verify.order) {
+    const label = verify.targets[id]?.label ?? id;
+    const outcome = verify.results[id];
+    const line = outcome ? verifyLine(label, outcome) : `… ${label} · waiting for a reply`;
+    const tone = !outcome ? "dim" : outcome.ok ? "lime" : "warn";
+    // Keep "replied in 1.9 s" together when a long route line wraps.
+    for (const [row, part] of wrap(line.replace(/replied in (\S+) s$/, "replied\u00a0in\u00a0$1\u00a0s"), width - 2).entries()) lines.push(paint((row === 0 ? part : `  ${part}`).replace(/\u00a0/g, " "), tone, useColor));
+  }
+  if (!verify.running) {
+    lines.push("");
+    lines.push(failed
+      ? `${paint("e", "lime", useColor)} Edit  ${paint("k", "lime", useColor)} Skip  ${paint("r", "lime", useColor)} Retry  ${paint("· failed routes are never the default", "dim", useColor)}`
+      : `${paint("Enter", "lime", useColor)} continue  ${paint("— every selected route answered", "dim", useColor)}`);
+  }
+  return lines;
+}
+
+function verifyLine(label: string, outcome: VerifyOutcome): string {
+  return outcome.ok
+    ? `✓ ${label} · ${outcome.model ? `${outcome.model} · ` : ""}replied in ${formatSeconds(outcome.ms)}`
+    : `✗ ${label} · ${outcome.error}`;
 }
 
 function renderSetupSurface(selectedChoices: readonly Choice[], active: Choice, width: number, useColor: boolean, detected?: DetectedProviders): string[] {
@@ -518,14 +659,9 @@ function renderFinish(state: OnboardingState, width: number, useColor: boolean):
   const bodyWidth = Math.max(70, width - 4);
   const lines = [
     borderTop("Muster profile", bodyWidth, useColor),
-    frame(paint("Your assistant is ready to become useful.", "text", useColor), bodyWidth, useColor),
-    frame("It knows what to remember, what to protect, what to connect, and when to avoid wasting tokens.", bodyWidth, useColor),
+    ...renderCapabilities(state, bodyWidth, useColor),
     frame("", bodyWidth, useColor),
     frame(`Purpose:      ${labelsFor(state, "purpose").join(", ") || "Personal assistant"}`, bodyWidth, useColor),
-    frame(`Providers:    ${labelsFor(state, "provider").join(", ") || "Codex"}`, bodyWidth, useColor),
-    frame(`Integrations: ${labelsFor(state, "integrations").join(", ") || "Configure later"}`, bodyWidth, useColor),
-    frame(`Channels:     ${labelsFor(state, "channels").join(", ") || "Configure later"}`, bodyWidth, useColor),
-    frame(`Memory:       ${labelsFor(state, "memory").join(", ") || "Scoped session memory"}`, bodyWidth, useColor),
     frame("", bodyWidth, useColor),
     ...profileImpacts(state).map((impact) => frame(`${paint("Impact", "lime", useColor)} ${impact}`, bodyWidth, useColor)),
     frame("", bodyWidth, useColor),
@@ -535,6 +671,121 @@ function renderFinish(state: OnboardingState, width: number, useColor: boolean):
     borderBottom(bodyWidth, useColor),
   ];
   return lines.join("\n");
+}
+
+interface Capability {
+  readonly ready: boolean;
+  readonly text: string;
+  /** `?`: not failed, but not proven either. */
+  readonly unverified?: boolean;
+}
+
+const VERIFY_COMMAND = "muster onboard --preview --step provider --verify";
+
+/**
+ * The finish screen's honest summary: a capability is ready only when it was
+ * proven (a route answered) or needs no setup (memory policy). Every missing
+ * one carries the exact command that fixes it.
+ */
+export function capabilitySummary(state: OnboardingState): Capability[] {
+  const items: Capability[] = [];
+  const verify = state.verify;
+  const defaultRoute = chooseDefaultRoute(state);
+  const labelOf = (id: string) => verify?.targets[id]?.label ?? choicesFor(providerStep(), state).find((item) => item.id === id)?.label ?? id;
+  if (defaultRoute && verify?.results[defaultRoute]?.ok) items.push({ ready: true, text: `chat · default route ${labelOf(defaultRoute)}` });
+  else if (defaultRoute) items.push({ ready: false, unverified: true, text: `chat · default route ${labelOf(defaultRoute)}, not verified · check: ${VERIFY_COMMAND}` });
+  else items.push({ ready: false, text: `chat · no verified model route · fix: ${firstRouteFix(state) ?? VERIFY_COMMAND}` });
+
+  const routeIds = [...new Set([...(verify?.order ?? []), ...choicesFor(providerStep(), state).filter((item) => state.selected.provider.has(item.id)).map((item) => item.id)])];
+  for (const id of routeIds) {
+    const outcome = verify?.results[id];
+    if (outcome?.ok) items.push({ ready: true, text: verifyLine(labelOf(id), outcome).slice(2) });
+    else if (outcome) items.push({ ready: false, text: `${labelOf(id)} · ${outcome.error} · fix: ${routeFix(id, state)}` });
+    else if (verifyTargetFor(id, labelOf(id), state.detected?.[id])) items.push({ ready: false, unverified: true, text: `${labelOf(id)} · not verified · check: ${VERIFY_COMMAND}` });
+    else if (id !== "hybrid") items.push({ ready: false, text: `${labelOf(id)} · fix: ${routeFix(id, state)}` });
+  }
+  items.push({ ready: true, text: `memory (${memoryPolicyForSelections(state)})` });
+  for (const stepId of ["integrations", "channels"] as const) {
+    const step = steps.find((item) => item.id === stepId)!;
+    for (const item of step.choices.filter((choice) => state.selected[stepId].has(choice.id))) {
+      const command = item.configureLater?.[0];
+      items.push({ ready: false, text: `${item.label}${command ? ` · fix: ${command}` : " · not set up yet"}` });
+    }
+  }
+  return items;
+}
+
+function renderCapabilities(state: OnboardingState, width: number, useColor: boolean): string[] {
+  const items = capabilitySummary(state);
+  const ready = items.filter((item) => item.ready).length;
+  const lines = [frame(`${paint(`Ready ${ready}/${items.length}`, ready === items.length ? "lime" : "peach", useColor)}  ${paint("only what answered or needs no setup counts as ready", "dim", useColor)}`, width, useColor)];
+  for (const item of items) {
+    const mark = item.ready ? "✓" : item.unverified ? "?" : "✗";
+    const rows = wrap(`${mark} ${item.text}`, width - 6);
+    for (const [index, row] of rows.entries()) lines.push(frame(paint(index === 0 ? row : `  ${row}`, item.ready ? "lime" : item.unverified ? "dim" : "warn", useColor), width, useColor));
+  }
+  return lines;
+}
+
+/** The exact command that makes a model route work. */
+function routeFix(id: string, state: OnboardingState): string {
+  const status = state.detected?.[id];
+  if (id === "codex") return status?.badge === "not installed" ? "npm install -g @openai/codex" : "codex login";
+  if (id === "claude") return status?.badge === "not installed" ? "npm install -g @anthropic-ai/claude-code" : "claude auth login";
+  if (id === "anthropic-proxy") return `check ANTHROPIC_BASE_URL and ${status?.keyEnv ?? "ANTHROPIC_AUTH_TOKEN"}, then ${VERIFY_COMMAND}`;
+  if (id === "anthropic") return "export ANTHROPIC_API_KEY=<your key>";
+  if (id === "openai") return "export OPENAI_API_KEY=<your key>";
+  if (id === "ollama") return "ollama serve";
+  if (id === "lmstudio") return "lms server start";
+  if (status?.codexProvider) return `check [model_providers.${status.codexProvider}] in $CODEX_HOME/config.toml`;
+  return choicesFor(providerStep(), state).find((item) => item.id === id)?.configureLater?.[0] ?? VERIFY_COMMAND;
+}
+
+function firstRouteFix(state: OnboardingState): string | undefined {
+  const failed = state.verify?.order.find((id) => state.verify?.results[id]?.ok === false);
+  return failed ? routeFix(failed, state) : undefined;
+}
+
+/** Routes that can become the runtime default, best first. Claude Code is reached with /runtime claude-code instead. */
+const DEFAULT_ROUTE_PRIORITY = ["codex", "anthropic-proxy", "anthropic", "openai", "lmstudio", "ollama"];
+
+/**
+ * The route saved as the default. After live verification only a route that
+ * answered qualifies — a failing route is never the default. Without
+ * verification (the `s` shortcut) the previous Codex-first rule applies.
+ */
+export function chooseDefaultRoute(state: OnboardingState): string | null {
+  const selected = state.selected.provider;
+  if (state.verify) return DEFAULT_ROUTE_PRIORITY.find((id) => selected.has(id) && state.verify!.results[id]?.ok) ?? null;
+  return !selected.size || selected.has("codex") || selected.has("hybrid") ? "codex" : null;
+}
+
+function providerStep(): Step {
+  return steps.find((step) => step.id === "provider")!;
+}
+
+/**
+ * The rows of a step. The model step adds one row per route found on this
+ * machine (env gateways, Codex model providers, local servers) right after the
+ * subscription CLIs, so the best guesses sit at the top.
+ */
+function choicesFor(step: Pick<Step, "id" | "choices">, state: OnboardingState): readonly Choice[] {
+  if (step.id !== "provider" || !state.detected) return step.choices;
+  const detected = state.detected;
+  const known = new Set(step.choices.map((item) => item.id));
+  const base = step.choices.map((item) => (detected[item.id]?.detail ? { ...item, detail: detected[item.id]!.detail! } : item));
+  const extras = Object.entries(detected)
+    .filter(([id]) => !known.has(id))
+    .map(([id, status]) => choice(id, status.label ?? id, status.detail ?? "Detected on this machine.", status.badge, "cyan", detectedImpact(status), [], status.ready ? [] : [routeFix(id, state)]));
+  const at = base.findIndex((item) => item.id === "claude") + 1;
+  return [...base.slice(0, at), ...extras, ...base.slice(at)];
+}
+
+function detectedImpact(status: { readonly kind?: string; readonly keyEnv?: string }): string {
+  if (status.kind === "anthropic-http") return `Claude models through the gateway in ANTHROPIC_BASE_URL. The key stays in ${status.keyEnv ?? "ANTHROPIC_AUTH_TOKEN"} and is read only when a request is sent.`;
+  if (status.kind === "codex-provider") return "Runs Codex's full tool loop on the gateway defined in your Codex config.";
+  if (status.kind === "local-openai") return "Private model on this machine. Verifying it loads the model into memory, so it is not ticked by default.";
+  return "Detected on this machine.";
 }
 
 function initialState(): OnboardingState {
@@ -561,7 +812,8 @@ function currentStep(state: OnboardingState): Step | { id: "finish"; eyebrow: st
 /** Detected, ready routes start ticked so the common case is one Enter. */
 export function preselectDetectedProviders(state: OnboardingState): void {
   if (!state.detected || state.selected.provider.size) return;
-  for (const [id, status] of Object.entries(state.detected)) if (status.ready) state.selected.provider.add(id);
+  // Local servers are listed but not ticked: verifying one loads a model into memory.
+  for (const [id, status] of Object.entries(state.detected)) if (status.ready && status.kind !== "local-openai") state.selected.provider.add(id);
 }
 
 function hasAnySelection(state: OnboardingState): boolean {
@@ -569,16 +821,16 @@ function hasAnySelection(state: OnboardingState): boolean {
 }
 
 function moveCursor(state: OnboardingState, delta: number): void {
-  const step = currentStep(state);
-  if (!step.choices.length) return;
-  state.cursor = (state.cursor + delta + step.choices.length) % step.choices.length;
+  const choices = choicesFor(currentStep(state), state);
+  if (!choices.length) return;
+  state.cursor = (state.cursor + delta + choices.length) % choices.length;
 }
 
 const MEMORY_POLICY_IDS: ReadonlySet<string> = new Set(["ask", "never", "auto"]);
 
 function toggleCurrent(state: OnboardingState): void {
   const step = currentStep(state);
-  const item = step.choices[state.cursor];
+  const item = choicesFor(step, state)[state.cursor];
   if (!item) return;
   const set = state.selected[step.id];
   if (set.has(item.id)) set.delete(item.id);
@@ -629,7 +881,7 @@ export async function applyOnboardingProfile(state: OnboardingState, cwd: string
   const nextActions = new Map<string, SetupAction>();
   const addAction = (action: SetupAction) => nextActions.set(`${action.kind}:${action.id}:${action.command ?? action.url ?? action.label}`, action);
 
-  await applyProviderSelections(state, cwd, configured, addAction);
+  const defaultRoute = await applyProviderSelections(state, cwd, configured, addAction);
   await applyPluginSelections(state, cwd, configured, addAction);
   await applyMcpSelections(state, cwd, configured, addAction);
   const gatewayPath = await applyChannelSelections(state, cwd, configured, addAction);
@@ -642,38 +894,72 @@ export async function applyOnboardingProfile(state: OnboardingState, cwd: string
     gatewayPath,
     configured,
     nextActions: [...nextActions.values()],
+    defaultRoute,
   };
   await saveOnboardingProfile(state, cwd, applied);
   await saveGlobalOnboardingProfile(state, applied);
   return applied;
 }
 
-async function applyProviderSelections(state: OnboardingState, cwd: string, configured: string[], addAction: (action: SetupAction) => void): Promise<void> {
+async function applyProviderSelections(state: OnboardingState, cwd: string, configured: string[], addAction: (action: SetupAction) => void): Promise<string | null> {
   const selected = state.selected.provider;
-  if (!selected.size || selected.has("codex") || selected.has("hybrid")) {
+  const results = state.verify?.results ?? {};
+  const failed = (id: string) => results[id]?.ok === false;
+  // Ready = answered a live check, or (unverified) detected as logged in / keyed.
+  const ready = (id: string) => results[id]?.ok === true || (results[id] === undefined && state.detected?.[id]?.ready === true);
+  const defaultRoute = chooseDefaultRoute(state);
+  if ((!selected.size || selected.has("codex") || selected.has("hybrid")) && !failed("codex")) {
     await addCodexCliProvider({ id: "codex", defaultModel: DEFAULT_CODEX_MODEL }, cwd).catch(async () => undefined);
-    await setRuntimeProvider({ runtimeId: "native", providerId: "codex", model: DEFAULT_CODEX_MODEL }, cwd);
-    configured.push("provider:codex", `runtime:native->codex/${DEFAULT_CODEX_MODEL}`);
-    addAction({ kind: "provider", id: "codex", label: "Codex CLI login", command: "codex login", url: "https://github.com/openai/codex", note: "Uses local Codex subscription auth; if codex is not installed/logged in, run the login once." });
+    configured.push("provider:codex");
   }
-  if (selected.has("openai")) {
-    await addPresetProvider("openai", {}, cwd);
+  if (!ready("codex") && (selected.has("codex") || defaultRoute === "codex" || failed("codex"))) {
+    addAction({ kind: "provider", id: "codex", label: "Codex CLI login", command: routeFix("codex", state), url: "https://github.com/openai/codex", note: "Uses local Codex subscription auth; if codex is not installed/logged in, run the login once." });
+  }
+  if (selected.has("openai") && !failed("openai")) {
+    const detected = state.detected?.openai;
+    await addPresetProvider("openai", { ...(detected?.baseUrl ? { baseUrl: detected.baseUrl } : {}), ...(detected?.model ? { model: detected.model } : {}) }, cwd);
     configured.push("provider:openai");
-    addAction({ kind: "provider", id: "openai", label: "OpenAI API key", command: "export OPENAI_API_KEY=...", url: "https://platform.openai.com/api-keys", env: ["OPENAI_API_KEY"], note: "Native OpenAI API route is configured and becomes usable once the env var exists." });
+    if (!ready("openai")) addAction({ kind: "provider", id: "openai", label: "OpenAI API key", command: "export OPENAI_API_KEY=...", url: "https://platform.openai.com/api-keys", env: ["OPENAI_API_KEY"], note: "Native OpenAI API route is configured and becomes usable once the env var exists." });
   }
-  if (selected.has("anthropic")) {
-    await addPresetProvider("anthropic", {}, cwd);
+  if (selected.has("anthropic") && !failed("anthropic")) {
+    await addPresetProvider("anthropic", state.detected?.anthropic?.model ? { model: state.detected.anthropic.model } : {}, cwd);
     configured.push("provider:anthropic");
-    addAction({ kind: "provider", id: "anthropic", label: "Anthropic API key", command: "export ANTHROPIC_API_KEY=...", url: "https://console.anthropic.com/settings/keys", env: ["ANTHROPIC_API_KEY"], note: "Native Claude API route is configured and becomes usable once the env var exists." });
+    if (!ready("anthropic")) addAction({ kind: "provider", id: "anthropic", label: "Anthropic API key", command: "export ANTHROPIC_API_KEY=...", url: "https://console.anthropic.com/settings/keys", env: ["ANTHROPIC_API_KEY"], note: "Native Claude API route is configured and becomes usable once the env var exists." });
   }
   if (selected.has("claude")) {
     configured.push("provider:claude-code-ready");
-    addAction({ kind: "provider", id: "claude-code", label: "Claude Code login", command: "claude login", url: "https://docs.anthropic.com/en/docs/claude-code/setup", note: "Muster will route Claude Code workflows through local Claude Code auth when available." });
+    if (!ready("claude")) addAction({ kind: "provider", id: "claude-code", label: "Claude Code login", command: routeFix("claude", state), url: "https://docs.anthropic.com/en/docs/claude-code/setup", note: "Muster will route Claude Code workflows through local Claude Code auth when available." });
   }
   if (selected.has("selfhosted")) {
     configured.push("provider:selfhosted:manual");
     addAction({ kind: "provider", id: "selfhosted", label: "Self-hosted OpenAI-compatible endpoint", command: "muster provider add-openai-compatible private https://models.internal.example/v1 served-model", url: "https://platform.openai.com/docs/api-reference", note: "Add your team's gateway URL and model name when the endpoint is ready. Muster keeps Codex as the default route until this is configured." });
   }
+  // Detected gateways and local servers are saved as provider entries that hold
+  // the env var NAME of their key, never the value.
+  for (const id of selected) {
+    const status = state.detected?.[id];
+    if (!status || failed(id) || ["codex", "claude", "openai", "anthropic"].includes(id)) continue;
+    if (status.kind === "codex-provider") {
+      configured.push(`provider:${id}`);
+      continue;
+    }
+    const target = verifyTargetFor(id, status.label ?? id, status);
+    const provider = target ? providerConfigFor(target) : undefined;
+    if (!provider) continue;
+    const config = await loadConfig(cwd);
+    await saveConfig({ ...config, providers: { ...config.providers, [provider.id]: provider } }, cwd);
+    configured.push(`provider:${id}`);
+  }
+  if (defaultRoute) {
+    const providerId = defaultRoute;
+    const config = await loadConfig(cwd);
+    const model = defaultRoute === "codex" ? DEFAULT_CODEX_MODEL : config.providers[providerId]?.defaultModel;
+    if (config.providers[providerId]) {
+      await setRuntimeProvider({ runtimeId: "native", providerId, model }, cwd);
+      configured.push(`runtime:native->${providerId}/${model}`);
+    }
+  }
+  return defaultRoute;
 }
 
 async function applyPluginSelections(state: OnboardingState, cwd: string, configured: string[], addAction: (action: SetupAction) => void): Promise<void> {
@@ -788,10 +1074,23 @@ async function saveOnboardingProfile(state: OnboardingState, cwd: string, applie
     impacts: profileImpacts(state),
     configured: applied.configured,
     nextActions: applied.nextActions,
+    defaultRoute: applied.defaultRoute,
+    verification: verificationRecords(state),
     configPath: applied.configPath,
     gatewayPath: applied.gatewayPath,
   };
   await writeFile(path, `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+}
+
+/** What the model step proved, for the profile. Never contains a key. */
+function verificationRecords(state: OnboardingState): Array<Record<string, unknown>> {
+  const verify = state.verify;
+  if (!verify) return [];
+  return verify.order.filter((id) => verify.results[id]).map((id) => {
+    const outcome = verify.results[id]!;
+    const label = verify.targets[id]?.label ?? id;
+    return outcome.ok ? { id, label, ok: true, ms: outcome.ms, ...(outcome.model ? { model: outcome.model } : {}) } : { id, label, ok: false, error: outcome.error };
+  });
 }
 
 async function saveGlobalOnboardingProfile(state: OnboardingState, applied: OnboardingApplyResult): Promise<void> {
@@ -811,7 +1110,7 @@ async function saveGlobalOnboardingProfile(state: OnboardingState, applied: Onbo
 function labelsFor(state: OnboardingState, stepId: StepId): string[] {
   const step = steps.find((item) => item.id === stepId);
   const selected = state.selected[stepId];
-  return step?.choices.filter((item) => selected.has(item.id)).map((item) => item.label) ?? [];
+  return step ? choicesFor(step, state).filter((item) => selected.has(item.id)).map((item) => item.label) : [];
 }
 
 /** What Enter will write, computed from the same selection helpers the apply step uses. */
@@ -821,6 +1120,9 @@ export function plannedWrites(state: OnboardingState): string[] {
   const enabled = plugins.filter((entry) => entry.risk !== "high").map((entry) => entry.id);
   const optIn = plugins.filter((entry) => entry.risk === "high").map((entry) => entry.id);
   const lines = [`config: <workspace>/.muster/config.json, profile: ~/.muster/onboarding-profile.json`];
+  const defaultRoute = chooseDefaultRoute(state);
+  const routeLabel = defaultRoute ? state.verify?.targets[defaultRoute]?.label ?? choicesFor(providerStep(), state).find((item) => item.id === defaultRoute)?.label ?? defaultRoute : undefined;
+  lines.push(routeLabel ? `default model route: ${routeLabel}${state.verify?.results[defaultRoute!]?.ok ? " (verified)" : " (not verified)"}` : "default model route: none verified, left unchanged");
   lines.push(`memory write policy: ${memoryPolicyForSelections(state)}`);
   if (enabled.length) lines.push(`plugins enabled: ${enabled.join(", ")}`);
   if (optIn.length) lines.push(`plugins left off (high risk, enable yourself): ${optIn.join(", ")}`);
@@ -940,7 +1242,8 @@ function frame(value: string, width: number, useColor: boolean): string {
 }
 
 function wrap(value: string, width: number): string[] {
-  const words = value.split(/\s+/);
+  // Split on ordinary whitespace only, so a no-break space keeps a unit together.
+  const words = value.split(/[ \t\n]+/);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {

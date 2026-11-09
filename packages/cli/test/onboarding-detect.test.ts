@@ -10,10 +10,10 @@ test("detectProviders reports install, login and key state without reading crede
     run: async (command) => (command === "codex" ? "codex 1.0" : undefined),
     exists: (path) => path === "/home/u/.codex/auth.json",
   });
-  assert.deepEqual(detected.codex, { badge: "ready", ready: true });
-  assert.deepEqual(detected.claude, { badge: "not installed", ready: false });
-  assert.deepEqual(detected.openai, { badge: "key found", ready: true });
-  assert.deepEqual(detected.anthropic, { badge: "no key", ready: false });
+  assert.equal(detected.codex?.badge, "logged in");
+  assert.equal(detected.claude?.badge, "not installed");
+  assert.equal(detected.openai?.badge, "key ref");
+  assert.equal(detected.anthropic?.badge, "no key");
 
   const login = await detectProviders({ env: {}, home: "/h", run: async () => "v", exists: () => false });
   assert.equal(login.codex?.badge, "needs login");
@@ -27,7 +27,7 @@ test("the provider step shows detected status, preselects ready routes and drops
   preselectDetectedProviders(state);
   assert.deepEqual([...state.selected.provider], ["codex"]);
   const screen = renderOnboarding(state, 120, false);
-  assert.match(screen, /Codex\s+ready/);
+  assert.match(screen, /Codex\s+logged in/);
   assert.match(screen, /Claude Code\s+not installed/);
   assert.match(screen, /OpenAI API\s+no key/);
   assert.doesNotMatch(screen, /configure later: codex login/);
