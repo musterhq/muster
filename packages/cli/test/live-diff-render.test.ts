@@ -488,3 +488,20 @@ test("live diff feed skips build artifacts even without a .gitignore", async () 
   assert.doesNotMatch(text, /pycache|\.pyc|pytest_cache|node_modules/);
   assert.match(text, /1 file changed/);
 });
+
+// Spec: MUS-SPEC-01-4A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-4a--diff-cards-show-line-numbers)
+// Protected: the inline diff stays complete — every hunk row is still shown, now with its line number.
+test("diff cards number every row from the hunk header", () => {
+  const card = renderLiveDiffCard(patchEvent({
+    path: "src/run.ts",
+    diff: "@@ -9,4 +9,5 @@\n const before = 1;\n-const removed = 2;\n+const added = 2;\n+const alsoAdded = 3;\n const after = 4;",
+  }), { color: false });
+  assert.deepEqual(card.slice(2), [
+    "    @@ -9,4 +9,5 @@",
+    "     9   const before = 1;",
+    "    10 - const removed = 2;",
+    "    10 + const added = 2;",
+    "    11 + const alsoAdded = 3;",
+    "    12   const after = 4;",
+  ]);
+});

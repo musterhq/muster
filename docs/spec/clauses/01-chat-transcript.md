@@ -91,3 +91,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure row renderer used by the chat screen (`renderTranscriptLine`), truecolor.
 - **Known gaps:** NO_COLOR terminals get no band (text only).
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-4A — Diff cards show line numbers
+
+- **Precondition:** a diff card for `@@ -9,4 +9,5 @@` with one context line, one removal, two additions, one context line.
+- **Action:** render the card without color.
+- **Expected result:** the hunk header stays; every body row is `<line number> <sign> <code>`, numbered from the hunk header — context and added rows use the new file's numbers, removed rows the old file's — right-aligned to the widest number in the card; the `+N −M` summary and receipt are unchanged.
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "diff cards number every row from the hunk header"
+- **Environment:** pure renderer.
+- **Known gaps:** word-level (intra-line) highlighting is a follow-up.
+- **Evidence:** UNVERIFIED
