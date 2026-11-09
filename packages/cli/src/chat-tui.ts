@@ -104,6 +104,15 @@ export interface PickerOption {
 
 export interface MusterChatSink {
   appendLine(line: string): void;
+  /**
+   * A transcript block that can change after it is painted (a tool cell going
+   * from running to finished). The first call appends it; later calls with the
+   * same id replace it in place. `render` is called again when Ctrl+O toggles
+   * expanded output.
+   */
+  upsertBlock(id: string, render: (expanded: boolean) => string[]): void;
+  /** Ctrl+O: expand or collapse every block's output. */
+  toggleExpanded(): void;
   appendUser(text: string): void;
   clearTranscript(): void;
   setHeaderLines(lines: readonly string[]): void;
@@ -637,6 +646,8 @@ export interface NarrationPainterOptions {
   readonly bullets?: boolean;
   /** "compact" (default) collapses each reasoning summary to a single row. */
   readonly reasoningMode?: ReasoningMode;
+  /** When set, tool cells are mutable blocks: painted running, then replaced in place when they finish. */
+  readonly block?: (id: string, render: (expanded: boolean) => string[]) => void;
 }
 
 export interface NarrationPainter {
@@ -708,6 +719,19 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   const paintTool = (event: AgentToolEvent): void => {
     flushAll();
     blockOpen = false;
+    if (options.block && bullets) {
+      const name = toolCellName(event);
+      const title = toolCellTitle(event);
+      if (event.phase === "start") {
+        options.block(`tool:${event.id}`, () => [formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`]);
+      } else {
+        options.block(`tool:${event.id}`, (expanded) => [
+          formatToolLine(name, title, event.failed ? "failure" : "success"),
+          ...formatToolEndLines(event, TOOL_RESULT_MAX_LINES, { expanded, expandable: true }),
+        ]);
+      }
+      return;
+    }
     if (!bullets) {
       if (event.phase === "start") options.emit(`$ ${toolCellTitle(event)}`);
       return;
@@ -800,7 +824,14 @@ function toolCellTitle(event: AgentToolEvent, max = 96): string {
 }
 
 /** Result rows under a finished tool: `⎿ exit 1 · 1.2s`, then the output TAIL (errors live at the end). */
-export function formatToolEndLines(event: AgentToolEvent, maxLines = TOOL_RESULT_MAX_LINES): string[] {
+/** Rows shown for one tool's output when Ctrl+O has expanded it; beyond this a count is shown. */
+export const TOOL_RESULT_EXPANDED_MAX_LINES = 400;
+
+export function formatToolEndLines(
+  event: AgentToolEvent,
+  maxLines = TOOL_RESULT_MAX_LINES,
+  view: { readonly expanded?: boolean; readonly expandable?: boolean } = {},
+): string[] {
   const segments: string[] = [];
   if (event.exitCode !== undefined) segments.push(`exit ${event.exitCode}`);
   else segments.push(event.failed ? "failed" : "done");
@@ -810,9 +841,13 @@ export function formatToolEndLines(event: AgentToolEvent, maxLines = TOOL_RESULT
   const rows = (event.output ?? "").replace(/\s+$/, "").split(/\r?\n/).filter((row, index, all) => row.trim() || index < all.length - 1);
   const output = rows.length === 1 && !rows[0]!.trim() ? [] : rows;
   const lines = [head];
-  const hidden = Math.max(0, output.length - maxLines);
-  if (hidden > 0) lines.push(`    ${dim(`… +${hidden} lines`)}`);
+  const limit = view.expanded ? TOOL_RESULT_EXPANDED_MAX_LINES : maxLines;
+  const hidden = Math.max(0, output.length - limit);
+  // The hint promises a key only where the key exists (block mode).
+  const hint = view.expandable ? " (ctrl+o to expand)" : "";
+  if (hidden > 0) lines.push(`    ${dim(`… +${hidden} lines${view.expanded ? "" : hint}`)}`);
   for (const row of output.slice(hidden)) lines.push(`    ${dim(stripAnsi(row).slice(0, 200))}`);
+  if (view.expanded && view.expandable && output.length > maxLines) lines.push(`    ${dim("ctrl+o to collapse")}`);
   return lines;
 }
 
@@ -940,6 +975,56 @@ export function windowTranscript(rows: readonly string[], viewportRows: number, 
   return { visible: rows.slice(Math.max(0, end - viewportRows), end), clamped };
 }
 
+/**
+ * Transcript rows plus mutable blocks. Plain lines append; a block keeps its
+ * position and is re-rendered in place. `dirtyFrom` tells a wrap cache the
+ * first row index that changed so it re-wraps only from there.
+ */
+export class TranscriptStore {
+  readonly lines: string[] = [];
+  expanded = false;
+  dirtyFrom = Number.POSITIVE_INFINITY;
+  private readonly blocks = new Map<string, { start: number; count: number; render: (expanded: boolean) => string[] }>();
+
+  push(...rows: string[]): void {
+    this.lines.push(...rows);
+  }
+
+  upsert(id: string, render: (expanded: boolean) => string[]): void {
+    const rows = render(this.expanded);
+    const block = this.blocks.get(id);
+    if (!block) {
+      this.blocks.set(id, { start: this.lines.length, count: rows.length, render });
+      this.lines.push(...rows);
+      return;
+    }
+    this.replace(block, rows);
+    block.render = render;
+  }
+
+  toggleExpanded(): void {
+    this.expanded = !this.expanded;
+    const ordered = [...this.blocks.values()].sort((a, b) => a.start - b.start);
+    for (const block of ordered) this.replace(block, block.render(this.expanded));
+  }
+
+  clear(): void {
+    this.lines.length = 0;
+    this.blocks.clear();
+    this.dirtyFrom = 0;
+  }
+
+  private replace(block: { start: number; count: number }, rows: string[]): void {
+    this.lines.splice(block.start, block.count, ...rows);
+    const delta = rows.length - block.count;
+    if (delta) {
+      for (const other of this.blocks.values()) if (other.start > block.start) other.start += delta;
+    }
+    block.count = rows.length;
+    this.dirtyFrom = Math.min(this.dirtyFrom, block.start);
+  }
+}
+
 /** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
 export function isQueueFollowUpKey(data: string): boolean {
   return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
@@ -1017,6 +1102,10 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   return {
     input(data) {
       if (options.onDecisionKey?.(data, sink)) return;
+      if (data === "\x0f") {
+        sink.toggleExpanded();
+        return;
+      }
       if (sink.running && isQueueFollowUpKey(data)) {
         const text = editor.getText().trim();
         editor.setText("");
@@ -1322,6 +1411,10 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       screen.toggleLiveDiff();
       return { consume: true };
     }
+    if (data === "\x0f") {
+      screen.toggleExpanded();
+      return { consume: true };
+    }
     if (data === "\x03") {
       screen.stop();
       return { consume: true };
@@ -1495,7 +1588,10 @@ class BoardModeHost {
 }
 
 class MusterChatScreen implements Component, MusterChatSink {
-  private readonly lines: string[];
+  private readonly store = new TranscriptStore();
+  private get lines(): string[] {
+    return this.store.lines;
+  }
   private status = "";
   private statusTick = 0;
   private stopped = false;
@@ -1521,7 +1617,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     onSteer?: (text: string) => boolean | Promise<boolean>,
   ) {
     this.followUps = new RunningTurnInput(onSteer);
-    this.lines = [...initialLines];
+    this.store.push(...initialLines);
   }
 
   async refreshStatusLine(): Promise<void> {
@@ -1536,7 +1632,7 @@ class MusterChatScreen implements Component, MusterChatSink {
       return;
     }
     for (const part of String(line).split(/\r?\n/)) {
-      this.lines.push(part);
+      this.store.push(part);
     }
     this.trimTranscript();
     this.scrollOffset = 0; // new output always snaps the viewport back to live
@@ -1551,7 +1647,18 @@ class MusterChatScreen implements Component, MusterChatSink {
   }
 
   clearTranscript(): void {
-    this.lines.length = 0;
+    this.store.clear();
+    this.tui.requestRender(true);
+  }
+
+  upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
+    this.store.upsert(id, render);
+    this.scrollOffset = 0;
+    this.tui.requestRender();
+  }
+
+  toggleExpanded(): void {
+    this.store.toggleExpanded();
     this.tui.requestRender(true);
   }
 
@@ -1881,7 +1988,7 @@ class MusterChatScreen implements Component, MusterChatSink {
    * (owner-ruled 2026-08-30 — no row cap, the entire session reachable)
    * affordable: a repaint costs O(viewport), not O(session).
    */
-  private wrapCache = { width: -1, padTo: -1, consumed: 0, rows: [] as string[], bandOpen: false };
+  private wrapCache = { width: -1, padTo: -1, consumed: 0, rows: [] as string[], bandOpen: false, lineRows: [] as number[], bandAfter: [] as boolean[] };
 
   private wrappedTranscript(frameWidth: number, padTo: number): readonly string[] {
     const cache = this.wrapCache;
@@ -1891,6 +1998,20 @@ class MusterChatScreen implements Component, MusterChatSink {
       cache.consumed = 0;
       cache.rows = [];
       cache.bandOpen = false;
+      cache.lineRows = [];
+      cache.bandAfter = [];
+    }
+    // A block changed in place: drop the wrapped rows from its first line on.
+    const dirty = this.store.dirtyFrom;
+    this.store.dirtyFrom = Number.POSITIVE_INFINITY;
+    if (dirty < cache.consumed) {
+      let keep = 0;
+      for (let index = 0; index < dirty; index += 1) keep += cache.lineRows[index] ?? 0;
+      cache.rows.length = keep;
+      cache.lineRows.length = dirty;
+      cache.bandAfter.length = dirty;
+      cache.bandOpen = dirty > 0 ? (cache.bandAfter[dirty - 1] ?? false) : false;
+      cache.consumed = dirty;
     }
     while (cache.consumed < this.lines.length) {
       const line = this.lines[cache.consumed]!;
@@ -1902,6 +2023,8 @@ class MusterChatScreen implements Component, MusterChatSink {
       // THE GAP, enforced at the renderer so no append site can regress it.
       if (wasUser && !cache.bandOpen && plain.trim() !== "") rows.unshift("");
       cache.rows.push(...rows);
+      cache.lineRows.push(rows.length);
+      cache.bandAfter.push(cache.bandOpen);
       cache.consumed += 1;
     }
     return cache.rows;
@@ -1914,7 +2037,10 @@ class MusterChatScreen implements Component, MusterChatSink {
 }
 
 class HarnessSink implements MusterChatSink {
-  readonly transcriptLines: string[] = [];
+  private readonly store = new TranscriptStore();
+  get transcriptLines(): string[] {
+    return this.store.lines;
+  }
   exited = false;
   statusRow = "";
   private turnRunning = false;
@@ -1928,7 +2054,7 @@ class HarnessSink implements MusterChatSink {
     initialLines: readonly string[] = [],
     onSteer?: (text: string) => boolean | Promise<boolean>,
   ) {
-    this.transcriptLines.push(...initialLines);
+    this.store.push(...initialLines);
     this.followUps = new RunningTurnInput(onSteer);
   }
 
@@ -1947,15 +2073,23 @@ class HarnessSink implements MusterChatSink {
       this.setStatus(line);
       return;
     }
-    for (const part of String(line).split(/\r?\n/)) this.transcriptLines.push(part);
+    for (const part of String(line).split(/\r?\n/)) this.store.push(part);
   }
 
   appendUser(text: string): void {
     this.appendLine(formatUserLine(text));
   }
 
+  upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
+    this.store.upsert(id, render);
+  }
+
+  toggleExpanded(): void {
+    this.store.toggleExpanded();
+  }
+
   clearTranscript(): void {
-    this.transcriptLines.length = 0;
+    this.store.clear();
   }
 
   setHeaderLines(_lines: readonly string[]): void {}

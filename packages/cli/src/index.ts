@@ -2824,6 +2824,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     ? createNarrationPainter({
         emit: (line) => emitChatLine(state, line),
         reasoningMode: state.reasoningMode ?? "compact",
+        block: (id, render) => state.statusSink?.upsertBlock(id, render),
       })
     : undefined;
   const liveDiff = await startLiveDiffFeed({
