@@ -68,3 +68,4 @@ export * from "./tool-registry.js";
 export * from "./trust.js";
 export * from "./types.js";
 export * from "./workspace-observer.js";
+export * from "./plugin-bundles.js";

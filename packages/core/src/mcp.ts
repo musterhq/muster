@@ -14,11 +14,13 @@ import { mcpOAuthAuthorizationHeader } from "./mcp-oauth.js";
 
 export interface McpServerConfig {
   readonly transport:
-    | { readonly kind: "stdio"; readonly command: string; readonly args?: string[]; readonly env?: Record<string, string> }
+    | { readonly kind: "stdio"; readonly command: string; readonly args?: string[]; readonly env?: Record<string, string>; readonly cwd?: string }
     | { readonly kind: "http"; readonly url: string; readonly headers?: Record<string, string> };
   readonly tools?: { readonly include?: string[]; readonly exclude?: string[] };
   readonly limits?: { readonly toolTimeoutMs?: number; readonly maxResultChars?: number; readonly maxCallsPerTurn?: number };
   readonly auth?: "oauth";
+  /** Set when a plugin bundle added this server; `muster plugins remove` deletes exactly these. */
+  readonly origin?: { readonly plugin: string };
   readonly oauth?: {
     readonly setupUrl?: string;
     readonly scope?: string;
@@ -63,10 +65,11 @@ class StdioTransport {
   private dead = false;
   private deadReason?: Error;
 
-  constructor(command: string, args: string[], env: Record<string, string> | undefined, cwd: string) {
+  constructor(command: string, args: string[], env: Record<string, string> | undefined, cwd: string, spawnCwd?: string) {
     const resolvedArgs = args.map((arg) => resolveMcpRuntimeTemplate(arg, { cwd }));
     const resolvedEnv = resolveMcpRuntimeEnv(env, cwd);
     this.child = spawn(command, resolvedArgs, {
+      ...(spawnCwd ? { cwd: spawnCwd } : {}),
       stdio: ["pipe", "pipe", "ignore"],
       // filtered env: only what the server config declares, plus PATH — secrets never leak by default
       env: { PATH: process.env.PATH ?? "", ...resolvedEnv },
@@ -232,7 +235,7 @@ export async function connectMcpServer(name: string, config: McpServerConfig, cw
   let transport: StdioTransport | undefined;
   const send = async (method: string, params: unknown): Promise<JsonRpcResponse> => {
     if (config.transport.kind === "stdio") {
-      transport ??= new StdioTransport(config.transport.command, config.transport.args ?? [], config.transport.env, cwd);
+      transport ??= new StdioTransport(config.transport.command, config.transport.args ?? [], config.transport.env, cwd, config.transport.cwd);
       return transport.request(method, params, timeoutMs);
     }
     const headers = { ...(config.transport.headers ?? {}) };
