@@ -123,3 +123,12 @@ test("fences carry no language label and codex annotations never render", () => 
   assert.equal(flat.some((line) => line.trim() === "text"), false, "no floating language label");
   assert.equal(flat.some((line) => line.includes("ossmgr binary")), true, "code body kept");
 });
+
+// Spec: MUS-SPEC-01-1F (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1f--markdown-links-and-snake_case-render-verbatim)
+test("links render as their label and intraword underscores stay literal", () => {
+  const rows = renderProse("Added [test_calc.py](/r/test_calc.py) for snake_case_names and __init__ files.", { firstPrefix: "● ", continuationPrefix: "  " });
+  assert.deepEqual(plain(rows).split("\n"), ["● Added test_calc.py for snake_case_names and __init__ files."]);
+  assert.doesNotMatch(rows.join(""), /\x1b\[3m/, "no italics leak from underscores");
+  assert.match(renderInlineProse("see [docs](https://x.dev/a_b)"), /\x1b\[4mdocs/, "the link label is underlined");
+  assert.match(plain(renderInlineProse("_really_ important")), /^really important$/, "standalone emphasis still works");
+});

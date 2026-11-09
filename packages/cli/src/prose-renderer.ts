@@ -41,6 +41,23 @@ function styled(text: string, open: string, restore: string): string {
   return enabled() ? `${open}${text}${RESET}${restore}` : text;
 }
 
+/**
+ * CommonMark's rule for `_`: emphasis only at word boundaries, so
+ * `test_calc.py`, `snake_case_names` and `__init__` stay literal.
+ */
+function underscoreEmphasis(text: string, index: number, marker: "_" | "__"): RegExpMatchArray | null {
+  if (index > 0 && /[\p{L}\p{N}_]/u.test(text[index - 1]!)) return null;
+  const pattern = marker === "__" ? /^__([^_\n]+)__/ : /^_([^_\n]+)_/;
+  const match = text.slice(index).match(pattern);
+  if (!match) return null;
+  const after = text[index + match[0].length];
+  if (after !== undefined && /[\p{L}\p{N}_]/u.test(after)) return null;
+  if (/^\s|\s$/.test(match[1]!)) return null;
+  // `__init__`, `__main__`: a dunder name is code, not bold.
+  if (marker === "__" && /^\w+$/.test(match[1]!)) return null;
+  return match;
+}
+
 export interface RenderInlineOptions { readonly base?: BaseStyle }
 
 /** Render inline Markdown plus path, branch, command and URL semantics. */
@@ -57,9 +74,13 @@ export function renderInlineProse(text: string, options: RenderInlineOptions = {
       // The reference's inline-code identity: the measured indexed color,
       // no background — the ONE sanctioned color for important words.
       output += styled(match[1]!, CODE_SPAN_SGR, restore);
-    } else if ((match = rest.match(/^\*\*([^*\n]+)\*\*/)) || (match = rest.match(/^__([^_\n]+)__/))) {
+    } else if ((match = rest.match(/^\[([^\]\n]+)\]\(([^)\s]+)\)/))) {
+      // [label](target): the label is the fact; the target (often a long
+      // absolute path) is noise in a terminal row.
+      output += styled(renderInlineProse(match[1]!, { base: baseStyle }), UNDERLINE, restore);
+    } else if ((match = rest.match(/^\*\*([^*\n]+)\*\*/)) || (match = underscoreEmphasis(text, index, "__"))) {
       output += styled(renderInlineProse(match[1]!, { base: baseStyle }), BOLD, restore);
-    } else if ((match = rest.match(/^\*([^*\n]+)\*/)) || (match = rest.match(/^_([^_\n]+)_/))) {
+    } else if ((match = rest.match(/^\*([^*\n]+)\*/)) || (match = underscoreEmphasis(text, index, "_"))) {
       output += styled(renderInlineProse(match[1]!, { base: baseStyle }), ITALIC, restore);
     } else if ((match = rest.match(/^https?:\/\/[^\s<>()]+/i))) {
       // Owner-ruled 2026-08-29: prose keeps the default foreground. Links get

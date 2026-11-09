@@ -428,3 +428,46 @@ test("compact counts and durations read like a chip, not a dump", () => {
   assert.equal(formatDuration(12440), "12.4s");
   assert.equal(formatDuration(65000), "1m 5s");
 });
+
+// Spec: MUS-SPEC-01-1B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1b--a-command-renders-as-a-cell-with-status-and-output)
+test("narration painter paints command cells in order with exit status and output tail", () => {
+  const previous = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line) });
+    painter.delta("Running the tests.");
+    painter.tool({ phase: "start", id: "c1", kind: "command", title: "pytest -q" });
+    const output = Array.from({ length: 9 }, (_, index) => `line ${index + 1}`).join("\n");
+    painter.tool({ phase: "end", id: "c1", kind: "command", title: "pytest -q", exitCode: 1, durationMs: 1200, output });
+    painter.delta("One test fails.");
+    painter.finish();
+    const text = plain(lines);
+    assert.equal(text[0], "● Running the tests.");
+    assert.equal(text[1], "⏺ Bash(pytest -q)");
+    assert.equal(text[2], "  ⎿ exit 1 · 1.2s");
+    assert.ok(text.includes("    line 9"), "the output tail is shown");
+    assert.ok(text.some((row) => /… \+\d+ lines/.test(row)), "long output collapses with a count");
+    assert.equal(text.at(-1), "● One test fails.", "narration after a command opens a new block");
+  } finally {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  }
+});
+
+// Spec: MUS-SPEC-01-1C (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1c--separate-assistant-messages-never-glue-together)
+test("narration painter gives each reasoning summary part its own row", () => {
+  const previous = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line) });
+    painter.reasoning("Finding pytest environment");
+    painter.reasoning("\n\nRunning an isolated package");
+    painter.finish();
+    assert.deepEqual(plain(lines), ["✻ Finding pytest environment", "✻ Running an isolated package"]);
+  } finally {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  }
+});

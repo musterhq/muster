@@ -61,9 +61,27 @@ export const LIVE_DIFF_MAX_LINES = 40;
  */
 export const LIVE_DIFF_INTERNAL_IGNORE: readonly string[] = [".muster"];
 
-/** True when the feed must not render this event (harness-internal path). */
+/**
+ * Build and tool caches that running code writes as a side effect. They are not
+ * the agent's edits, so they never become cards even in a repo without a
+ * .gitignore (a pytest run otherwise reported two .pyc "edits").
+ */
+export const LIVE_DIFF_ARTIFACT_IGNORE: readonly string[] = [
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  "node_modules",
+  ".DS_Store",
+];
+
+function isBuildArtifact(path: string): boolean {
+  return matchesIgnore(path, LIVE_DIFF_ARTIFACT_IGNORE) || /\.py[co]$/.test(path);
+}
+
+/** True when the feed must not render this event (harness-internal path or build artifact). */
 export function isLiveDiffInternalPath(path: string | null | undefined): boolean {
-  return typeof path === "string" && matchesIgnore(path, LIVE_DIFF_INTERNAL_IGNORE);
+  return typeof path === "string" && (matchesIgnore(path, LIVE_DIFF_INTERNAL_IGNORE) || isBuildArtifact(path));
 }
 
 export interface LiveDiffStat {
@@ -299,7 +317,7 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
   try {
     observer = (options.createObserver ?? createWorkspaceObserver)({
       ...(options.observerOptions ?? {}),
-      ignore: mergeIgnoreMatchers(LIVE_DIFF_INTERNAL_IGNORE, options.observerOptions?.ignore),
+      ignore: mergeIgnoreMatchers((path: string) => isLiveDiffInternalPath(path), options.observerOptions?.ignore),
       root: options.cwd,
       onPatch,
     });
@@ -341,10 +359,9 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
 /* ---------- internals ---------- */
 
 /** The feed's internal exclusions plus whatever the caller asked to skip. */
-function mergeIgnoreMatchers(base: readonly string[], extra: IgnoreMatcher | undefined): IgnoreMatcher {
+function mergeIgnoreMatchers(base: IgnoreMatcher, extra: IgnoreMatcher | undefined): IgnoreMatcher {
   if (!extra) return base;
-  if (typeof extra === "function") return (relPath) => matchesIgnore(relPath, base) || extra(relPath);
-  return [...base, ...extra];
+  return (relPath) => matchesIgnore(relPath, base) || matchesIgnore(relPath, extra);
 }
 
 /**

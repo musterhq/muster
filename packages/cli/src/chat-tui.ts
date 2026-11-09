@@ -21,7 +21,7 @@ import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "nod
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createCoalescer } from "@musterhq/core";
-import type { BoardView, MessageRow } from "@musterhq/core";
+import type { AgentToolEvent, BoardView, MessageRow } from "@musterhq/core";
 import { effortDisplayLabel, modelDisplayLabel, modelProvider, type ComposerPickerSelection, type ComposerPickerState, type EffortValue } from "./model-catalog.js";
 import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capabilities-overlay.js";
 import { LiveFileOverlay, LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
@@ -640,6 +640,10 @@ export interface NarrationPainterOptions {
 export interface NarrationPainter {
   /** Feed an assistant-message delta. */
   delta(text: string): void;
+  /** Paint a tool start/end cell in order: pending narration is flushed above it. */
+  tool(event: AgentToolEvent): void;
+  /** Paint everything buffered now (before an out-of-band card such as a diff). */
+  flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
   reasoning(text: string): void;
   /** Flush both buffers at end of turn. */
@@ -691,9 +695,44 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     }
   };
 
+  const flushAll = (): void => {
+    drainReasoning();
+    for (const event of message.flush("message_end")) {
+      if (event.type === "block") paintMessage(event.text);
+    }
+  };
+  /** The tool whose headline is the last thing painted; its result hangs right under it. */
+  let headlineToolId: string | undefined;
+  const paintTool = (event: AgentToolEvent): void => {
+    flushAll();
+    blockOpen = false;
+    if (!bullets) {
+      if (event.phase === "start") options.emit(`$ ${toolCellTitle(event)}`);
+      return;
+    }
+    if (event.phase === "start") {
+      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), "pending"));
+      headlineToolId = event.id;
+      return;
+    }
+    if (headlineToolId !== event.id) {
+      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), event.failed ? "failure" : "success"));
+    }
+    for (const line of formatToolEndLines(event)) options.emit(line);
+    headlineToolId = undefined;
+  };
+
   return {
+    tool(event) {
+      paintTool(event);
+    },
+    flush() {
+      flushAll();
+      headlineToolId = undefined;
+    },
     delta(text) {
       if (!text) return;
+      headlineToolId = undefined;
       if (reasoning.pending) drainReasoning();
       // Provider item boundaries occasionally arrive without their separating
       // whitespace (ledger #9: "now.Tests"). This is intentionally a narrow
@@ -708,9 +747,15 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     },
     reasoning(text) {
       if (!text) return;
-      for (const event of reasoning.push(text)) {
-        if (event.type === "block") paintReasoning(event.text);
-      }
+      // A blank line opens the next summary part: close the current row first
+      // so "Finding pytest" and "Running tests" never paint as one phrase.
+      text.split(/\n{2,}/).forEach((part, index) => {
+        if (index > 0) drainReasoning();
+        if (!part) return;
+        for (const event of reasoning.push(part)) {
+          if (event.type === "block") paintReasoning(event.text);
+        }
+      });
     },
     finish() {
       drainReasoning();
@@ -723,6 +768,47 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       return painted;
     },
   };
+}
+
+/** `/bin/zsh -lc 'pytest -q'` → `pytest -q`: the wrapper is noise, the command is the fact. */
+export function unwrapShellCommand(command: string): string {
+  const match = command.trim().match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
+  return (match?.[2] ?? command).trim();
+}
+
+function toolCellName(event: AgentToolEvent): string {
+  switch (event.kind) {
+    case "command": return "Bash";
+    case "mcp": return "MCP";
+    case "web": return "Search";
+    default: return "Tool";
+  }
+}
+
+/** One row, bounded: multi-line commands show their first line plus an ellipsis. */
+function toolCellTitle(event: AgentToolEvent, max = 96): string {
+  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.title;
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim());
+  let title = (lines[0] ?? raw).trim();
+  if (lines.length > 1) title += " …";
+  return title.length > max ? `${title.slice(0, max - 1)}…` : title;
+}
+
+/** Result rows under a finished tool: `⎿ exit 1 · 1.2s`, then the output TAIL (errors live at the end). */
+export function formatToolEndLines(event: AgentToolEvent, maxLines = TOOL_RESULT_MAX_LINES): string[] {
+  const segments: string[] = [];
+  if (event.exitCode !== undefined) segments.push(`exit ${event.exitCode}`);
+  else segments.push(event.failed ? "failed" : "done");
+  // Codex reports 0 for commands it did not time; "0ms" reads as a lie.
+  if (event.durationMs !== undefined && event.durationMs > 0) segments.push(formatDuration(event.durationMs));
+  const head = `  ${dim(`${RESULT_ELBOW} ${segments.join(" · ")}`)}`;
+  const rows = (event.output ?? "").replace(/\s+$/, "").split(/\r?\n/).filter((row, index, all) => row.trim() || index < all.length - 1);
+  const output = rows.length === 1 && !rows[0]!.trim() ? [] : rows;
+  const lines = [head];
+  const hidden = Math.max(0, output.length - maxLines);
+  if (hidden > 0) lines.push(`    ${dim(`… +${hidden} lines`)}`);
+  for (const row of output.slice(hidden)) lines.push(`    ${dim(stripAnsi(row).slice(0, 200))}`);
+  return lines;
 }
 
 /** Reasoning summaries render violet + italic so they never read as the answer. */
