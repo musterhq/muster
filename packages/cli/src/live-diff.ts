@@ -196,6 +196,24 @@ export function renderLiveDiffSummary(totals: LiveDiffTotals, options: { readonl
   return `${tint(`▸ ${label} · `, MUTED_RGB, paint)}${renderStatSegment(totals, paint)}`;
 }
 
+/** Files listed under a multi-file summary before a remainder count. */
+export const LIVE_DIFF_SUMMARY_MAX_FILES = 8;
+
+/**
+ * Under a multi-file summary: `    src/a.ts   +2 −1`, one row per file in
+ * first-change order, paths aligned. A one-file turn adds nothing.
+ */
+export function renderLiveDiffFileRows(files: ReadonlyMap<string, LiveDiffStat>, options: { readonly color?: boolean } = {}): string[] {
+  if (files.size < 2) return [];
+  const paint = colorEnabled(options.color);
+  const entries = [...files.entries()];
+  const shown = entries.slice(0, LIVE_DIFF_SUMMARY_MAX_FILES);
+  const width = Math.max(...shown.map(([path]) => path.length));
+  const rows = shown.map(([path, stat]) => `    ${path.padEnd(width)}  ${renderStatSegment(stat, paint)}`);
+  if (entries.length > shown.length) rows.push(tint(`    … +${entries.length - shown.length} more files`, MUTED_RGB, paint));
+  return rows;
+}
+
 /** The verb a change kind reads as in the action headline. */
 export function liveDiffToolName(kind: WorkspacePatchEvent["changeKind"]): string {
   switch (kind) {
@@ -287,6 +305,8 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
   };
 
   const touched = new Set<string>();
+  /** Per-file totals in first-change order, for the end-of-turn summary. */
+  const perFileStats = new Map<string, LiveDiffStat>();
   let additions = 0;
   let deletions = 0;
   let finished = false;
@@ -305,6 +325,8 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
       }
       const stat = countDiffStat(event.diff);
       touched.add(event.path);
+      const perFile = perFileStats.get(event.path) ?? { additions: 0, deletions: 0 };
+      perFileStats.set(event.path, { additions: perFile.additions + stat.additions, deletions: perFile.deletions + stat.deletions });
       additions += stat.additions;
       deletions += stat.deletions;
       for (const line of renderLiveDiffCard(event, { ...render, elapsedMs: detectionElapsedMs(event, startedAt, now) })) {
@@ -352,7 +374,10 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
         /* stop is idempotent and best-effort */
       }
       const totals: LiveDiffTotals = { files: touched.size, additions, deletions };
-      if (totals.files > 0) emit(renderLiveDiffSummary(totals, { color: options.color }));
+      if (totals.files > 0) {
+        emit(renderLiveDiffSummary(totals, { color: options.color }));
+        for (const line of renderLiveDiffFileRows(perFileStats, { color: options.color })) emit(line);
+      }
       return totals;
     },
   };

@@ -2878,6 +2878,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         block: (id, render) => state.statusSink?.upsertBlock(id, render),
       })
     : undefined;
+  let diffSummaryOpen = false;
   const liveDiff = await startLiveDiffFeed({
     cwd: workspaceCwd,
     emit: (line) => {
@@ -2885,8 +2886,12 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       // In the TUI a diff card is a card like a tool cell: a gap, then a band.
       // The summary and notices stay plain rows.
       const plain = stripAnsi(line);
+      if (/^⏺/.test(plain)) diffSummaryOpen = false;
+      if (/^▸/.test(plain)) diffSummaryOpen = true;
       if (state.statusSink && /^⏺/.test(plain)) emitChatLine(state, "");
-      emitChatLine(state, state.statusSink && /^(⏺|\s{2})/.test(plain) ? cardRow(line) : line);
+      // Card rows are a diff card's own rows; the per-file rows under the
+      // turn summary stay plain like the summary itself.
+      emitChatLine(state, state.statusSink && !diffSummaryOpen && /^(⏺|\s{2})/.test(plain) ? cardRow(line) : line);
     },
     enabled: liveDiffEnabled(state),
     onPatch: (event) => {

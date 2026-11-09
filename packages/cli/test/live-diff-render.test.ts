@@ -246,7 +246,7 @@ test("the feed streams cards live and closes with a summary", async () => {
 
   const totals = await feed.finish();
   assert.deepEqual(totals, { files: 2, additions: 3, deletions: 1 });
-  assert.deepEqual(lines.slice(-5), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "     1 + late", "▸ 2 files changed · +3 −1"]);
+  assert.deepEqual(lines.slice(-7), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "     1 + late", "▸ 2 files changed · +3 −1", "    src/run.ts  +2 −1", "    late.ts     +1 −0"]);
   assert.deepEqual(fake.control().calls, ["start", "flush", "stop"], "flush precedes stop so tail edits still render");
 });
 
@@ -425,7 +425,7 @@ test("the feed never renders the harness's own .muster bookkeeping", async () =>
   assert.equal(lines.some((line) => line.includes("runId")), false, "no run-record JSON leaks via the diff feed");
   assert.equal(lines.some((line) => line.includes(".muster")), false, "no harness-internal path is shown");
   assert.deepEqual(totals, { files: 2, additions: 2, deletions: 0 }, "totals count only the user's files");
-  assert.equal(lines.at(-1), "▸ 2 files changed · +2 −0");
+  assert.deepEqual(lines.slice(-3), ["▸ 2 files changed · +2 −0", "    server.js  +1 −0", "    test.js    +1 −0"]);
 });
 
 test("the real observer is constructed with the .muster ignore merged over caller options", async () => {
