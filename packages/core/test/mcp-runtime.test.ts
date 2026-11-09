@@ -95,7 +95,7 @@ prev=""
 for arg in "$@"; do
   if [ "$prev" = "--mcp-config" ]; then
     printf '%s\\n' "$arg" > "${record}"
-    stat -f '%Lp' "$arg" >> "${record}"
+    (stat -c '%a' "$arg" 2>/dev/null || stat -f '%Lp' "$arg") >> "${record}"
     cat "$arg" >> "${record}"
   fi
   prev="$arg"
