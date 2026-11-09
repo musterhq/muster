@@ -61,3 +61,23 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure renderer.
 - **Known gaps:** no OSC 8 hyperlinks yet.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-2A — A tool cell updates in place from running to finished
+
+- **Precondition:** chat TUI; a command starts, narration streams while it runs, then the command ends.
+- **Action:** paint start → narration → end.
+- **Expected result:** exactly one `Bash(…)` headline in the transcript, at the position where the command started; while running it shows `⎿ running…`; when it ends the same cell shows `⎿ exit 0 · 2.0s` and the output tail; the narration stays below the cell.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a tool cell updates in place from running to finished"
+- **Environment:** chat harness, painter wired to the sink's blocks, NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-2B — Ctrl+O expands and collapses tool output
+
+- **Precondition:** a finished command with 40 lines of output (collapsed to the tail with `… +N lines (ctrl+o to expand)`).
+- **Action:** press Ctrl+O, then Ctrl+O again.
+- **Expected result:** the first press shows all 40 lines and the hint changes to `ctrl+o to collapse`; the second restores the collapsed tail.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "ctrl+o expands every tool cell and collapses it again"
+- **Environment:** chat harness.
+- **Known gaps:** diff cards keep their own collapse rule for now.
+- **Evidence:** UNVERIFIED
