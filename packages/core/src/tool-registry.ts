@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { loadConfig } from "./config.js";
 import { persistToolResult, resultFetch } from "./context-renderer.js";
 import type { FlowToolRegistry } from "./flow.js";
-import { findMemory, formatMemoryScope, isVisibleInScopes, parseMemoryScope, searchMemory } from "./memory.js";
+import { addMemory, findMemory, formatMemoryScope, isVisibleInScopes, parseMemoryScope, searchMemory } from "./memory.js";
 import { activeProfile } from "./profiles.js";
 import { openSessionStore, type SessionSearchArgs } from "./sessions.js";
 import { buildCockpitState } from "./store.js";
@@ -134,6 +134,7 @@ export const BUILTIN_TOOLSETS: Record<string, ToolsetDef> = {
   files: { description: "Read/write/search the workspace", tools: ["read_file", "write_file", "search_files", "list_dir"] },
   web: { description: "Fetch and search public web content", tools: ["web_fetch", "web_search"] },
   memory: { description: "Read scoped durable memory", tools: ["memory_search", "memory_get"] },
+  memory_write: { description: "Write scoped durable memory under config.memory.policy", tools: ["memory_write"] },
   sessions: { description: "Read-only search, navigation, and status over persisted local sessions", tools: ["session_search", "session_status"] },
   shell: { description: "Run allowlisted commands", tools: ["terminal"] },
   results: { description: "Fetch persisted oversized tool results", tools: ["result_fetch"] },
@@ -425,6 +426,37 @@ async function memorySearch(args: MemorySearchToolArgs, ctx: ToolContext): Promi
       results: results.slice(0, limit).map(memorySummary),
     },
   };
+}
+
+interface MemoryWriteToolArgs {
+  readonly summary?: string;
+  readonly scopes?: readonly string[];
+  readonly kind?: string;
+  readonly userAskedToRemember?: boolean;
+}
+
+/**
+ * Durable write through the same gate as `muster memory add`: addMemory()
+ * enforces config.memory.policy, so a "never" or "ask" policy refuses here too.
+ */
+async function memoryWrite(args: MemoryWriteToolArgs, ctx: ToolContext): Promise<ToolResult> {
+  const summary = args.summary?.trim();
+  if (!summary) return { ok: false, error: "memory_write requires summary." };
+  const scopes = parseToolMemoryScopes(args.scopes);
+  const userAsked = args.userAskedToRemember === true;
+  try {
+    const object = await addMemory({
+      kind: args.kind?.trim() || "fact",
+      summary,
+      scopes,
+      // The agent's claim that the user asked is recorded, never laundered into a plain fact.
+      provenance: ["agent:mcp", ...(userAsked ? ["user-request:stated-by-agent"] : [])],
+      explicitUserRequest: userAsked,
+    }, ctx.cwd);
+    return { ok: true, data: { id: object.id, memory: memorySummary(object) } };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function memoryGet(args: MemoryGetToolArgs, ctx: ToolContext): Promise<ToolResult> {
@@ -823,6 +855,22 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
     },
     async handler(args, ctx) {
       return memoryGet(args, ctx);
+    },
+  });
+  registry.register<MemoryWriteToolArgs>({
+    name: "memory_write", toolset: "memory_write", description: "Remember a durable fact for the given scopes. Obeys the workspace memory policy; set userAskedToRemember only when the user explicitly asked to remember it.",
+    inputSchema: {
+      type: "object",
+      required: ["summary", "scopes"],
+      properties: {
+        summary: { type: "string", description: "The fact, in one sentence." },
+        scopes: { type: "array", minItems: 1, items: { type: "string" }, description: "Who the fact belongs to, as kind:id, for example user:dhairya or tenant:hybrow." },
+        kind: { type: "string", description: "fact (default), preference, decision, …" },
+        userAskedToRemember: { type: "boolean", description: "True only when the user explicitly asked you to remember this." },
+      },
+    },
+    async handler(args, ctx) {
+      return memoryWrite(args, ctx);
     },
   });
   registry.register<{ command: string; args?: string[] }>({
