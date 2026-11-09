@@ -22,7 +22,7 @@ import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "nod
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createCoalescer } from "@musterhq/core";
-import type { AgentToolEvent, BoardView, MessageRow } from "@musterhq/core";
+import type { AgentToolEvent, ApprovalDecision, ApprovalRequest, BoardView, MessageRow } from "@musterhq/core";
 import { effortDisplayLabel, modelDisplayLabel, modelProvider, type ComposerPickerSelection, type ComposerPickerState, type EffortValue } from "./model-catalog.js";
 import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capabilities-overlay.js";
 import { LiveFileOverlay, LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
@@ -117,6 +117,11 @@ export interface MusterChatSink {
   toggleExpanded(): void;
   /** The status bar under the composer (one pre-styled row; empty hides it). */
   setFooter(line: string): void;
+  /**
+   * Show an approval card and wait for y (once), a (this session), n (deny)
+   * or Esc (deny and stop). Every other key is held back while it waits.
+   */
+  requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
   appendUser(text: string): void;
   clearTranscript(): void;
   setHeaderLines(lines: readonly string[]): void;
@@ -1094,6 +1099,8 @@ export interface StatusBarInfo {
   readonly context?: { readonly usedTokens: number; readonly windowTokens: number };
   readonly sessionTokens?: number;
   readonly sessionCostUsd?: number;
+  /** Shown only when it is not the default (auto-edit). */
+  readonly access?: string;
 }
 
 /**
@@ -1107,6 +1114,10 @@ export function formatStatusBar(info: StatusBarInfo, width: number): string {
   const segments: Array<{ text: string; styled: string }> = [];
   const model = info.effort ? `${info.model} · ${info.effort}` : info.model;
   segments.push({ text: model, styled: accent(model) });
+  if (info.access && info.access !== "auto-edit") {
+    const text = info.access === "full" ? "⚠ full access" : info.access;
+    segments.push({ text, styled: info.access === "full" ? red(text) : highlight(text) });
+  }
   segments.push({ text: shortFolder, styled: dim(shortFolder) });
   if (info.git) {
     const dirt = [info.git.changed ? `*${info.git.changed}` : "", info.git.untracked ? `?${info.git.untracked}` : ""].filter(Boolean).join(" ");
@@ -1132,6 +1143,66 @@ export function formatStatusBar(info: StatusBarInfo, width: number): string {
   }
   const row = segments.map((segment) => segment.styled).join(dim(separator));
   return truncateToWidth(row, width, "…");
+}
+
+const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
+  accept: "approved once",
+  acceptForSession: "approved for this session",
+  decline: "denied",
+  cancel: "denied · turn stopped",
+};
+
+/** The approval card: pending with its keys, or settled with the decision. */
+export function renderApprovalCard(request: ApprovalRequest, decision?: ApprovalDecision): string[] {
+  const verb = request.kind === "command" ? "Run" : request.kind === "edit" ? "Allow" : "Grant";
+  const approved = decision === "accept" || decision === "acceptForSession";
+  const glyph = decision ? renderActionBullet(approved ? "success" : "failure") : highlight("?");
+  const title = request.kind === "command" ? unwrapShellCommand(request.title) : request.title;
+  const rows = [`${glyph} ${verb} ${title}?`];
+  if (request.reason) rows.push(`  ${dim(`${RESULT_ELBOW} ${request.reason}`)}`);
+  rows.push(decision
+    ? `  ${dim(APPROVAL_LABELS[decision])}`
+    : `  ${highlight("y")} ${dim("once ·")} ${highlight("a")} ${dim("this session ·")} ${highlight("n")} ${dim("deny ·")} ${highlight("esc")} ${dim("stop")}`);
+  return ["", ...rows.map((row) => cardRow(row, decision && !approved ? "failure" : "tool"))];
+}
+
+/** A key while an approval card waits → its decision, or undefined to hold the key. */
+export function approvalDecisionForKey(data: string): ApprovalDecision | undefined {
+  if (data === "y" || data === "Y") return "accept";
+  if (data === "a" || data === "A") return "acceptForSession";
+  if (data === "n" || data === "N") return "decline";
+  if (data === "\x1b") return "cancel";
+  return undefined;
+}
+
+/** Pending approvals for one sink: cards in the transcript, answered in order. */
+export class ApprovalQueue {
+  private readonly waiting: Array<{ request: ApprovalRequest; resolve: (decision: ApprovalDecision) => void }> = [];
+
+  constructor(private readonly upsert: (id: string, render: (expanded: boolean) => string[]) => void) {}
+
+  get pending(): boolean {
+    return this.waiting.length > 0;
+  }
+
+  request(request: ApprovalRequest): Promise<ApprovalDecision> {
+    return new Promise((resolve) => {
+      this.waiting.push({ request, resolve });
+      this.upsert(`approval:${request.id}`, () => renderApprovalCard(request));
+    });
+  }
+
+  /** Consume a key: true when an approval was waiting (the key never reaches the composer). */
+  key(data: string): boolean {
+    const head = this.waiting[0];
+    if (!head) return false;
+    const decision = approvalDecisionForKey(data);
+    if (!decision) return true;
+    this.waiting.shift();
+    this.upsert(`approval:${head.request.id}`, () => renderApprovalCard(head.request, decision));
+    head.resolve(decision);
+    return true;
+  }
 }
 
 /** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
@@ -1210,6 +1281,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   };
   return {
     input(data) {
+      if (sink.approvals.key(data)) return;
       if (options.onDecisionKey?.(data, sink)) return;
       if (data === "\x0f") {
         sink.toggleExpanded();
@@ -1252,6 +1324,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       editor.handleInput(data);
     },
     type(text) {
+      if (sink.approvals.pending) return;
       for (const char of text) editor.handleInput(char);
     },
     async submit() {
@@ -1486,6 +1559,12 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   tui.addChild(screen);
   tui.setFocus(editor);
   tui.addInputListener((data) => {
+    // An approval card owns the keyboard until it is answered.
+    if (screen.approvals.pending && !parseSgrMouseSequence(data)) {
+      screen.approvals.key(data);
+      tui.requestRender(true);
+      return { consume: true };
+    }
     const mouse = parseSgrMouseSequence(data);
     if (mouse && boardMode?.handleMouse(mouse)) return { consume: true };
     const stripped = stripMouseSequences(data);
@@ -1578,6 +1657,7 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   const rawEscapeHandler = (chunk: Buffer | string): void => {
     const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
     if (boardMode?.active || parseSgrMouseSequence(data)) return;
+    if (screen.approvals.pending) return;
     if (data === "\x1b" && screen.consumeLiveDiffEscapeSuppression()) return;
     if (data === "\x1b" && screen.closeLiveDiff()) return;
     if (data === "\x1b" && screen.interruptTurn()) return;
@@ -1784,6 +1864,14 @@ class MusterChatScreen implements Component, MusterChatSink {
   toggleExpanded(): void {
     this.store.toggleExpanded();
     this.tui.requestRender(true);
+  }
+
+  readonly approvals = new ApprovalQueue((id, render) => this.upsertBlock(id, render));
+
+  requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
+    const decision = this.approvals.request(request);
+    this.tui.requestRender(true);
+    return decision;
   }
 
   private footer = "";
@@ -2233,6 +2321,12 @@ class HarnessSink implements MusterChatSink {
 
   setFooter(line: string): void {
     this.footer = line;
+  }
+
+  readonly approvals = new ApprovalQueue((id, render) => this.upsertBlock(id, render));
+
+  requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
+    return this.approvals.request(request);
   }
 
   clearTranscript(): void {

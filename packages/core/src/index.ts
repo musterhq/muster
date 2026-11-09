@@ -59,6 +59,7 @@ export * from "./subagents.js";
 export * from "./store.js";
 export * from "./stream.js";
 export * from "./tool-events.js";
+export * from "./access.js";
 export * from "./mcp-runtime.js";
 export * from "./mcp-server.js";
 export * from "./telemetry.js";
