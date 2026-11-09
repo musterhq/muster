@@ -41,6 +41,7 @@ import {
   parseEffortValue,
   readCodexComposerDefaults,
   readCodexModelProviders,
+  rememberLiveCodexModels,
   splitGatewayModel,
   type EffortValue,
   type GatewayModelChoice,
@@ -235,6 +236,7 @@ import {
   clearCodexAppServerConversation,
   readGatewayCodexWarmThreadCount,
   interruptActiveCodexTurn,
+  queryCodexAppServer,
   steerActiveCodexTurn,
   createMusterMcpServer,
   serveMcpOverStdio,
@@ -1634,7 +1636,7 @@ async function initializeChatComposerState(state: ChatState): Promise<void> {
     state.modelSource = codexDefaults.modelSource;
   } else {
     const configuredModel = firstRuntimeModel(runtime) ?? configuredProvider?.defaultModel;
-    state.model = modelProvider(configuredModel) === "claude" ? configuredModel : "claude-sonnet-5";
+    state.model = modelProvider(configuredModel) === "claude" ? configuredModel : "claude-sonnet-5-5";
     state.modelSource = "app default";
   }
   state.configuredEffort = codexDefaults.effort ?? "medium";
@@ -4041,6 +4043,7 @@ async function switchChatModel(args: string, state: ChatState): Promise<void> {
 async function openComposerPicker(state: ChatState): Promise<void> {
   await initializeChatComposerState(state);
   const backends = await detectBackends();
+  if (backends.codex === "authenticated") await loadLiveCodexModels();
   const pickerState = {
     catalog: buildComposerCatalog({ codex: backends.codex === "authenticated", claude: backends.claude === "installed" }),
     activeModel: state.model ?? DEFAULT_CODEX_MODEL,
@@ -4073,6 +4076,22 @@ async function openComposerPicker(state: ChatState): Promise<void> {
     state.speedMode = selection.value;
     console.log(color(`Speed=${selection.value}`, "green"));
   }
+}
+
+let liveCodexModelsLoaded: Promise<void> | undefined;
+
+/** Ask Codex which models it offers (once per process); the built-in list stays the fallback. */
+function loadLiveCodexModels(): Promise<void> {
+  liveCodexModelsLoaded ??= queryCodexAppServer("model/list", { limit: 200 }, { timeoutMs: 8_000 })
+    .then((result) => {
+      const data = Array.isArray(result.data) ? result.data as Array<Record<string, unknown>> : [];
+      const models = data
+        .map((item) => ({ id: String(item.id ?? item.model ?? ""), label: typeof item.displayName === "string" ? item.displayName : undefined }))
+        .filter((item) => item.id);
+      if (models.length) rememberLiveCodexModels(models);
+    })
+    .catch(() => {});
+  return liveCodexModelsLoaded;
 }
 
 async function selectChatModel(model: string, state: ChatState): Promise<void> {
@@ -5664,7 +5683,7 @@ function modelHintsForProvider(providerId: string | undefined, kind: string | un
   // the managed-codex fallback model — a model the config can hold must be a
   // model this list can offer.
   if (providerId === "codex" || providerId === "codex-cli" || kind === "codex-cli") return ["gpt-5.6-sol", "gpt-5.5", "gpt-5.4", "o4-mini", "o3", "gpt-4.1"];
-  if (providerId === "anthropic") return ["claude-fable-5", "claude-sonnet-4.6", "claude-opus-4.5", "sonnet"];
+  if (providerId === "anthropic") return ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
   if (providerId === "openai") return ["gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-4.1", "o4-mini"];
   if (providerId === "openrouter") return ["anthropic/claude-sonnet-4.6", "openai/gpt-5.4", "google/gemini-2.5-pro"];
   if (providerId === "groq") return ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"];

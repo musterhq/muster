@@ -53,10 +53,10 @@ test("picker model options gate the Claude group on working CLI auth", () => {
   assert.ok(codexOnly.models.every((model) => model.provider === "codex"));
   const both = buildComposerCatalog({ codex: true, claude: true });
   assert.deepEqual(both.models.map((model) => model.provider), ["codex", "codex", "codex", "codex", "claude", "claude", "claude", "claude"]);
-  assert.deepEqual(both.models.slice(4).map((model) => model.value), ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
+  assert.deepEqual(both.models.slice(4).map((model) => model.value), ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
 });
 
 test("status-row model labels use provider names and Codex effort labels", () => {
   assert.equal(formatModelStatus("gpt-5.6-sol", "medium"), "5.6 Sol · Medium");
-  assert.equal(formatModelStatus("claude-opus-5", "ultra"), "Opus 5");
+  assert.equal(formatModelStatus("claude-opus-5-5", "ultra"), "Opus 5.5");
 });
