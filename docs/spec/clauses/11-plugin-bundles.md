@@ -16,7 +16,7 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "inspect lists servers, skills and ignored parts of an Agent Plugins v1 bundle without running it"
 - **Environment:** temp workspace after `muster init`; real CLI through `tsx`.
 - **Known gaps:** `package.json` scripts are not analysed beyond being reported as never run.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live run 2026-11-09, built CLI, `muster plugins inspect` on a one-tool Agent Plugins v1 bundle: `~/.muster-work/review/screens/plugin-bundles/01-inspect-install-list.png`.
 
 ## MUS-SPEC-11-1B — Installing an Agent Plugins v1 bundle activates its servers and skills
 
@@ -26,7 +26,7 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "installing an Agent Plugins v1 bundle adds prefixed MCP servers and discoverable skills"
 - **Environment:** temp workspace; real CLI.
 - **Known gaps:** skill names are not namespaced by plugin; a user skill with the same name wins.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same live run: install, `plugins list`, `skills list`, `mcp list` in `01-inspect-install-list.png`.
 
 ## MUS-SPEC-11-1C — Claude Code plugins install with `${CLAUDE_PLUGIN_ROOT}` resolved
 
@@ -52,11 +52,11 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 
 - **Precondition:** the Agent Plugins v1 bundle installed; `WEATHER_API_KEY` set in the environment.
 - **Action:** `muster run "<prompt>" --runtime codex --transport warm` against a fake Codex app-server.
-- **Expected result:** the thread config carries `mcp_servers.weather-kit__forecast` with the installed command and args and the env reference expanded from the environment; the value is not in the app-server's argv. A plugin server whose referenced env variable is unset is left out of the turn with a reason.
+- **Expected result:** the thread config carries `mcp_servers.weather-kit__forecast` with the installed command and args and the env reference expanded from the environment; the value is not in the app-server's argv. A plugin server whose referenced env variable is unset is left out of the turn (the resolver reports `needs <VAR> in the environment`).
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "an installed bundle's MCP server is passed to a Codex turn with env references resolved at turn time"
 - **Environment:** fake app-server via `MUSTER_CODEX_COMMAND`.
 - **Known gaps:** references resolve only from the process environment (no secret store yet).
-- **Evidence:** UNVERIFIED
+- **Evidence:** live run 2026-11-09, `muster chat --runtime codex` (real Codex app-server) called `tide-kit__tides.harbour_tide` and quoted its answer: `~/.muster-work/review/screens/plugin-bundles/02-chat-codex-plugin-tool.png`.
 
 ## MUS-SPEC-11-1F — List and remove undo exactly what install did
 
