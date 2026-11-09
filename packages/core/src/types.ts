@@ -160,6 +160,8 @@ export interface ToolRuntimeConfig {
   readonly deny?: readonly string[];
   readonly mcp?: {
     readonly servers?: Readonly<Record<string, McpServerConfig>>;
+    /** Attach Muster's own `mcp serve` (memory, sessions, schedules) to chat turns. Default true. */
+    readonly serveSelf?: boolean;
   };
   readonly entries?: Readonly<Record<string, ToolRuntimeEntryConfig>>;
 }
