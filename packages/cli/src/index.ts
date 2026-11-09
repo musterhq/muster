@@ -233,6 +233,8 @@ import {
   readGatewayCodexWarmThreadCount,
   interruptActiveCodexTurn,
   steerActiveCodexTurn,
+  createMusterMcpServer,
+  serveMcpOverStdio,
   discoverCodexSessions,
   importCodexSession,
   matchCodexThread,
@@ -611,6 +613,7 @@ Usage:
   muster artifacts create --format docx|xlsx|pptx|pdf --title "..." [--summary "..."] [--spec spec.json] [--out path]
   muster artifacts verify <file> [--format docx|xlsx|pptx|pdf] [--require text]
   muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path> | load <path>
+  muster mcp serve                          # Muster's memory and sessions as an MCP server (stdio)
   muster mcp list | status [name] | login <name> | logout <name> | catalog | check [id] | install <id> | oauth status|setup|import ... | add-http <name> <url> [--oauth ...] | add-stdio <name> <command> [args...] | test <name>
   muster dashboard status | start [--port 7461] [--host 127.0.0.1]
   muster channels list | status [channel] | plan <channel> | simulate <channel> [--message TEXT] | doctor <channel> [--live] | setup|connect|ready <channel> [--mode socket|http] [--public-url URL] [secret flags]
@@ -8091,6 +8094,11 @@ function redactFrappeContextResult(value: unknown): unknown {
 
 async function mcpCommand(args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
+  if (action === "serve") {
+    // stdout is the protocol channel: nothing else may print to it.
+    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION }));
+    return;
+  }
   if (action === "oauth") {
     await mcpOauthCommand([name, ...rest].filter((item): item is string => Boolean(item)));
     return;
