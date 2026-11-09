@@ -10,7 +10,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "a reminder in 5m fires once when the clock reaches it"
 - **Environment:** real SQLite scheduler store in a temp dir, injected clock, recording deliverer.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, `npx tsx --test packages/core/test/automations.test.ts` (7/7).
 
 ## MUS-SPEC-16-1B — Times are understood or refused
 
@@ -20,7 +20,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "relative and ISO times are parsed and nonsense is refused"
 - **Environment:** pure, injected clock, temp store.
 - **Known gaps:** natural language ("tomorrow at 9") is not parsed; agents convert it to ISO.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts (7/7).
 
 ## MUS-SPEC-16-1C — Cron in a time zone
 
@@ -30,7 +30,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "cron routines honour a time zone"
 - **Environment:** Intl time-zone data of the running Node.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts (7/7).
 
 ## MUS-SPEC-16-2A — Two ticks at once never double-deliver
 
@@ -40,7 +40,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/cli/test/automations-cli.test.ts` › "two daemons ticking at once deliver a due reminder once"
 - **Environment:** the real CLI as two child processes sharing one SQLite file.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, `packages/cli/test/automations-cli.test.ts` (3/3).
 
 ## MUS-SPEC-16-2B — Missed runs catch up once
 
@@ -50,7 +50,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "missed runs catch up once, not in a burst"
 - **Environment:** temp store, injected clock.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts (7/7).
 
 ## MUS-SPEC-16-2C — The daemon ticks, prints one line per run, and stops cleanly
 
@@ -60,7 +60,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/cli/test/automations-cli.test.ts` › "muster daemon delivers due reminders and stops on SIGTERM"
 - **Environment:** the real CLI as a child process.
 - **Known gaps:** launchd/systemd units are documented in `muster daemon --help`, not installed.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, automations-cli.test.ts; live: `muster daemon --interval 5` fired a desktop reminder once, SIGINT printed "muster daemon stopped." exit=0 (~/.muster-work/review/screens/automations/daemon-desktop.png).
 
 ## MUS-SPEC-16-3A — Desktop notifications never go through a shell
 
@@ -70,7 +70,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "desktop delivery passes the message as an argument, never as script"
 - **Environment:** injected launcher (no real notification in CI).
 - **Known gaps:** Windows has no desktop deliverer yet (reported as not supported).
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts; live macOS osascript delivery completed (daemon-desktop.png).
 
 ## MUS-SPEC-16-3B — Channel delivery says when it is not wired
 
@@ -80,7 +80,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "channel delivery reports not configured until a sender exists"
 - **Environment:** temp store, injected clock.
 - **Known gaps:** the gateway's outbound send path is not wired to automations yet.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts (stub sender; gateway not wired).
 
 ## MUS-SPEC-16-3C — A reminder appears as a card in the open chat
 
@@ -90,7 +90,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/cli/test/automations-chat.test.ts` › "an open chat shows a due reminder as a card, once"
 - **Environment:** chat harness transcript, real store, injected clock.
 - **Known gaps:** `run` jobs are left to the daemon; the chat only fires reminders.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, `packages/cli/test/automations-chat.test.ts`; live: card appeared in an open `muster chat` 16 s after due (chat-reminder.png).
 
 ## MUS-SPEC-16-4A — Agents set reminders through `schedule_manage`
 
@@ -100,7 +100,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/cli/test/mcp-serve.test.ts` › "an agent sets, lists and removes a reminder over MCP"
 - **Environment:** the real CLI as a child process.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, mcp-serve.test.ts; live: Codex (gpt-6.1-terra) called `muster.schedule_manage` from "remind me in 1 minute to stretch" (chat-reminder.png).
 
 ## MUS-SPEC-16-4B — Agent scheduling is governed
 
@@ -110,7 +110,7 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "schedule_manage caps message length and active jobs"
 - **Environment:** tool registry with a temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, core automations.test.ts.
 
 ## MUS-SPEC-16-5A — An automations table in the CLI and chat
 
@@ -120,4 +120,4 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/cli/test/automations-cli.test.ts` › "muster schedule list prints the automations table" and `packages/cli/test/automations-chat.test.ts` › "/remind schedules and /schedule list shows it"
 - **Environment:** real CLI child process; chat slash handler with real store.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-09, automations-cli.test.ts and automations-chat.test.ts; live `/schedule list` (chat-reminder.png).

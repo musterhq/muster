@@ -589,7 +589,7 @@ function wantsHelp(args: readonly string[]): boolean {
  * (`muster chat --help` lists slash commands; `eval retrieval --help` explains
  * seeding). Everything else is answered from the master usage table.
  */
-const SELF_HELP_COMMANDS = new Set(["chat", "eval"]);
+const SELF_HELP_COMMANDS = new Set(["chat", "eval", "daemon"]);
 
 /**
  * Usage lines for one command, lifted from the single master help text so the
