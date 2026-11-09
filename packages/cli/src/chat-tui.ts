@@ -17,6 +17,7 @@ import {
   type SettingsListTheme,
   type Terminal,
 } from "@earendil-works/pi-tui";
+import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -114,6 +115,8 @@ export interface MusterChatSink {
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void;
   /** Ctrl+O: expand or collapse every block's output. */
   toggleExpanded(): void;
+  /** The status bar under the composer (one pre-styled row; empty hides it). */
+  setFooter(line: string): void;
   appendUser(text: string): void;
   clearTranscript(): void;
   setHeaderLines(lines: readonly string[]): void;
@@ -154,6 +157,8 @@ export interface RunMusterChatTuiOptions extends MusterAutocompleteOptions {
   readonly onInterrupt?: () => boolean | Promise<boolean>;
   /** Inject text into the running turn; false when the runtime cannot steer (the text is queued instead). */
   readonly onSteer?: (text: string) => boolean | Promise<boolean>;
+  /** The status bar under the composer; refreshed at start and after every turn. */
+  readonly footerLine?: (width: number) => string | Promise<string>;
   /** Consume a raw key while index.ts owns a one-line pending decision. */
   readonly onDecisionKey?: (data: string, sink: MusterChatSink) => boolean;
   /** Printed to stdout after teardown when the session exits via /exit. */
@@ -1056,6 +1061,79 @@ export class TranscriptStore {
   }
 }
 
+export interface GitStatusSummary {
+  readonly branch: string;
+  /** Tracked files with staged or unstaged changes. */
+  readonly changed: number;
+  readonly untracked: number;
+}
+
+/** `git status --porcelain=v2 --branch`, summarised; undefined outside a repo. Never throws. */
+export function readGitStatus(cwd: string): Promise<GitStatusSummary | undefined> {
+  return new Promise((resolve) => {
+    execFile("git", ["status", "--porcelain=v2", "--branch", "--untracked-files=normal"], { cwd, timeout: 1500, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      if (error) return resolve(undefined);
+      let branch = "";
+      let changed = 0;
+      let untracked = 0;
+      for (const line of stdout.split("\n")) {
+        if (line.startsWith("# branch.head ")) branch = line.slice("# branch.head ".length).trim();
+        else if (/^[12u] /.test(line)) changed += 1;
+        else if (line.startsWith("? ")) untracked += 1;
+      }
+      resolve({ branch: branch === "(detached)" ? "detached" : branch || "?", changed, untracked });
+    });
+  });
+}
+
+export interface StatusBarInfo {
+  readonly model: string;
+  readonly effort?: string;
+  readonly cwd: string;
+  readonly git?: GitStatusSummary;
+  readonly context?: { readonly usedTokens: number; readonly windowTokens: number };
+  readonly sessionTokens?: number;
+  readonly sessionCostUsd?: number;
+}
+
+/**
+ * The bar under the composer: `model · effort │ ~/repo │ ⎇ main *1 ?1 │ ctx 25% │ 128.4k tok · $0.42`.
+ * Segments drop from the right (spend first, the model never) so it never wraps.
+ */
+export function formatStatusBar(info: StatusBarInfo, width: number): string {
+  const home = process.env.HOME;
+  const folder = home && info.cwd.startsWith(home) ? `~${info.cwd.slice(home.length)}` : info.cwd;
+  const shortFolder = folder.length > 32 ? `…${folder.slice(folder.length - 31)}` : folder;
+  const segments: Array<{ text: string; styled: string }> = [];
+  const model = info.effort ? `${info.model} · ${info.effort}` : info.model;
+  segments.push({ text: model, styled: accent(model) });
+  segments.push({ text: shortFolder, styled: dim(shortFolder) });
+  if (info.git) {
+    const dirt = [info.git.changed ? `*${info.git.changed}` : "", info.git.untracked ? `?${info.git.untracked}` : ""].filter(Boolean).join(" ");
+    const text = `⎇ ${info.git.branch}${dirt ? ` ${dirt}` : ""}`;
+    segments.push({ text, styled: dim(text) });
+  }
+  if (info.context && info.context.windowTokens > 0) {
+    const pct = Math.round((info.context.usedTokens / info.context.windowTokens) * 100);
+    const text = `ctx ${pct}%`;
+    const styled = pct >= 85 ? red(text) : pct >= 60 ? highlight(text) : dim(text);
+    segments.push({ text, styled });
+  }
+  const spend = [
+    info.sessionTokens ? `${compactCount(info.sessionTokens)} tok` : "",
+    info.sessionCostUsd ? `$${info.sessionCostUsd.toFixed(2)}` : "",
+  ].filter(Boolean).join(" · ");
+  if (spend) segments.push({ text: spend, styled: dim(spend) });
+  const separator = " │ ";
+  while (segments.length > 1) {
+    const length = segments.reduce((sum, segment) => sum + segment.text.length, 0) + separator.length * (segments.length - 1);
+    if (length <= width) break;
+    segments.pop();
+  }
+  const row = segments.map((segment) => segment.styled).join(dim(separator));
+  return truncateToWidth(row, width, "…");
+}
+
 /** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
 export function isQueueFollowUpKey(data: string): boolean {
   return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
@@ -1182,7 +1260,12 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       await sink.submit(text);
     },
     visible(width = options.width ?? 120) {
-      return [...sink.transcriptLines, ...renderQueuedBand(sink.followUps.queued, width), ...renderMusterComposer(editor, width)];
+      return [
+        ...sink.transcriptLines,
+        ...renderQueuedBand(sink.followUps.queued, width),
+        ...renderMusterComposer(editor, width),
+        ...(sink.footer ? [truncateToWidth(sink.footer, width, "")] : []),
+      ];
     },
     text() {
       return editor.getText();
@@ -1482,6 +1565,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
     return undefined;
   });
   await screen.refreshStatusLine();
+  if (options.footerLine) {
+    screen.refreshFooter = async () => {
+      try {
+        screen.setFooter(await options.footerLine!(Math.max(40, Math.min(terminal.columns || 120, 240))));
+      } catch {
+        /* the bar is chrome; a probe failure never breaks the chat */
+      }
+    };
+    void screen.refreshFooter();
+  }
   const rawEscapeHandler = (chunk: Buffer | string): void => {
     const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
     if (boardMode?.active || parseSgrMouseSequence(data)) return;
@@ -1691,6 +1784,16 @@ class MusterChatScreen implements Component, MusterChatSink {
   toggleExpanded(): void {
     this.store.toggleExpanded();
     this.tui.requestRender(true);
+  }
+
+  private footer = "";
+  /** Recomputes the bar; set by runMusterChatTui when a footer source exists. */
+  refreshFooter?: () => Promise<void>;
+
+  setFooter(line: string): void {
+    if (line === this.footer) return;
+    this.footer = line;
+    this.tui.requestRender();
   }
 
   setHeaderLines(lines: readonly string[]): void {
@@ -1920,6 +2023,7 @@ class MusterChatScreen implements Component, MusterChatSink {
         const next = this.followUps.takeNext();
         if (next !== undefined) void this.submit(next, onSubmit);
       }
+      void this.refreshFooter?.();
       this.tui.requestRender();
     }
   }
@@ -1955,7 +2059,11 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   render(width: number): string[] {
     const frameWidth = Math.max(40, Math.min(width, 240));
-    const composer = [...renderQueuedBand(this.followUps.queued, frameWidth), ...renderMusterComposer(this.editor, frameWidth)];
+    const composer = [
+      ...renderQueuedBand(this.followUps.queued, frameWidth),
+      ...renderMusterComposer(this.editor, frameWidth),
+      ...(this.footer ? [truncateToWidth(this.footer, frameWidth, "")] : []),
+    ];
     // The status row arrives pre-styled (formatStatusLine owns spinner + dim);
     // re-wrapping it in dim() would reset the color half-way through the row.
     const status = this.status ? [truncateToWidth(this.status, frameWidth, "")] : [];
@@ -2119,6 +2227,12 @@ class HarnessSink implements MusterChatSink {
 
   toggleExpanded(): void {
     this.store.toggleExpanded();
+  }
+
+  footer = "";
+
+  setFooter(line: string): void {
+    this.footer = line;
   }
 
   clearTranscript(): void {

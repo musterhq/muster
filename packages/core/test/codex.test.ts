@@ -1175,3 +1175,35 @@ rl.on("line", (line) => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-09-1B (docs/spec/clauses/09-status-bar.md#mus-spec-09-1b--codex-turns-report-context-occupancy)
+test("runCodexAppServer: reports context occupancy from the latest call", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-ctx-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: "t" } } });
+  else if (msg.method === "turn/start") {
+    const p = (extra) => ({ threadId: "t", turnId: "turn-1", ...extra });
+    send({ id: msg.id, result: { turn: { id: "turn-1", status: "inProgress" } } });
+    send({ method: "thread/tokenUsage/updated", params: p({ tokenUsage: { last: { inputTokens: 30000, outputTokens: 5 }, modelContextWindow: 200000 } }) });
+    send({ method: "thread/tokenUsage/updated", params: p({ tokenUsage: { last: { inputTokens: 50000, outputTokens: 7 }, modelContextWindow: 200000 } }) });
+    send({ method: "item/completed", params: p({ item: { type: "agentMessage", id: "m", text: "ok" } }) });
+    send({ method: "turn/completed", params: { threadId: "t", turn: { id: "turn-1", status: "completed" } } });
+  }
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const result = await runCodexAppServer({ prompt: "hi", cwd: dir, command: fake, cacheKey: "ctx", keepAlive: false });
+    assert.deepEqual(result.context, { usedTokens: 50000, windowTokens: 200000 });
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

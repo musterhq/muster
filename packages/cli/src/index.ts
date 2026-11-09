@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, createMusterAutocompleteProvider, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -1279,6 +1279,8 @@ interface ChatState {
   activeProvider?: ModelProvider;
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
+  /** Window occupancy on the latest model call (status bar `ctx N%`). */
+  lastContext?: { readonly usedTokens: number; readonly windowTokens: number };
   /** Wall clock the session started at; the status row's idle elapsed. */
   startedAt?: number;
   /** True only while a TTY composer is available for one-key suggestions. */
@@ -1525,6 +1527,7 @@ async function interactiveChat(state: ChatState): Promise<void> {
       // turn runs (startTuiWorkingStatus paints it, the turn's end clears it).
       // A permanently ticking idle timer was the reported clutter.
       statusLine: async () => "",
+      footerLine: (width) => chatStatusBar(state, width),
       board: createChatBoardController(state),
       onInterrupt: () => interruptChatTurn(),
       // Codex app-server turns take `turn/steer`; other runtimes return false
@@ -1838,6 +1841,23 @@ function chatReasoningTierLabel(state: ChatState): string {
 }
 
 /** Every completed turn folds into the session totals the status row shows. */
+async function chatStatusBar(state: ChatState, width: number): Promise<string> {
+  const config = await loadConfig().catch(() => undefined);
+  const runtimeId = state.runtime ?? config?.routing.defaultRuntime ?? "native";
+  const runtime = config?.runtimes[runtimeId];
+  const provider = (state.provider ?? runtime?.provider) ? config?.providers[state.provider ?? runtime!.provider] : undefined;
+  const model = state.model ?? firstRuntimeModel(runtime) ?? provider?.defaultModel ?? "model";
+  const cwd = chatWorkspaceCwd(state);
+  return formatStatusBar({
+    model: modelDisplayLabel(model),
+    ...(activeChatProvider(state) === "claude" ? {} : { effort: effortDisplayLabel(state.effortOverride ?? state.configuredEffort ?? "medium") }),
+    cwd,
+    git: await readGitStatus(cwd),
+    ...(state.lastContext ? { context: state.lastContext } : {}),
+    ...(state.usage ? { sessionTokens: state.usage.inputTokens + state.usage.outputTokens, sessionCostUsd: state.usage.costUsd } : {}),
+  }, width);
+}
+
 function recordChatUsage(state: ChatState, tokens: { inputTokens?: number; outputTokens?: number; costUsd?: number }): void {
   const usage = state.usage ?? { inputTokens: 0, outputTokens: 0, costUsd: 0, turns: 0 };
   usage.inputTokens += tokens.inputTokens ?? 0;
@@ -1937,9 +1957,9 @@ async function buildCompactChatHeaderLines(state: ChatState): Promise<string[]> 
   const runtime = runtimeId ? config?.runtimes[runtimeId] : undefined;
   const providerId = state.provider ?? runtime?.provider ?? "provider";
   const provider = providerId ? config?.providers[providerId] : undefined;
-  const sessionCounts = chatSessionsByDirectory();
   return buildCompactHeaderLines({
-    session: `${state.sessionName} (${sessionCounts.here.length} here · ${sessionCounts.all.length} total)`,
+    // Folder, model and spend live in the status bar now; the header names the session.
+    session: state.sessionName,
     cwd: chatWorkspaceCwd(state).replace(process.env.HOME ?? "", "~"),
     scopes: formatChatScopes(activeChatScopes(state)),
     model: formatModelStatus(state.model ?? firstRuntimeModel(runtime) ?? provider?.defaultModel, state.effortOverride ?? state.configuredEffort),
@@ -2921,6 +2941,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
+  if (outcome.context) state.lastContext = outcome.context;
   // Already painted delta-by-delta — reprinting the body would double it.
   printAssistantResponse(outcome, { streamed: (painter?.painted ?? 0) > 0, bullet: Boolean(state.statusSink), importedFromCodex: state.importedFromCodex });
   emitTurnCostChip(state, outcome);
