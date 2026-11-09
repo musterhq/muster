@@ -10,7 +10,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/core/test/settings.test.ts` › "every registered setting is typed, documented and has a valid default"
 - **Environment:** none.
 - **Known gaps:** Context, Tools, Channels, Secrets, Updates and Advanced tabs are not in the registry yet.
-- **Evidence:** UNVERIFIED
+- **Evidence:** `npx tsx --test packages/core/test/settings.test.ts` → pass 2/2 (red before: `SETTINGS` not exported), 2026-11-09.
 
 ## MUS-SPEC-14-1B — Values layer project over global over default and persist in the config files
 
@@ -20,7 +20,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/core/test/settings.test.ts` › "values layer project over global over default, persist in the config files and refuse bad values"
 - **Environment:** temp dirs.
 - **Known gaps:** `memory.policy` and `routing.maxCostUsdPerRun` are project-only because the runtime reads them through `loadConfig`, which does not merge the global file.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass.
 
 ## MUS-SPEC-14-2A — `muster config` lists, gets, sets, resets and locates settings
 
@@ -30,7 +30,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "muster config path, set, get, list, list --json and reset work against the config files"
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** `npx tsx --test packages/cli/test/settings.test.ts` → pass 7/7 (red before: "unknown command config"), 2026-11-09; live `muster config list` output in `~/.muster-work/review/screens/settings/config-list.txt`.
 
 ## MUS-SPEC-14-2B — Bad values and unknown keys fail with the allowed values; `validate` checks hand edits
 
@@ -40,7 +40,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "bad values and unknown keys fail naming the allowed values and validate catches hand edits"
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live: `muster config set chat.access yolo` → "Invalid value \"yolo\" for chat.access. Allowed: read-only, ask, auto-edit, full." exit 1.
 
 ## MUS-SPEC-14-3A — Chat starts from the configured defaults; flags and slash commands still win per session
 
@@ -50,7 +50,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "chat starts from the configured access, speed, live-diff and reasoning defaults and --access still overrides"
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** `appearance.header` and `appearance.statusBar` are only proven in the live tmux run.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live tmux: chat launched on Sonnet 5.5 (models.default) with the status bar hidden (`14-chat-start-from-config.png`).
 
 ## MUS-SPEC-14-4A — `/settings` opens a tabbed panel; an enum change saves immediately with a toast
 
@@ -60,7 +60,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "/settings shows tabs and descriptions and an enum pick saves to the project file with a toast"
 - **Environment:** `createMusterChatHarness`, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live tmux `02…05-*.png` (enum sub-list, toast, • marker).
 
 ## MUS-SPEC-14-4B — Typing searches every tab; Space toggles a boolean; Esc backs out one level
 
@@ -70,7 +70,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "typing searches across tabs with counts, Space toggles a boolean and Esc backs out a level at a time"
 - **Environment:** `createMusterChatHarness`, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live tmux `06-appearance-toggle.png`, `07-search-diff.png`, `08-search-mode.png`.
 
 ## MUS-SPEC-14-4C — The scope toggle writes the global file
 
@@ -80,7 +80,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "the scope toggle saves to the global config"
 - **Environment:** `createMusterChatHarness`, temp workspace and temp global dir.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live tmux `09-global-scope.png`, `10-memory-project-only.png`.
 
 ## MUS-SPEC-14-4D — `muster settings` without a terminal points at `muster config`
 
@@ -90,4 +90,4 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "muster settings without a TTY prints the list and a hint"
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** the full-screen panel outside chat is proven in the live tmux run only.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run, pass; live tmux `17-muster-settings-outside-chat.png`.

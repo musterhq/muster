@@ -1535,7 +1535,7 @@ function chatSettingDefaults(cwd = process.cwd()): {
 }
 
 /** A saved settings change also applies to the chat that made it. */
-function applySettingToChat(state: ChatState, change: SettingsChange): void {
+function applySettingToChat(state: ChatState, change: SettingsChange, sink?: MusterChatSink): void {
   switch (change.key) {
     case "chat.access":
       if (typeof change.value === "string" && isAccessMode(change.value)) state.accessMode = change.value;
@@ -1554,7 +1554,7 @@ function applySettingToChat(state: ChatState, change: SettingsChange): void {
       break;
     case "appearance.statusBar":
       state.statusBar = change.value !== false;
-      if (state.statusBar === false) state.statusSink?.setFooter("");
+      if (state.statusBar === false) sink?.setFooter("");
       break;
     case "models.default":
       state.defaultModel = typeof change.value === "string" && change.value ? change.value : undefined;
@@ -1569,9 +1569,11 @@ async function openChatSettings(state: ChatState): Promise<void> {
     console.log(color("Change one with: muster config set <key> <value>", "dim"));
     return;
   }
-  // Not awaited: the panel owns the screen until Esc; the composer is free meanwhile.
-  void state.statusSink.openSettings({ cwd, onChange: (change) => applySettingToChat(state, change) }).then(async () => {
-    await refreshChatTuiHeader(state);
+  // Not awaited: the panel owns the screen until Esc. statusSink is cleared when
+  // this command returns, so the sink is captured for the close-time refresh.
+  const sink = state.statusSink;
+  void sink.openSettings({ cwd, onChange: (change) => applySettingToChat(state, change, sink) }).then(async () => {
+    sink.setHeaderLines(await buildChatHeaderLines(state));
   });
 }
 

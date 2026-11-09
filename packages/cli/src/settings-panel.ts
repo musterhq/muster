@@ -33,7 +33,8 @@ const RULE = "72;72;76";
 const TAB_BAND = "52;52;58";
 
 function colorOn(): boolean {
-  return !process.env.NO_COLOR || Boolean(process.env.FORCE_COLOR);
+  if (process.env.FORCE_COLOR) return true;
+  return !process.env.NO_COLOR && Boolean(process.stdout.isTTY);
 }
 function fg(text: string, rgb: string): string {
   return colorOn() ? `\x1b[38;2;${rgb}m${text}${RESET}` : text;
@@ -115,7 +116,7 @@ export class SettingsPanel implements Component {
     return this.query ? this.searchGroups().flatMap((group) => group.rows) : this.tabRows(this.tab);
   }
 
-  private focused(): ResolvedSetting | undefined {
+  private focusedRow(): ResolvedSetting | undefined {
     return this.visibleRows()[this.cursor];
   }
 
@@ -147,6 +148,7 @@ export class SettingsPanel implements Component {
         const delta = matchesKey(data, "left") ? -1 : 1;
         this.tab = (this.tab + delta + SETTING_TABS.length) % SETTING_TABS.length;
         this.cursor = 0;
+        this.toast = undefined;
       }
     } else if (matchesKey(data, "up")) {
       if (count) this.cursor = (this.cursor - 1 + count) % count;
@@ -164,6 +166,7 @@ export class SettingsPanel implements Component {
     } else if (data.length === 1 && data >= "!" && data <= "~") {
       this.query += data;
       this.cursor = 0;
+      this.toast = undefined;
     }
     this.repaint();
   }
@@ -173,7 +176,7 @@ export class SettingsPanel implements Component {
   }
 
   private activate(): void {
-    const row = this.focused();
+    const row = this.focusedRow();
     if (!row) return;
     const setting = row.setting;
     if (setting.type === "boolean") {
@@ -239,7 +242,7 @@ export class SettingsPanel implements Component {
   }
 
   private reset(): void {
-    const row = this.focused();
+    const row = this.focusedRow();
     if (!row) return;
     const { scope } = this.targetScope(row.setting);
     try {
@@ -263,7 +266,7 @@ export class SettingsPanel implements Component {
     // Title bar: name on the left, where saves go on the right.
     const title = ` ${bold(accent("Settings"))} `;
     const scopeLabel = (scope: SettingScope) => (scope === this.scope ? `${accent("●")} ${bold(scope)}` : `${muted("○")} ${muted(scope)}`);
-    const scopeText = ` ${muted("save to")} ${scopeLabel("project")}  ${scopeLabel("global")} ${muted("⇥")} `;
+    const scopeText = ` ${muted("save to")} ${scopeLabel("project")}  ${scopeLabel("global")} `;
     const fill = Math.max(1, inner + 2 - 1 - visibleWidth(title) - visibleWidth(scopeText) - 1);
     out.push(`${rule("╭─")}${title}${rule("─".repeat(fill))}${scopeText}${rule("─╮")}`);
     out.push(frame(this.renderTabs()));
@@ -292,7 +295,7 @@ export class SettingsPanel implements Component {
       const groups = this.searchGroups();
       const counts = new Map(groups.map((group) => [group.tab, group.rows.length]));
       const order = [...groups.map((group) => group.tab), ...SETTING_TABS.map((_tab, index) => index).filter((index) => !counts.has(index))];
-      const focusedTab = this.focused() ? SETTING_TABS.findIndex((tab) => tab.id === this.focused()!.setting.tab) : -1;
+      const focusedTab = this.focusedRow() ? SETTING_TABS.findIndex((tab) => tab.id === this.focusedRow()!.setting.tab) : -1;
       for (const index of order) {
         const count = counts.get(index);
         const label = count ? `${SETTING_TABS[index]!.label} (${count})` : SETTING_TABS[index]!.label;
@@ -314,7 +317,7 @@ export class SettingsPanel implements Component {
     if (this.query) {
       const groups = this.searchGroups();
       const total = groups.reduce((sum, group) => sum + group.rows.length, 0);
-      const search = `${accent("⌕")} ${bold(this.query)}`;
+      const search = `${muted("search")} ${bold(this.query)}${selected("▏")}`;
       const count = muted(`${total} ${total === 1 ? "match" : "matches"}`);
       lines.push(`${search}${" ".repeat(Math.max(1, inner - visibleWidth(search) - visibleWidth(count)))}${count}`);
       lines.push("");
@@ -327,7 +330,8 @@ export class SettingsPanel implements Component {
       lines.push("");
       for (const row of this.tabRows(this.tab)) entries.push({ kind: "row", row });
     }
-    const all = this.visibleRows();
+    // Columns are sized over every setting so they do not jump between tabs.
+    const all = this.rows;
     const labelWidth = Math.min(28, Math.max(12, ...all.map((row) => visibleWidth(row.setting.label)))) + 2;
     const valueWidth = Math.min(30, Math.max(10, ...all.map((row) => visibleWidth(formatSettingValue(row.setting, row.value))))) + 2;
     let rowIndex = 0;
@@ -343,7 +347,8 @@ export class SettingsPanel implements Component {
       const mark = row.changed ? accent("•") : " ";
       const label = pad(row.setting.label, labelWidth);
       const value = pad(formatSettingValue(row.setting, row.value), valueWidth);
-      const source = row.source === "default" ? "" : muted(row.source);
+      // Where the value comes from matters only when it is not the default.
+      const source = row.changed ? muted(row.source) : "";
       lines.push(` ${cursor} ${mark} ${isFocused ? bold(selected(label)) : label}${isFocused ? selected(value) : muted(value)}${source}`);
     }
     // Keep the focused row on screen when a tab outgrows the body.
@@ -366,7 +371,7 @@ export class SettingsPanel implements Component {
       lines.push(...this.submenu.list.render(inner));
     } else if (this.editor) {
       const field = this.editor.input.render(Math.max(10, inner - 4))[0] ?? "";
-      lines.push(`${selected("❯")} ${field}`);
+      lines.push(field);
       lines.push("");
       lines.push(muted(row.setting.type === "number" ? "A number." : `Text. Empty means: ${row.setting.emptyLabel ?? "unset"}. Never paste a key here; use an env-var name.`));
     }
@@ -374,14 +379,14 @@ export class SettingsPanel implements Component {
   }
 
   private descriptionLines(inner: number): string[] {
-    const row = this.submenu || this.editor ? undefined : this.focused();
+    const row = this.submenu || this.editor ? undefined : this.focusedRow();
     if (!row) return ["", "", ""];
     const setting = row.setting;
     const where = setting.scopes.length === 1 ? `${setting.scopes[0]}-only` : `saves to ${this.scope}`;
     const meta = muted(`${setting.key} · default ${formatSettingValue(setting, setting.default)} · ${where}`);
     const wrapped = wrapTextWithAnsi(setting.description, inner);
-    const second = wrapped.length > 2 ? truncateToWidth(wrapped.slice(1).join(" "), inner, "…") : wrapped[1] ?? "";
-    return [wrapped[0] ?? "", second, meta];
+    const text = wrapped.length > 2 ? [wrapped[0]!, truncateToWidth(wrapped.slice(1).join(" "), inner, "…")] : wrapped;
+    return [...text, meta, "", ""].slice(0, 3);
   }
 
   private toastLine(): string {
