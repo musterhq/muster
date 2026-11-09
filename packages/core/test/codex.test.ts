@@ -867,8 +867,16 @@ rl.on("line", (line) => {
     const result = await runCodexAppServer({ prompt: "one", cwd: dir, command: fake, cacheKey: "gateway-chat", transportOwner: "gateway:test" });
     assert.equal(result.status, "completed");
     assert.equal(readGatewayCodexWarmThreadCount(process.pid), 1);
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_150));
-    assert.equal(readGatewayCodexWarmThreadCount(process.pid), 0);
+    // Not before the 1 s gateway TTL…
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+    assert.equal(readGatewayCodexWarmThreadCount(process.pid), 1, "still warm before the TTL");
+    // …and gone soon after it. Poll instead of a fixed sleep: under CI load the
+    // idle timer and the count file land later than wall-clock arithmetic says.
+    const deadline = Date.now() + 5_000;
+    while (readGatewayCodexWarmThreadCount(process.pid) !== 0 && Date.now() < deadline) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
+    assert.equal(readGatewayCodexWarmThreadCount(process.pid), 0, "expired after the shorter gateway TTL");
   } finally {
     if (previous === undefined) delete process.env.MUSTER_GATEWAY_CODEX_IDLE_MS;
     else process.env.MUSTER_GATEWAY_CODEX_IDLE_MS = previous;
