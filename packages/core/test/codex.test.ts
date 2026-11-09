@@ -1110,3 +1110,63 @@ rl.on("line", (line) => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-01-1A, MUS-SPEC-01-1C, MUS-SPEC-01-1D (docs/spec/clauses/01-chat-transcript.md)
+test("runCodexAppServer: reports command items, separates message items, and sums turn usage", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-tools-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+const threadId = "thread-tools";
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: threadId } } });
+  else if (msg.method === "turn/start") {
+    const turnId = "turn-1";
+    const p = (extra) => ({ threadId, turnId, ...extra });
+    send({ id: msg.id, result: { turn: { id: turnId, status: "inProgress" } } });
+    send({ method: "item/started", params: p({ item: { type: "agentMessage", id: "m1", text: "" } }) });
+    send({ method: "item/agentMessage/delta", params: p({ itemId: "m1", delta: "I will run pytest." }) });
+    send({ method: "item/completed", params: p({ item: { type: "agentMessage", id: "m1", text: "I will run pytest." } }) });
+    send({ method: "thread/tokenUsage/updated", params: p({ tokenUsage: { last: { inputTokens: 100, cachedInputTokens: 50, outputTokens: 10, reasoningOutputTokens: 2 } } }) });
+    send({ method: "item/started", params: p({ item: { type: "commandExecution", id: "c1", command: "pytest -q", cwd: "/r", status: "inProgress" } }) });
+    send({ method: "item/completed", params: p({ item: { type: "commandExecution", id: "c1", command: "pytest -q", cwd: "/r", status: "completed", aggregatedOutput: "3 passed", exitCode: 0, durationMs: 120 } }) });
+    send({ method: "item/started", params: p({ item: { type: "agentMessage", id: "m2", text: "" } }) });
+    send({ method: "item/agentMessage/delta", params: p({ itemId: "m2", delta: "add now adds." }) });
+    send({ method: "item/completed", params: p({ item: { type: "agentMessage", id: "m2", text: "add now adds." } }) });
+    send({ method: "thread/tokenUsage/updated", params: p({ tokenUsage: { last: { inputTokens: 200, cachedInputTokens: 150, outputTokens: 20, reasoningOutputTokens: 3 } } }) });
+    send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+  }
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const deltas: string[] = [];
+    const tools: Array<Record<string, unknown>> = [];
+    const result = await runCodexAppServer({
+      prompt: "fix it",
+      cwd: dir,
+      command: fake,
+      cacheKey: "tools",
+      keepAlive: false,
+      onDelta: (delta) => deltas.push(delta),
+      onToolEvent: (event) => tools.push({ ...event }),
+    });
+    assert.equal(result.status, "completed");
+    assert.equal(deltas.join(""), "I will run pytest.\n\nadd now adds.");
+    assert.deepEqual(tools.map((event) => [event.phase, event.kind, event.title]), [["start", "command", "pytest -q"], ["end", "command", "pytest -q"]]);
+    assert.equal(tools[1]?.exitCode, 0);
+    assert.equal(tools[1]?.output, "3 passed");
+    assert.equal(tools[1]?.durationMs, 120);
+    assert.equal(result.tokenUsage?.inputTokens, 300);
+    assert.equal(result.tokenUsage?.cachedInputTokens, 200);
+    assert.equal(result.tokenUsage?.outputTokens, 30);
+    assert.equal(result.tokenUsage?.reasoningOutputTokens, 5);
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

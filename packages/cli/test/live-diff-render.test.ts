@@ -464,3 +464,24 @@ test("the real observer is constructed with the .muster ignore merged over calle
   await renameFeed.finish();
   assert.deepEqual(renameLines, [], "a rename out of .muster is still harness-internal");
 });
+
+// Spec: MUS-SPEC-01-1E (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1e--build-artifacts-are-not-reported-as-the-agents-edits)
+test("live diff feed skips build artifacts even without a .gitignore", async () => {
+  const lines: string[] = [];
+  const fake = fakeObserver({
+    onFlush: (emit) => {
+      emit(patchEvent({ path: "calc.py", diff: "@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b" }));
+      emit(patchEvent({ path: "__pycache__/calc.cpython-314.pyc", changeKind: "add", binary: true }));
+      emit(patchEvent({ path: "pkg/mod.pyc", changeKind: "add", binary: true }));
+      emit(patchEvent({ path: ".pytest_cache/v/cache/nodeids", changeKind: "add", diff: "@@ -0,0 +1 @@\n+[]" }));
+      emit(patchEvent({ path: "web/node_modules/x/index.js", changeKind: "add", diff: "@@ -0,0 +1 @@\n+x" }));
+    },
+  });
+  const feed = await startLiveDiffFeed({ cwd: "/repo", emit: (line) => lines.push(line), color: false, createObserver: fake.create });
+  const totals = await feed.finish();
+  const text = plain(lines).join("\n");
+  assert.equal(totals.files, 1);
+  assert.match(text, /Edit\(calc\.py\)/);
+  assert.doesNotMatch(text, /pycache|\.pyc|pytest_cache|node_modules/);
+  assert.match(text, /1 file changed/);
+});
