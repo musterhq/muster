@@ -111,3 +111,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** live diff feed with an injected observer.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-6A — Diff cards show turn time readably
+
+- **Precondition:** a diff card detected 67 985 ms into the turn, another at 86 ms, another at 105 975 ms.
+- **Action:** render the result rows.
+- **Expected result:** `68.0s`, `86ms` and `1m 46s` — the same duration format as command cells, never a raw five- or six-digit millisecond count.
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "diff card timing reads like command timing"
+- **Environment:** pure renderer.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
