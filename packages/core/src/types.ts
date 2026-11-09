@@ -105,6 +105,12 @@ export interface MusterConfig {
    * today's behaviour.
    */
   readonly memory?: MemoryPolicyConfig;
+  /** Chat defaults owned by the settings registry (settings.ts): access, speed, liveDiff, reasoningMode. */
+  readonly chat?: Readonly<Record<string, unknown>>;
+  /** Appearance defaults owned by the settings registry: header, statusBar. */
+  readonly appearance?: Readonly<Record<string, unknown>>;
+  /** Model defaults owned by the settings registry: default. */
+  readonly models?: Readonly<Record<string, unknown>>;
 }
 
 /** "auto": write freely. "ask": every write needs a consent receipt. "never": only explicit user requests. */

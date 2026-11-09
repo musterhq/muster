@@ -28,6 +28,7 @@ import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capab
 import { LiveFileOverlay, LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import { BoardScreen, parseSgrMouseSequence, stripMouseSequences, type SgrMouseEvent } from "./board-screen.js";
 import { openFileWithEditorGuard, TaskView } from "./task-view.js";
+import { SettingsPanel, type SettingsChange } from "./settings-panel.js";
 import {
   bandRow,
   bandUserRow,
@@ -139,6 +140,14 @@ export interface MusterChatSink {
   toggleLiveDiff(): void;
   /** Replace chat with the full-screen task board. Returns false when no board is available. */
   openBoard(force?: boolean): Promise<boolean>;
+  /** Replace chat with the full-screen settings panel; resolves when it closes. */
+  openSettings(options: OpenSettingsOptions): Promise<void>;
+}
+
+export interface OpenSettingsOptions {
+  readonly cwd: string;
+  /** Called after each saved change so the live session can follow it. */
+  readonly onChange?: (change: SettingsChange) => void;
 }
 
 export interface BoardModeController {
@@ -1289,13 +1298,17 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
 }): MusterChatHarness {
   const tui = fakeHarnessTui(options.width ?? 120, options.rows ?? 40);
   const editor = createMusterChatEditor(tui);
-  const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines, options.onSteer);
+  const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines, options.onSteer, options.rows ?? 40);
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
   editor.onSubmit = (text) => {
     void sink.submit(text);
   };
   return {
     input(data) {
+      if (sink.settings) {
+        sink.settings.handleInput(data);
+        return;
+      }
       if (sink.approvals.key(data)) return;
       if (options.onDecisionKey?.(data, sink)) return;
       if (data === "\x0f") {
@@ -1339,6 +1352,10 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       editor.handleInput(data);
     },
     type(text) {
+      if (sink.settings) {
+        for (const char of text) sink.settings.handleInput(char);
+        return;
+      }
       if (sink.approvals.pending) return;
       for (const char of text) editor.handleInput(char);
     },
@@ -1348,6 +1365,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       await sink.submit(text);
     },
     visible(width = options.width ?? 120) {
+      if (sink.settings) return sink.settings.render(width);
       return [
         ...sink.transcriptLines,
         ...renderQueuedBand(sink.followUps.queued, width),
@@ -1580,6 +1598,8 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       tui.requestRender(true);
       return { consume: true };
     }
+    // The settings panel owns every key while it is open.
+    if (screen.settingsOpen) return undefined;
     const mouse = parseSgrMouseSequence(data);
     if (mouse && boardMode?.handleMouse(mouse)) return { consume: true };
     const stripped = stripMouseSequences(data);
@@ -1672,7 +1692,7 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   const rawEscapeHandler = (chunk: Buffer | string): void => {
     const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
     if (boardMode?.active || parseSgrMouseSequence(data)) return;
-    if (screen.approvals.pending) return;
+    if (screen.approvals.pending || screen.settingsOpen) return;
     if (data === "\x1b" && screen.consumeLiveDiffEscapeSuppression()) return;
     if (data === "\x1b" && screen.closeLiveDiff()) return;
     if (data === "\x1b" && screen.interruptTurn()) return;
@@ -2069,6 +2089,38 @@ class MusterChatScreen implements Component, MusterChatSink {
     return this.onOpenBoard?.(force) ?? Promise.resolve(false);
   }
 
+  private settingsPanel: SettingsPanel | undefined;
+
+  get settingsOpen(): boolean {
+    return Boolean(this.settingsPanel);
+  }
+
+  /** Full screen, like the board: the chat component steps aside and comes back intact on Esc. */
+  openSettings(options: OpenSettingsOptions): Promise<void> {
+    if (this.settingsPanel) return Promise.resolve();
+    return new Promise((resolve) => {
+      const panel: SettingsPanel = new SettingsPanel({
+        cwd: options.cwd,
+        rows: () => this.tui.terminal.rows,
+        onChange: options.onChange,
+        requestRender: () => this.tui.requestRender(),
+        onClose: () => {
+          this.tui.removeChild(panel);
+          this.settingsPanel = undefined;
+          this.tui.addChild(this);
+          this.tui.setFocus(this.editor);
+          void this.refreshStatusLine().finally(() => this.tui.requestRender(true));
+          resolve();
+        },
+      });
+      this.settingsPanel = panel;
+      this.tui.removeChild(this);
+      this.tui.addChild(panel);
+      this.tui.setFocus(panel);
+      this.tui.requestRender(true);
+    });
+  }
+
   closeLiveDiff(suppressRawEscape = false): boolean {
     if (!this.liveDiffHandle) return false;
     this.suppressRawLiveDiffEscape = suppressRawEscape;
@@ -2298,9 +2350,27 @@ class HarnessSink implements MusterChatSink {
     private readonly onInterrupt?: () => boolean | Promise<boolean>,
     initialLines: readonly string[] = [],
     onSteer?: (text: string) => boolean | Promise<boolean>,
+    private readonly rows = 40,
   ) {
     this.store.push(...initialLines);
     this.followUps = new RunningTurnInput(onSteer);
+  }
+
+  /** The open settings panel; harness input goes to it while it is open. */
+  settings: SettingsPanel | undefined;
+
+  openSettings(options: OpenSettingsOptions): Promise<void> {
+    return new Promise((resolve) => {
+      this.settings = new SettingsPanel({
+        cwd: options.cwd,
+        rows: () => this.rows,
+        onChange: options.onChange,
+        onClose: () => {
+          this.settings = undefined;
+          resolve();
+        },
+      });
+    });
   }
 
   readonly followUps: RunningTurnInput;

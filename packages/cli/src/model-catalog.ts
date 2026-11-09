@@ -25,7 +25,7 @@ export interface ComposerCatalog {
 export interface ComposerPickerState {
   readonly catalog: ComposerCatalog;
   readonly activeModel: string;
-  readonly modelSource: "codex config" | "session" | "app default";
+  readonly modelSource: "codex config" | "session" | "app default" | "settings";
   readonly effort: EffortValue;
   readonly effortSource: "codex config" | "session" | "app default";
   readonly speed: "session" | "fast";
