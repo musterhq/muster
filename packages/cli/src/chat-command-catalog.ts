@@ -53,7 +53,7 @@ export const CHAT_COMMANDS: readonly ChatCommandDef[] = [
   { name: "security", usage: "/security", description: "see permissions, approvals, and audit history" },
   { name: "evals", usage: "/evals", description: "see quality and safety checks" },
   { name: "index", usage: "/index", description: "see what Frappe data is ready to search" },
-  { name: "settings", usage: "/settings", description: "choose answer style and assistant behavior" },
+  { name: "settings", usage: "/settings", description: "change defaults: models, access, appearance, memory", aliases: ["config"] },
   { name: "goal", usage: "/goal [status]", description: "see progress on the active goal" },
   { name: "receipt", usage: "/receipt [limit]", description: "see what was recalled or saved and why" },
   { name: "new", usage: "/new [name]", description: "start a fresh conversation" },

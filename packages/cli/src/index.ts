@@ -312,6 +312,9 @@ import {
   whatsAppWebhookToSurfaceMessages
 } from "@musterhq/gateway";
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
+import { renderSettingsList, SettingsPanel, type SettingsChange } from "./settings-panel.js";
+import { allowedSettingValues, formatSettingValue, requireSetting, resetSetting as resetSettingValue, resolveSetting, resolveSettings, setSetting, settingsPaths, settingValues, validateSettingsFiles, type SettingScope } from "@musterhq/core";
+import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile, spawn } from "node:child_process";
 import { access, mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -404,6 +407,12 @@ async function main(): Promise<void> {
       return;
     case "chat":
       await chat(args);
+      return;
+    case "config":
+      configCommand(args);
+      return;
+    case "settings":
+      await settingsCommand(args);
       return;
     case "model":
       await chat([`/model${args.length ? ` ${args.join(" ")}` : ""}`]);
@@ -651,6 +660,8 @@ Usage:
   muster goal status [--limit 10]       # active-goal loop ledger: retrieval, memory write, follow-up needs
   muster tui
   muster tui ask "your prompt"
+  muster config list [--json] | get <key> | set <key> <value> [--global|--project] | reset <key> [--global|--project] | path | validate
+  muster settings                           # full-screen settings panel (also /settings in chat)
   muster provider list
   muster provider add-openai-compatible <id> <base-url> <model> [--api-key-env OPENAI_API_KEY]
   muster provider add-codex-cli <id> <model>
@@ -1283,7 +1294,7 @@ interface ChatState {
   effortOverride?: EffortValue;
   configuredEffort?: EffortValue;
   configuredEffortSource?: "codex config" | "app default";
-  modelSource?: "codex config" | "session" | "app default";
+  modelSource?: "codex config" | "session" | "app default" | "settings";
   effortSource?: "codex config" | "session" | "app default";
   composerInitialized?: boolean;
   /** One-turn transcript handoff when the selected provider changes. */
@@ -1308,6 +1319,10 @@ interface ChatState {
   inheritedTools?: BackendEcosystem;
   /** Conflict recovery differs for a Codex import and a native chat. */
   importedFromCodex?: boolean;
+  /** appearance.statusBar; false hides the row under the composer. */
+  statusBar?: boolean;
+  /** models.default; the model a chat starts on when no --model is given. */
+  defaultModel?: string;
 }
 
 interface ChatSessionUsage {
@@ -1398,16 +1413,22 @@ async function chat(commandArgs: string[]): Promise<void> {
     printChatHelp();
     return;
   }
+  // Configured defaults (muster config / /settings); flags still win for this run.
+  const configured = chatSettingDefaults();
   const state: ChatState = {
     sessionName: safeChatSessionName(readFlag(commandArgs, "--session") ?? readFlag(commandArgs, "--name") ?? DEFAULT_CHAT_SESSION),
     runtime: readFlag(commandArgs, "--runtime"),
     provider: readFlag(commandArgs, "--provider"),
     model: readFlag(commandArgs, "--model"),
-    accessMode: parseChatAccessMode(readFlag(commandArgs, "--access")),
-    speedMode: commandArgs.includes("--fast") ? "fast" : "session",
+    accessMode: parseChatAccessMode(readFlag(commandArgs, "--access")) ?? configured.accessMode,
+    speedMode: commandArgs.includes("--fast") ? "fast" : configured.speedMode,
     scopes: readFlags(commandArgs, "--scope").map(parseMemoryScope),
     recallLimit: readNumberFlag(commandArgs, "--recall-limit"),
-    liveDiff: readLiveDiffFlag(commandArgs),
+    liveDiff: readLiveDiffFlag(commandArgs) ?? configured.liveDiff,
+    reasoningMode: configured.reasoningMode,
+    headerMode: configured.headerMode,
+    statusBar: configured.statusBar,
+    defaultModel: configured.defaultModel,
     startedAt: Date.now(),
     // First turn only: after it lands, executeRun stores a session handle for
     // this conversation and later turns resume the thread without the flag.
@@ -1480,6 +1501,188 @@ async function chat(commandArgs: string[]): Promise<void> {
     throw new Error('Interactive chat requires a TTY. Use: muster chat "your prompt" or muster chat --history --session main.');
   }
   await interactiveChat(state);
+}
+
+/** Chat's starting state from the settings registry (project → global → default). */
+function chatSettingDefaults(cwd = process.cwd()): {
+  accessMode?: AccessMode;
+  speedMode: "session" | "fast";
+  liveDiff?: boolean;
+  reasoningMode?: ReasoningMode;
+  headerMode?: "compact" | "full";
+  statusBar?: boolean;
+  defaultModel?: string;
+} {
+  let values: ReturnType<typeof settingValues>;
+  try {
+    values = settingValues(cwd);
+  } catch {
+    return { speedMode: "session" };
+  }
+  const value = (key: string) => values[key]?.value;
+  const explicit = (key: string) => values[key] !== undefined && values[key]!.source !== "default";
+  const access = value("chat.access");
+  return {
+    // Unset access keeps today's semantics (undefined ⇒ auto-edit everywhere).
+    ...(explicit("chat.access") && typeof access === "string" && isAccessMode(access) ? { accessMode: access } : {}),
+    speedMode: value("chat.speed") === "fast" ? "fast" : "session",
+    // Unset live-diff keeps following MUSTER_NO_LIVE_DIFF / MUSTER_LIVE_DIFF.
+    ...(explicit("chat.liveDiff") ? { liveDiff: value("chat.liveDiff") === true } : {}),
+    ...(explicit("chat.reasoningMode") ? { reasoningMode: value("chat.reasoningMode") as ReasoningMode } : {}),
+    ...(explicit("appearance.header") ? { headerMode: value("appearance.header") as "compact" | "full" } : {}),
+    ...(value("appearance.statusBar") === false ? { statusBar: false } : {}),
+    ...(typeof value("models.default") === "string" && value("models.default") ? { defaultModel: String(value("models.default")) } : {}),
+  };
+}
+
+/** A saved settings change also applies to the chat that made it. */
+function applySettingToChat(state: ChatState, change: SettingsChange, sink?: MusterChatSink): void {
+  switch (change.key) {
+    case "chat.access":
+      if (typeof change.value === "string" && isAccessMode(change.value)) state.accessMode = change.value;
+      break;
+    case "chat.speed":
+      state.speedMode = change.value === "fast" ? "fast" : "session";
+      break;
+    case "chat.liveDiff":
+      state.liveDiff = change.value === true;
+      break;
+    case "chat.reasoningMode":
+      state.reasoningMode = change.value === "full" ? "full" : "compact";
+      break;
+    case "appearance.header":
+      state.headerMode = change.value === "full" ? "full" : "compact";
+      break;
+    case "appearance.statusBar":
+      state.statusBar = change.value !== false;
+      if (state.statusBar === false) sink?.setFooter("");
+      break;
+    case "models.default":
+      state.defaultModel = typeof change.value === "string" && change.value ? change.value : undefined;
+      break;
+  }
+}
+
+async function openChatSettings(state: ChatState): Promise<void> {
+  const cwd = chatSessionWorkspaceCwd(state);
+  if (!state.statusSink || !state.interactive) {
+    for (const line of renderSettingsList(cwd)) console.log(line);
+    console.log(color("Change one with: muster config set <key> <value>", "dim"));
+    return;
+  }
+  // Not awaited: the panel owns the screen until Esc. statusSink is cleared when
+  // this command returns, so the sink is captured for the close-time refresh.
+  const sink = state.statusSink;
+  void sink.openSettings({ cwd, onChange: (change) => applySettingToChat(state, change, sink) }).then(async () => {
+    sink.setHeaderLines(await buildChatHeaderLines(state));
+  });
+}
+
+function configCommand(commandArgs: readonly string[]): void {
+  const [sub, ...rest] = commandArgs;
+  const positional = rest.filter((arg) => !arg.startsWith("--"));
+  const scope: SettingScope | undefined = rest.includes("--global") ? "global" : rest.includes("--project") ? "project" : undefined;
+  const fail = (message: string): never => {
+    console.error(message);
+    process.exit(1);
+  };
+  const guard = <T>(run: () => T): T => {
+    try {
+      return run();
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  };
+  switch (sub) {
+    case undefined:
+    case "list": {
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify(resolveSettings().map((row) => ({
+          key: row.key,
+          value: row.value,
+          default: row.setting.default,
+          source: row.source,
+          type: row.setting.type,
+          tab: row.setting.tab,
+          scope: row.setting.scope,
+          scopes: row.setting.scopes,
+          description: row.setting.description,
+          ...(row.setting.options ? { options: row.setting.options } : {}),
+        })), null, 2));
+        return;
+      }
+      for (const line of renderSettingsList(process.cwd())) console.log(line);
+      return;
+    }
+    case "get": {
+      const key = positional[0] ?? fail("Usage: muster config get <key>");
+      const row = guard(() => resolveSetting(key));
+      console.log(String(row.value));
+      return;
+    }
+    case "set": {
+      const key = positional[0] ?? fail("Usage: muster config set <key> <value> [--global|--project]");
+      const raw = positional.slice(1).join(" ");
+      const setting = guard(() => requireSetting(key));
+      if (!positional[1] && setting.type !== "string") fail(`Usage: muster config set ${key} <value>. Allowed: ${allowedSettingValues(setting)}.`);
+      const write = guard(() => setSetting(key, raw, { scope }));
+      console.log(color(`Saved ${key} → ${formatSettingValue(setting, write.value)} · ${write.scope}`, "green"));
+      return;
+    }
+    case "reset":
+    case "unset": {
+      const key = positional[0] ?? fail("Usage: muster config reset <key> [--global|--project]");
+      const write = guard(() => resetSettingValue(key, { scope }));
+      const row = resolveSetting(key);
+      console.log(color(`Reset ${key} in ${write.scope} → ${formatSettingValue(row.setting, row.value)} (${row.source})`, "green"));
+      return;
+    }
+    case "path": {
+      const paths = settingsPaths();
+      console.log(`project ${paths.project}`);
+      console.log(`global  ${paths.global}`);
+      return;
+    }
+    case "validate": {
+      const issues = validateSettingsFiles();
+      if (!issues.length) {
+        const paths = settingsPaths();
+        console.log(color(`Settings valid · project ${paths.project} · global ${paths.global}`, "green"));
+        return;
+      }
+      for (const issue of issues) console.log(`${color("✗", "red")} ${issue.key}: ${issue.message} (${issue.file})`);
+      process.exit(1);
+    }
+    default:
+      fail(`Unknown config command ${sub}. Use: muster config list [--json] | get <key> | set <key> <value> | reset <key> | path | validate`);
+  }
+}
+
+/** `muster settings`: the same panel as /settings, full screen, outside chat. */
+async function settingsCommand(_commandArgs: readonly string[]): Promise<void> {
+  const cwd = process.cwd();
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    for (const line of renderSettingsList(cwd)) console.log(line);
+    console.log(color("The settings panel needs a terminal; change values with: muster config set <key> <value>", "dim"));
+    return;
+  }
+  const terminal = new ProcessTerminal();
+  const tui = new TUI(terminal, true);
+  await new Promise<void>((resolveClose) => {
+    const panel = new SettingsPanel({
+      cwd,
+      rows: () => terminal.rows,
+      requestRender: () => tui.requestRender(),
+      onClose: () => resolveClose(),
+    });
+    tui.addChild(panel);
+    tui.setFocus(panel);
+    terminal.write("\x1b[?1049h");
+    tui.start();
+    tui.requestRender(true);
+  });
+  tui.stop();
+  terminal.write("\x1b[?1049l");
 }
 
 function shouldLaunchOnboarding(commandArgs: readonly string[]): boolean {
@@ -1657,6 +1860,10 @@ async function initializeChatComposerState(state: ChatState): Promise<void> {
   state.activeProvider = inferred;
   if (state.model) {
     state.modelSource = "session";
+  } else if (state.defaultModel) {
+    state.model = state.defaultModel;
+    state.activeProvider = modelProvider(state.defaultModel) ?? inferred;
+    state.modelSource = "settings";
   } else if (inferred === "codex") {
     state.model = codexDefaults.model ?? firstRuntimeModel(runtime) ?? configuredProvider?.defaultModel ?? DEFAULT_CODEX_MODEL;
     state.modelSource = codexDefaults.modelSource;
@@ -1859,6 +2066,7 @@ function chatReasoningTierLabel(state: ChatState): string {
 
 /** Every completed turn folds into the session totals the status row shows. */
 async function chatStatusBar(state: ChatState, width: number): Promise<string> {
+  if (state.statusBar === false) return "";
   const config = await loadConfig().catch(() => undefined);
   const runtimeId = state.runtime ?? config?.routing.defaultRuntime ?? "native";
   const runtime = config?.runtimes[runtimeId];
@@ -2451,11 +2659,8 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       ], ["The fast path should use indexed/read-model answers first and call Frappe live only when needed."]);
       return true;
     case "settings":
-      printChatControlView("Settings", [
-        ["Response style", "concise, table-first, manager summary, audit-heavy"],
-        ["Default format", "direct answer, table, report pack, artifact"],
-        ["Safety level", "strict, balanced, read-only, approval-required"],
-      ], ["Department/team settings should preview impact before saving and stay permission-gated."]);
+    case "config":
+      await openChatSettings(state);
       return true;
     case "goal":
     case "receipt":
@@ -2498,7 +2703,7 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
 }
 
 /** The commands a daily driver actually reaches for; the rest live behind /help all. */
-const CHAT_DAILY_COMMANDS = ["mission", "board", "codex", "tools", "mcp", "plugins", "model", "reasoning", "sessions", "resume", "memory", "diff", "live-diff", "exit"] as const;
+const CHAT_DAILY_COMMANDS = ["mission", "board", "codex", "tools", "mcp", "plugins", "model", "reasoning", "settings", "sessions", "resume", "memory", "diff", "live-diff", "exit"] as const;
 
 /** Same catalog, dailies first — the ordering every completion surface uses. */
 function chatCommandsDailyFirst(state?: ChatState): readonly ChatCommandDef[] {

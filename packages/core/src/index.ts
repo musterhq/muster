@@ -15,6 +15,7 @@ export * from "./session-handle.js";
 export * from "./subprocess.js";
 export * from "./compactor.js";
 export * from "./config.js";
+export * from "./settings.js";
 export * from "./context-graph.js";
 export * from "./context-renderer.js";
 export * from "./eval.js";
