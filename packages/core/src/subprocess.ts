@@ -7,6 +7,8 @@ export interface RunSubprocessOptions {
   /** Grace after SIGTERM before SIGKILL. Default 1500ms. */
   readonly killGraceMs?: number;
   readonly maxBuffer?: number;
+  /** Called with each complete stdout line as it arrives (streaming JSON output). */
+  readonly onStdoutLine?: (line: string) => void;
 }
 
 export interface SubprocessResult {
@@ -71,8 +73,22 @@ export function runSubprocess(command: string, args: readonly string[], options:
       ? setTimeout(() => { timedOut = true; terminate(); }, options.timeoutMs)
       : undefined;
 
+    let pendingLine = "";
+    const emitLine = (line: string): void => {
+      try { options.onStdoutLine?.(line); } catch { /* a listener bug never kills the run */ }
+    };
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (options.onStdoutLine) {
+        pendingLine += text;
+        let newline = pendingLine.indexOf("\n");
+        while (newline >= 0) {
+          emitLine(pendingLine.slice(0, newline));
+          pendingLine = pendingLine.slice(newline + 1);
+          newline = pendingLine.indexOf("\n");
+        }
+      }
       if (stdout.length > maxBuffer && !overflow) { overflow = true; terminate(); }
     });
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
@@ -86,6 +102,10 @@ export function runSubprocess(command: string, args: readonly string[], options:
     });
 
     child.on("close", (code, signal) => {
+      if (pendingLine) {
+        emitLine(pendingLine);
+        pendingLine = "";
+      }
       if (timer) clearTimeout(timer);
       if (sigkillTimer) clearTimeout(sigkillTimer);
       if (timedOut) {
