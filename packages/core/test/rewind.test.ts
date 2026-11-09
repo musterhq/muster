@@ -76,3 +76,20 @@ test("rewinding to an earlier turn restores files from that turn on and reverts 
   assert.deepEqual(result.files.restored.map((file) => file.path).sort(), ["a.txt", "b.txt", "c.txt"]);
   assert.equal(result.remainingTurns, 1);
 });
+
+// Spec: MUS-SPEC-17-1C (docs/spec/clauses/17-rewind.md#mus-spec-17-1c--rewound-turns-are-forgotten-by-musters-memory-too)
+test("rewind forgets the automatic memories of rewound turns and keeps everything else", async (t: TestContext) => {
+  const { addMemory, forgetTurnMemories, listMemory, searchMemory } = await import("../src/index.js");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-rewind-mem-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const scopes = [{ kind: "user" as const, id: "me" }];
+  await addMemory({ kind: "episode_summary", summary: "coding: set notes to v1", provenance: ["run:run-A"], scopes }, cwd);
+  await addMemory({ kind: "episode_summary", summary: "coding: set notes to v2 and create extra.txt", provenance: ["run:run-B"], scopes }, cwd);
+  await addMemory({ kind: "fact", summary: "prefers metric units", provenance: ["agent:mcp", "run:run-B"], scopes, explicitUserRequest: true }, cwd);
+  const removed = await forgetTurnMemories(["run-B"], cwd);
+  assert.equal(removed, 1);
+  const left = (await listMemory(cwd)).map((memory) => memory.summary).sort();
+  assert.deepEqual(left, ["coding: set notes to v1", "prefers metric units"]);
+  const hits = await searchMemory({ query: "extra.txt", scopes }, cwd);
+  assert.equal(hits.length, 0, "the index no longer finds the rewound turn");
+});

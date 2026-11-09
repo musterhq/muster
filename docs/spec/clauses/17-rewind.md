@@ -21,3 +21,13 @@
 - **Environment:** real git repo and workspace observer; fake revert call.
 - **Known gaps:** files changed after the last turn are left alone (as `/undo`).
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-17-1C — Rewound turns are forgotten by Muster's memory too
+
+- **Precondition:** turn A and turn B each wrote an automatic `episode_summary` memory (provenance `run:<id>`); the user also has a fact they asked Muster to remember.
+- **Action:** forget the turn memories of run B (what `/rewind` does for every rewound turn).
+- **Expected result:** B's summary is gone from listing and from search; A's summary and the user's fact remain.
+- **Test:** `packages/core/test/rewind.test.ts` › "rewind forgets the automatic memories of rewound turns and keeps everything else"
+- **Environment:** temp memory store (JSONL + rebuilt index).
+- **Known gaps:** Codex's own server-side history is reverted by `thread/revert`; Claude Code sessions start fresh instead.
+- **Evidence:** UNVERIFIED
