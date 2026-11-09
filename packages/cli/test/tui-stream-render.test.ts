@@ -17,6 +17,7 @@ import {
   parseRunRecordLine,
   renderTranscriptWindow,
   routeEngineLine,
+  unwrapShellCommand,
 } from "../src/chat-tui.js";
 import { renderLiveDiffCard } from "../src/live-diff.js";
 
@@ -470,4 +471,12 @@ test("narration painter gives each reasoning summary part its own row", () => {
     if (previous === undefined) delete process.env.NO_COLOR;
     else process.env.NO_COLOR = previous;
   }
+});
+
+// Spec: MUS-SPEC-01-1B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1b--a-command-renders-as-a-cell-with-status-and-output)
+test("command cells drop the shell wrapper, quoted or not", () => {
+  assert.equal(unwrapShellCommand("/bin/zsh -lc 'pytest -q'"), "pytest -q");
+  assert.equal(unwrapShellCommand("/bin/zsh -lc hostname"), "hostname");
+  assert.equal(unwrapShellCommand("bash -c \"ls -la\""), "ls -la");
+  assert.equal(unwrapShellCommand("git status"), "git status");
 });
