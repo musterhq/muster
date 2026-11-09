@@ -155,7 +155,9 @@ export function renderLiveDiffCard(event: WorkspacePatchEvent, options: LiveDiff
     return lines;
   }
 
-  for (const line of body.slice(0, maxLines)) lines.push(`    ${paintDiffLine(line, paint)}`);
+  const numbered = numberDiffRows(body);
+  const gutter = Math.max(2, ...numbered.map((row) => String(row.number ?? "").length));
+  for (const row of numbered.slice(0, maxLines)) lines.push(`    ${renderNumberedDiffRow(row, gutter, paint)}`);
   if (body.length > maxLines) lines.push(tint(`    … +${body.length - maxLines} lines`, MUTED_RGB, paint));
   return lines;
 }
@@ -394,6 +396,42 @@ function isMeaningfulMetaLine(line: string): boolean {
     || line.startsWith("Binary files ")
     || line.startsWith("old mode ")
     || line.startsWith("new mode ");
+}
+
+interface NumberedDiffRow {
+  readonly line: string;
+  /** New-file number for context and additions, old-file number for removals; absent for headers and notes. */
+  readonly number?: number;
+}
+
+/** Walk the hunks, numbering rows from each `@@ -a,b +c,d @@` header. */
+function numberDiffRows(body: readonly string[]): NumberedDiffRow[] {
+  let oldLine = 0;
+  let newLine = 0;
+  return body.map((line) => {
+    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      return { line };
+    }
+    if (line.startsWith("+")) return { line, number: newLine++ };
+    if (line.startsWith("-")) return { line, number: oldLine++ };
+    if (line.startsWith(" ")) {
+      oldLine += 1;
+      return { line, number: newLine++ };
+    }
+    return { line };
+  });
+}
+
+/** `  10 + const added = 2;` — dim number, coloured sign and code. Headers and notes render as before. */
+function renderNumberedDiffRow(row: NumberedDiffRow, gutter: number, paint: boolean): string {
+  if (row.number === undefined) return paintDiffLine(row.line, paint);
+  const sign = row.line[0] === " " ? " " : row.line[0]!;
+  const code = row.line.slice(1);
+  const number = tint(String(row.number).padStart(gutter), MUTED_RGB, paint);
+  return `${number} ${paintDiffLine(`${sign} ${code}`, paint)}`;
 }
 
 function paintDiffLine(line: string, paint: boolean): string {

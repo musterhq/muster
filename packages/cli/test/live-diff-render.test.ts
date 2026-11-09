@@ -72,17 +72,17 @@ test("a modify card renders header, stat, latency, and colored hunk lines", () =
     "⏺ Edit(src/run.ts)",
     "  ⎿ +2 −1 · 86ms · receipt d3b9c1a2…",
     "    @@ -1,4 +1,5 @@",
-    "     const before = 1;",
-    "    -const removed = 2;",
-    "    +const added = 2;",
-    "    +const alsoAdded = 3;",
-    "     const after = 4;",
+    "     1   const before = 1;",
+    "     2 - const removed = 2;",
+    "     2 + const added = 2;",
+    "     3 + const alsoAdded = 3;",
+    "     4   const after = 4;",
   ]);
 
   assert.match(card[0], /\x1b\[38;2;217;119;87m⏺/, "modify uses the coral action glyph");
   assert.match(card[2], /\x1b\[38;2;217;119;87m@@/, "hunk headers use the coral accent");
-  assert.match(card[4], /\x1b\[38;2;255;107;122m-const removed/, "deletions are red");
-  assert.match(card[5], /\x1b\[38;2;138;154;91m\+const added/, "additions use the restrained diff green");
+  assert.match(card[4], /\x1b\[38;2;255;107;122m- const removed/, "deletions are red");
+  assert.match(card[5], /\x1b\[38;2;138;154;91m\+ const added/, "additions use the restrained diff green");
 });
 
 test("cards drop the diff preamble and never leak ANSI when color is off", () => {
@@ -110,8 +110,8 @@ test("an add card marks the file green and counts only real additions", () => {
     "⏺ Create(notes.md)",
     "  ⎿ +2 −0 · 5ms · receipt d3b9c1a2…",
     "    @@ -0,0 +1,2 @@",
-    "    +first",
-    "    +second",
+    "     1 + first",
+    "     2 + second",
   ]);
   assert.match(renderLiveDiffCard(patchEvent({ changeKind: "add", diff }), { color: true })[0], /\x1b\[38;2;138;154;91m⏺/);
 });
@@ -143,7 +143,7 @@ test("long diffs truncate at 40 hunk lines with a remainder notice", () => {
   assert.equal(card[0], "⏺ Edit(big.ts)");
   assert.equal(card[1], "  ⎿ +59 −0 · 100ms · receipt d3b9c1a2…");
   assert.equal(card[2], "    @@ -1,60 +1,60 @@");
-  assert.equal(card[LIVE_DIFF_MAX_LINES + 1], "    +line 39");
+  assert.equal(card[LIVE_DIFF_MAX_LINES + 1], "    39 + line 39");
   assert.equal(card.at(-1), "    … +20 lines");
   assert.ok(!card.some((line) => line.includes("line 40")), "truncated lines stay hidden");
 });
@@ -151,7 +151,7 @@ test("long diffs truncate at 40 hunk lines with a remainder notice", () => {
 test("a smaller truncation budget is honored", () => {
   const diff = ["@@ -1,5 +1,5 @@", "+a", "+b", "+c", "+d"].join("\n");
   const card = renderLiveDiffCard(patchEvent({ diff }), { color: false, maxLines: 3, elapsedMs: 1 });
-  assert.deepEqual(card, ["⏺ Edit(src/run.ts)", "  ⎿ +4 −0 · 1ms · receipt d3b9c1a2…", "    @@ -1,5 +1,5 @@", "    +a", "    +b", "    … +2 lines"]);
+  assert.deepEqual(card, ["⏺ Edit(src/run.ts)", "  ⎿ +4 −0 · 1ms · receipt d3b9c1a2…", "    @@ -1,5 +1,5 @@", "     1 + a", "     2 + b", "    … +2 lines"]);
 });
 
 test("an omitted diff still produces an auditable card", () => {
@@ -237,16 +237,16 @@ test("the feed streams cards live and closes with a summary", async () => {
     "⏺ Edit(src/run.ts)",
     "  ⎿ +2 −1 · 86ms · receipt d3b9c1a2…",
     "    @@ -1,4 +1,5 @@",
-    "     const before = 1;",
-    "    -const removed = 2;",
-    "    +const added = 2;",
-    "    +const alsoAdded = 3;",
-    "     const after = 4;",
+    "     1   const before = 1;",
+    "     2 - const removed = 2;",
+    "     2 + const added = 2;",
+    "     3 + const alsoAdded = 3;",
+    "     4   const after = 4;",
   ], "cards land during the turn, not after it");
 
   const totals = await feed.finish();
   assert.deepEqual(totals, { files: 2, additions: 3, deletions: 1 });
-  assert.deepEqual(lines.slice(-5), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "    +late", "▸ 2 files changed · +3 −1"]);
+  assert.deepEqual(lines.slice(-5), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "     1 + late", "▸ 2 files changed · +3 −1"]);
   assert.deepEqual(fake.control().calls, ["start", "flush", "stop"], "flush precedes stop so tail edits still render");
 });
 
@@ -487,4 +487,21 @@ test("live diff feed skips build artifacts even without a .gitignore", async () 
   assert.match(text, /Edit\(calc\.py\)/);
   assert.doesNotMatch(text, /pycache|\.pyc|pytest_cache|node_modules/);
   assert.match(text, /1 file changed/);
+});
+
+// Spec: MUS-SPEC-01-4A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-4a--diff-cards-show-line-numbers)
+// Protected: the inline diff stays complete — every hunk row is still shown, now with its line number.
+test("diff cards number every row from the hunk header", () => {
+  const card = renderLiveDiffCard(patchEvent({
+    path: "src/run.ts",
+    diff: "@@ -9,4 +9,5 @@\n const before = 1;\n-const removed = 2;\n+const added = 2;\n+const alsoAdded = 3;\n const after = 4;",
+  }), { color: false });
+  assert.deepEqual(card.slice(2), [
+    "    @@ -9,4 +9,5 @@",
+    "     9   const before = 1;",
+    "    10 - const removed = 2;",
+    "    10 + const added = 2;",
+    "    11 + const alsoAdded = 3;",
+    "    12   const after = 4;",
+  ]);
 });
