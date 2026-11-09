@@ -41,3 +41,13 @@ MCP servers added with `muster mcp add-stdio|add-http` (stored in `config.tools.
 - **Environment:** temp profile home.
 - **Known gaps:** expired tokens are not refreshed here yet.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-03-2A — Muster's own server rides along with every chat turn
+
+- **Precondition:** the chat passes `extraMcpServers.muster` (the CLI's own `mcp serve`); the user has no server named `muster`.
+- **Action:** run a Codex turn; then run one with `tools.deny: ["mcp:muster"]`; then one where the user configured their own `muster` server.
+- **Expected result:** the first thread config contains `mcp_servers.muster`; the denied run does not; the user's own `muster` entry wins over the extra one.
+- **Test:** `packages/core/test/mcp-runtime.test.ts` › "extra servers ride along, obey deny rules, and never override the user's own"
+- **Environment:** pure resolver.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

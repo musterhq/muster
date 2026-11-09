@@ -156,3 +156,14 @@ test("oauth servers carry the saved token and unsigned ones are skipped with a r
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-03-2A (docs/spec/clauses/03-mcp-runtime.md#mus-spec-03-2a--musters-own-server-rides-along-with-every-chat-turn)
+test("extra servers ride along, obey deny rules, and never override the user's own", async () => {
+  const self = { muster: { transport: { kind: "stdio", command: "node", args: ["cli.js", "mcp", "serve"], cwd: "/w" } } } as const;
+  const plainRun = await resolveRuntimeMcpServers(withServers({ notes: NOTES }), tmpdir(), self);
+  assert.deepEqual(Object.keys(plainRun.servers).sort(), ["muster", "notes"]);
+  const denied = await resolveRuntimeMcpServers(withServers({ notes: NOTES }, { deny: ["mcp:muster"] }), tmpdir(), self);
+  assert.deepEqual(Object.keys(denied.servers), ["notes"]);
+  const own = await resolveRuntimeMcpServers(withServers({ muster: DOCS }), tmpdir(), self);
+  assert.equal(own.servers.muster?.transport.kind, "http", "the user's own entry wins");
+});

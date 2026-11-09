@@ -1,3 +1,4 @@
+import type { McpServerConfig } from "./mcp.js";
 import { withConfigHooks } from "./config-hooks.js";
 import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
 import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
@@ -247,6 +248,8 @@ export interface RunOptions {
    * gateway) that Codex turns should use instead of the default provider.
    */
   readonly codexModelProvider?: string;
+  /** MCP servers the host adds to this run (e.g. Muster's own `mcp serve`), subject to the same deny rules. */
+  readonly extraMcpServers?: Readonly<Record<string, McpServerConfig>>;
   /** How much the turn may do without asking; unset keeps the caller's sandbox and never asks. */
   readonly accessMode?: AccessMode;
   /** Answers provider approval requests (ask mode). Without it every request is declined. */
@@ -555,7 +558,7 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
     ? (reuse ? stored.handle : (options.sessionId ?? randomUUID()))
     : options.sessionId;
   // Muster's MCP servers ride along in a private config file for this turn only.
-  const mcp = config ? await resolveRuntimeMcpServers(config, stateCwd) : undefined;
+  const mcp = config ? await resolveRuntimeMcpServers(config, stateCwd, options.extraMcpServers) : undefined;
   const mcpFile = mcp && Object.keys(mcp.servers).length ? await writeClaudeMcpConfig(mcp.servers) : undefined;
   let claudeResult: Awaited<ReturnType<typeof runClaudeCode>>;
   try {
@@ -676,7 +679,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
     ];
     const policyGate = Boolean(options.hooks && options.hooks.count("tool.before") > 0) && options.accessMode !== "read-only";
     const codexMcpThreadConfig = config
-      ? codexThreadMcpConfig((await resolveRuntimeMcpServers(config, stateCwd)).servers)
+      ? codexThreadMcpConfig((await resolveRuntimeMcpServers(config, stateCwd, options.extraMcpServers)).servers)
       : {};
     const nativeTransport = normalizeNativeTransport(options.nativeTransport ?? process.env.MUSTER_NATIVE_TRANSPORT ?? process.env.MUSTER_CODEX_TRANSPORT);
     const useAppServer = useNativeSession

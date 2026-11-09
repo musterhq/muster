@@ -244,6 +244,7 @@ import {
   interruptActiveCodexTurn,
   queryCodexAppServer,
   steerActiveCodexTurn,
+  type MusterConfig as ChatMusterConfig,
   undoWorkspacePatches,
   type WorkspacePatchEvent,
   ACCESS_MODES,
@@ -2933,6 +2934,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   try {
     outcome = await executeRun(config, {
       ...(gateway?.provider ? { codexModelProvider: gateway.provider } : {}),
+      extraMcpServers: chatSelfMcpServers(loadedConfig, workspaceCwd),
       ...(state.accessMode ? { accessMode: state.accessMode } : {}),
       // Ask mode: provider approval requests become cards in the transcript.
       onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
@@ -5083,6 +5085,19 @@ async function chatAgentOptions(): Promise<string[]> {
   const namedAgents = config.agents?.list?.map((agent) => agent.id) ?? [];
   const runtimeAgents = Object.keys(config.runtimes);
   return [...new Set([...runtimeAgents, ...namedAgents])];
+}
+
+/**
+ * Muster's own MCP server (memory, sessions, schedules) for this turn: the
+ * same CLI that is running, started as `mcp serve` in the chat's workspace.
+ * Off with `tools.mcp.serveSelf: false`, or deny `mcp:muster`.
+ */
+function chatSelfMcpServers(config: ChatMusterConfig, cwd: string): Record<string, McpServerConfig> {
+  if (config.tools?.mcp?.serveSelf === false) return {};
+  const entry = process.argv[1];
+  if (!entry) return {};
+  const runtimeArgs = process.execArgv.filter((arg) => !arg.startsWith("--inspect"));
+  return { muster: { transport: { kind: "stdio", command: process.execPath, args: [...runtimeArgs, entry, "mcp", "serve"], cwd } } };
 }
 
 async function undoLastChatTurn(state: ChatState): Promise<void> {

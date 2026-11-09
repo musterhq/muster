@@ -26,10 +26,17 @@ function denied(config: MusterConfig, name: string): boolean {
 }
 
 /** The servers a turn may use: policy-filtered, OAuth tokens attached, unsigned servers skipped. */
-export async function resolveRuntimeMcpServers(config: MusterConfig, cwd = process.cwd()): Promise<RuntimeMcpServers> {
+export async function resolveRuntimeMcpServers(
+  config: MusterConfig,
+  cwd = process.cwd(),
+  /** Servers the host adds for this run (Muster's own `mcp serve`); the user's same-named entry wins. */
+  extra: Readonly<Record<string, McpServerConfig>> = {},
+): Promise<RuntimeMcpServers> {
   const servers: Record<string, McpServerConfig> = {};
   const skipped: { name: string; reason: string }[] = [];
-  for (const [name, server] of Object.entries(config.tools?.mcp?.servers ?? {})) {
+  const configured = config.tools?.mcp?.servers ?? {};
+  const merged: Record<string, McpServerConfig> = { ...extra, ...configured };
+  for (const [name, server] of Object.entries(merged)) {
     if (!SERVER_NAME.test(name)) {
       skipped.push({ name, reason: "server name must be letters, digits, - or _" });
       continue;
