@@ -592,7 +592,11 @@ function toggleCurrent(state: OnboardingState): void {
 function preselectCurrentStep(state: OnboardingState): void {
   const step = currentStep(state);
   if (!step.choices.length) return;
-  for (const choice of step.choices) state.selected[step.id].add(choice.id);
+  for (const choice of step.choices) {
+    // Exclusive memory write policy: pre-select the consent-first one only.
+    if (step.id === "memory" && MEMORY_POLICY_IDS.has(choice.id) && choice.id !== "ask") continue;
+    state.selected[step.id].add(choice.id);
+  }
 }
 
 function next(state: OnboardingState): void {
