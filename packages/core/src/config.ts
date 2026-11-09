@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { execFile } from "node:child_process";
+import { dirname, isAbsolute, join } from "node:path";
 import { profileConfigPath, profileConfigWritePath } from "./profiles.js";
 import { findProviderPreset, presetToProviderConfig } from "./providers-catalog.js";
 import type { MusterConfig, ProviderConfig, TaskKind } from "./types.js";
@@ -59,6 +60,7 @@ export async function ensureDefaultConfig(cwd = process.cwd()): Promise<string> 
   const target = configPath(cwd);
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   await chmod(dirname(target), 0o700).catch(() => undefined);
+  await excludeMusterDirFromGit(cwd).catch(() => undefined);
   try {
     await readFile(target, "utf8");
     return target;
@@ -287,4 +289,21 @@ export async function addPresetProvider(
   const config = await loadConfig(cwd);
   await saveConfig({ ...config, providers: { ...config.providers, [providerConfig.id]: providerConfig } }, cwd);
   return providerConfig;
+}
+
+/**
+ * Muster's state is not the user's work: in a git repository, list `.muster/`
+ * in the repo-local `.git/info/exclude` (never the shared `.gitignore`), once.
+ */
+export async function excludeMusterDirFromGit(cwd = process.cwd()): Promise<void> {
+  const gitDir = await new Promise<string | undefined>((resolve) => {
+    execFile("git", ["rev-parse", "--git-common-dir"], { cwd, timeout: 2_000 }, (error, stdout) => resolve(error ? undefined : stdout.trim() || undefined));
+  });
+  if (!gitDir) return;
+  const excludePath = join(isAbsolute(gitDir) ? gitDir : join(cwd, gitDir), "info", "exclude");
+  const current = await readFile(excludePath, "utf8").catch(() => "");
+  if (current.split(/\r?\n/).some((line) => line.trim() === ".muster/" || line.trim() === ".muster")) return;
+  await mkdir(dirname(excludePath), { recursive: true });
+  const prefix = current && !current.endsWith("\n") ? "\n" : "";
+  await writeFile(excludePath, `${current}${prefix}# Muster workspace state\n.muster/\n`, "utf8");
 }
