@@ -85,6 +85,10 @@ rl.on("line", (line) => {
     const fallback = (await execFileAsync("tsx", [cliPath, "chat", "/model"], { cwd, env, timeout: 60_000 })).stdout;
     assert.doesNotMatch(fallback, /gpt-7-test/);
     assert.match(fallback, /codex\s+\S/, "a fallback list is still shown");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 // Spec: MUS-SPEC-02-2A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2a--the-slash-menu-shows-each-settings-current-value-and-never-cuts-a-hint-mid-word)
 test("the slash menu shows current values and whole argument hints", { timeout: 120_000 }, async () => {
