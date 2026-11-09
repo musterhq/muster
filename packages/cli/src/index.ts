@@ -238,6 +238,9 @@ import {
   interruptActiveCodexTurn,
   queryCodexAppServer,
   steerActiveCodexTurn,
+  ACCESS_MODES,
+  isAccessMode,
+  type AccessMode,
   createMusterMcpServer,
   serveMcpOverStdio,
   discoverCodexSessions,
@@ -1279,6 +1282,8 @@ interface ChatState {
   activeProvider?: ModelProvider;
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
+  /** How much turns may do without asking (`/access`); unset means auto-edit. */
+  accessMode?: AccessMode;
   /** Window occupancy on the latest model call (status bar `ctx N%`). */
   lastContext?: { readonly usedTokens: number; readonly windowTokens: number };
   /** Wall clock the session started at; the status row's idle elapsed. */
@@ -1387,6 +1392,7 @@ async function chat(commandArgs: string[]): Promise<void> {
     runtime: readFlag(commandArgs, "--runtime"),
     provider: readFlag(commandArgs, "--provider"),
     model: readFlag(commandArgs, "--model"),
+    accessMode: parseChatAccessMode(readFlag(commandArgs, "--access")),
     speedMode: commandArgs.includes("--fast") ? "fast" : "session",
     scopes: readFlags(commandArgs, "--scope").map(parseMemoryScope),
     recallLimit: readNumberFlag(commandArgs, "--recall-limit"),
@@ -1397,7 +1403,7 @@ async function chat(commandArgs: string[]): Promise<void> {
     resumeThreadId: readFlag(commandArgs, "--codex-thread"),
     importedFromCodex: Boolean(readFlag(commandArgs, "--codex-thread")),
   };
-  const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff", "--describe"].includes(arg)).join(" ").trim();
+  const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread", "--access"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff", "--describe"].includes(arg)).join(" ").trim();
   if (commandArgs.includes("--list") || commandArgs.includes("--sessions")) {
     printChatSessions(readNumberFlag(commandArgs, "--limit") ?? 15, commandArgs.includes("--all"));
     return;
@@ -1854,6 +1860,7 @@ async function chatStatusBar(state: ChatState, width: number): Promise<string> {
     cwd,
     git: await readGitStatus(cwd),
     ...(state.lastContext ? { context: state.lastContext } : {}),
+    ...(state.accessMode ? { access: state.accessMode } : {}),
     ...(state.usage ? { sessionTokens: state.usage.inputTokens + state.usage.outputTokens, sessionCostUsd: state.usage.costUsd } : {}),
   }, width);
 }
@@ -2213,6 +2220,9 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       return true;
     case "live-diff":
       toggleChatLiveDiff(args, state);
+      return true;
+    case "access":
+      setChatAccessMode(args, state);
       return true;
     case "diff":
       if (state.statusSink) state.statusSink.toggleLiveDiff();
@@ -2903,6 +2913,9 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   try {
     outcome = await executeRun(config, {
       ...(gateway?.provider ? { codexModelProvider: gateway.provider } : {}),
+      ...(state.accessMode ? { accessMode: state.accessMode } : {}),
+      // Ask mode: provider approval requests become cards in the transcript.
+      onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
       onToolEvent: painter ? (event) => painter.tool(event) : undefined,
@@ -5046,6 +5059,34 @@ async function chatAgentOptions(): Promise<string[]> {
   return [...new Set([...runtimeAgents, ...namedAgents])];
 }
 
+function parseChatAccessMode(value: string | undefined): AccessMode | undefined {
+  if (value === undefined) return undefined;
+  if (isAccessMode(value)) return value;
+  throw new Error(`Unknown access mode "${value}". Use one of: ${ACCESS_MODES.join(", ")}.`);
+}
+
+const ACCESS_MODE_HELP: Record<AccessMode, string> = {
+  "read-only": "reads and searches only; no edits, no commands that change anything",
+  ask: "asks before commands and edits (y once · a this session · n deny)",
+  "auto-edit": "edits and runs commands inside the workspace without asking",
+  full: "no sandbox and never asks",
+};
+
+function setChatAccessMode(args: string, state: ChatState): void {
+  const value = args.trim();
+  if (!value) {
+    const current = state.accessMode ?? "auto-edit";
+    printChatPanel("Access", ACCESS_MODES.map((mode) => `${mode === current ? "●" : "○"} ${mode.padEnd(10)} ${ACCESS_MODE_HELP[mode]}`));
+    return;
+  }
+  if (!isAccessMode(value)) {
+    console.log(color(`Unknown access mode "${value}". Use one of: ${ACCESS_MODES.join(", ")}.`, "yellow"));
+    return;
+  }
+  state.accessMode = value;
+  console.log(color(`access=${value} · ${ACCESS_MODE_HELP[value]}`, "green"));
+}
+
 /** The menu's label column: the command plus whole argument hints that fit, never a half-cut `[a|b|c`. */
 function shortCommandUsage(usage: string, max = 28): string {
   if (usage.length <= max) return usage;
@@ -5073,6 +5114,7 @@ async function chatCommandCurrentValues(state: ChatState): Promise<Record<string
   return {
     ...(model ? { model: claude ? model : `${model} · ${effort}` } : {}),
     "live-diff": liveDiffEnabled(state) ? "on" : "off",
+    access: state.accessMode ?? "auto-edit",
     reasoning: `${claude ? "extended thinking" : effort} · summaries ${state.reasoningMode === "full" ? "full" : "brief"}`,
     speed: state.speedMode ?? "fast",
     runtime: runtimeId,

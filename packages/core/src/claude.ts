@@ -29,6 +29,8 @@ export interface ClaudeCodeRunInput {
   readonly resume?: boolean;
   /** Path to a Claude Code MCP config JSON (`--mcp-config`), e.g. the host's browser tools. */
   readonly mcpConfig?: string;
+  /** Claude Code `--permission-mode` (plan, default, acceptEdits, bypassPermissions). */
+  readonly permissionMode?: string;
   /**
    * Live listeners. When either is set the turn runs with
    * `--output-format stream-json`, so text streams, tool calls become events
@@ -120,6 +122,7 @@ export function buildClaudeCodeArgs(input: ClaudeCodeRunInput, options: { readon
   else args.push("--no-session-persistence");
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);
+  if (input.permissionMode) args.push("--permission-mode", input.permissionMode);
   if (input.allowedTools?.length) args.push("--allowedTools", input.allowedTools.join(","));
   for (const pluginDir of input.pluginDirs ?? []) args.push("--plugin-dir", pluginDir);
   if (input.mcpConfig) args.push("--mcp-config", input.mcpConfig);

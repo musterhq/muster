@@ -24,6 +24,7 @@ export const CHAT_COMMANDS: readonly ChatCommandDef[] = [
   { name: "model", usage: "/model [name]", description: "choose the model, effort, and speed" },
   { name: "runtime", usage: "/runtime [id]", description: "choose which local AI app runs turns" },
   { name: "speed", usage: "/speed [session|fast]", description: "choose full context or faster replies" },
+  { name: "access", usage: "/access [read-only|ask|auto-edit|full]", description: "how much the agent may do without asking", aliases: ["permissions", "approvals"] },
   { name: "live-diff", usage: "/live-diff [on|off]", description: "show file changes while they happen", aliases: ["livediff", "diffs"] },
   { name: "diff", usage: "/diff", description: "open or close this turn's file changes" },
   { name: "tasks", usage: "/tasks [board | \"<goal>\" | why <taskId> | assign <taskId> <cardId>]", description: "open your task board or plan work across agents", bareBehavior: "picker", pickerInvocations: ["why", "assign"] },

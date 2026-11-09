@@ -1,3 +1,4 @@
+import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
 import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
 import type { AgentToolEvent } from "./tool-events.js";
 import { execFile } from "node:child_process";
@@ -245,6 +246,10 @@ export interface RunOptions {
    * gateway) that Codex turns should use instead of the default provider.
    */
   readonly codexModelProvider?: string;
+  /** How much the turn may do without asking; unset keeps the caller's sandbox and never asks. */
+  readonly accessMode?: AccessMode;
+  /** Answers provider approval requests (ask mode). Without it every request is declined. */
+  readonly onApprovalRequest?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
 }
 
 export interface RunOutcome {
@@ -564,6 +569,7 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
       ...(mcpFile ? { mcpConfig: mcpFile.path } : {}),
       ...(options.onDelta ? { onDelta: options.onDelta } : {}),
       ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
+      ...(claudePermissionModeForAccess(options.accessMode) ? { permissionMode: claudePermissionModeForAccess(options.accessMode) } : {}),
     });
   } finally {
     await mcpFile?.dispose().catch(() => {});
@@ -680,7 +686,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           reasoning: route.reasoning,
           developerInstructions: prompts.stableSystem || undefined,
           applicationContext: prompts.applicationContext,
-          sandbox: options.nativeSandbox,
+          sandbox: codexSandboxForAccess(options.accessMode, options.nativeSandbox),
           networkAccess: options.nativeNetworkAccess ?? true,
           configOverrides,
           env: codexEnv,
@@ -694,6 +700,17 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           onReasoningDelta: options.onReasoningDelta,
           ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
           ...(Object.keys(codexMcpThreadConfig).length ? { threadConfig: codexMcpThreadConfig } : {}),
+          ...(options.accessMode === "ask" ? { approvalPolicy: "untrusted" as const } : {}),
+          ...(options.accessMode === "ask" || options.onApprovalRequest
+            ? {
+                onRequest: async (method: string, params: Record<string, unknown>) => {
+                  const request = codexApprovalRequest(method, params);
+                  if (!request) return undefined;
+                  const decision = options.onApprovalRequest ? await options.onApprovalRequest(request).catch(() => "decline" as const) : "decline";
+                  return { decision };
+                },
+              }
+            : {}),
           command: leanCommand,
         })
       : await runCodex({
@@ -702,7 +719,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           model: route.model,
           reasoning: route.reasoning,
           instructionsFile,
-          sandbox: options.nativeSandbox,
+          sandbox: codexSandboxForAccess(options.accessMode, options.nativeSandbox),
           networkAccess: options.nativeNetworkAccess ?? true,
           configOverrides,
           sessionId: reuse ? stored.handle : options.sessionId,
@@ -724,7 +741,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           model: route.model,
           reasoning: route.reasoning,
           instructionsFile,
-          sandbox: options.nativeSandbox,
+          sandbox: codexSandboxForAccess(options.accessMode, options.nativeSandbox),
           networkAccess: options.nativeNetworkAccess ?? true,
           configOverrides,
           sessionId: reuse ? stored.handle : options.sessionId,
@@ -823,7 +840,7 @@ async function attemptRoute(
       sessionDir: options.sessionDir,
       timeoutMs: options.timeoutMs,
       onDelta: options.onDelta,
-      tools: piToolsForSandbox(options.nativeSandbox),
+      tools: piToolsForSandbox(codexSandboxForAccess(options.accessMode, options.nativeSandbox)),
       ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
     });
     return {
