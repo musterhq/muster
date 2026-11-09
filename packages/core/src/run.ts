@@ -1,3 +1,4 @@
+import { withConfigHooks } from "./config-hooks.js";
 import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
 import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
 import type { AgentToolEvent } from "./tool-events.js";
@@ -250,6 +251,8 @@ export interface RunOptions {
   readonly accessMode?: AccessMode;
   /** Answers provider approval requests (ask mode). Without it every request is declined. */
   readonly onApprovalRequest?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+  /** A policy hook declined a tool request (the provider is told no; the user sees why). */
+  readonly onPolicyBlock?: (request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }) => void;
 }
 
 export interface RunOutcome {
@@ -671,6 +674,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
         ? ["sandbox_workspace_write.exclude_tmpdir_env_var=true", "sandbox_workspace_write.exclude_slash_tmp=true"]
         : []),
     ];
+    const policyGate = Boolean(options.hooks && options.hooks.count("tool.before") > 0) && options.accessMode !== "read-only";
     const codexMcpThreadConfig = config
       ? codexThreadMcpConfig((await resolveRuntimeMcpServers(config, stateCwd)).servers)
       : {};
@@ -700,12 +704,22 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           onReasoningDelta: options.onReasoningDelta,
           ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
           ...(Object.keys(codexMcpThreadConfig).length ? { threadConfig: codexMcpThreadConfig } : {}),
-          ...(options.accessMode === "ask" ? { approvalPolicy: "untrusted" as const } : {}),
-          ...(options.accessMode === "ask" || options.onApprovalRequest
+          // Approvals are on in ask mode, and whenever a tool.before policy
+          // hook exists: the hook answers every request, the user only in ask.
+          ...(options.accessMode === "ask" || policyGate ? { approvalPolicy: "untrusted" as const } : {}),
+          ...(options.accessMode === "ask" || options.onApprovalRequest || policyGate
             ? {
                 onRequest: async (method: string, params: Record<string, unknown>) => {
                   const request = codexApprovalRequest(method, params);
                   if (!request) return undefined;
+                  if (policyGate) {
+                    const verdict = await options.hooks!.emit("tool.before", { event: "tool.before", kind: request.kind, title: request.title, ...(request.cwd ? { cwd: request.cwd } : {}), ...(request.reason ? { reason: request.reason } : {}) });
+                    if (verdict.action === "block") {
+                      try { options.onPolicyBlock?.(request, { ...(verdict.blockedBy ? { hookId: verdict.blockedBy } : {}), ...(verdict.reason ? { reason: verdict.reason } : {}) }); } catch { /* display only */ }
+                      return { decision: "decline" };
+                    }
+                    if (options.accessMode !== "ask") return { decision: "accept" };
+                  }
                   const decision = options.onApprovalRequest ? await options.onApprovalRequest(request).catch(() => "decline" as const) : "decline";
                   return { decision };
                 },
@@ -919,9 +933,30 @@ async function attemptRoute(
   }
 }
 
-export async function executeRun(config: MusterConfig, options: RunOptions): Promise<RunOutcome> {
+export async function executeRun(config: MusterConfig, initialOptions: RunOptions): Promise<RunOutcome> {
   const runStartedAt = Date.now();
-  const cwd = options.cwd ?? process.cwd();
+  const cwd = initialOptions.cwd ?? process.cwd();
+  // Config policy hooks layer over the in-process bus for this run only.
+  const runHooks = withConfigHooks(initialOptions.hooks ?? defaultHookBus, config.hooks, cwd);
+  const started = await runHooks.emit("turn.start", { event: "turn.start", prompt: initialOptions.prompt });
+  if (started.action === "block") {
+    throw new Error(`Run blocked by hook ${started.blockedBy ?? "unknown"}: ${started.reason ?? "blocked"}`);
+  }
+  const startedPrompt = (started.payload as { prompt?: unknown }).prompt;
+  const onToolEvent = initialOptions.onToolEvent;
+  const options: RunOptions = {
+    ...initialOptions,
+    hooks: runHooks,
+    ...(typeof startedPrompt === "string" ? { prompt: startedPrompt } : {}),
+    ...(runHooks.count("tool.after") || onToolEvent
+      ? {
+          onToolEvent: (event) => {
+            onToolEvent?.(event);
+            if (event.phase === "end" && runHooks.count("tool.after")) void runHooks.emit("tool.after", { event: "tool.after", ...event }).catch(() => {});
+          },
+        }
+      : {}),
+  };
   const planningStartedAt = Date.now();
   const plan = options.runtime === "pi" || options.runtime === "claude-code" || options.runtime === "claude" || options.runtime === "codex"
     ? planForManagedRuntime(config, options.runtime === "pi" ? "pi" : options.runtime === "codex" ? "codex" : "claude-code", options)
@@ -1323,5 +1358,8 @@ export async function executeRun(config: MusterConfig, options: RunOptions): Pro
     persistMs,
   };
 
+  if (options.hooks?.count("turn.end")) {
+    await options.hooks.emit("turn.end", { event: "turn.end", prompt: options.prompt, responseText: episode.responseText }).catch(() => undefined);
+  }
   return { plan, episode, tokens, recalled, recallReceipt, timings, fallbackUsed, piResult: attempt.piResult, codexThreadId: attempt.codexThreadId, ...(attempt.context ? { context: attempt.context } : {}) };
 }

@@ -59,3 +59,15 @@ test("/access shows the current mode", { timeout: 120_000 }, async () => {
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-10-1C (docs/spec/clauses/10-access-approvals.md#mus-spec-10-1c--the-approval-card-in-chat)
+test("approval and policy cards keep a multi-line command on one title row", async () => {
+  const { renderApprovalCard, renderPolicyBlockCard, stripCardMark } = await import("../src/chat-tui.js");
+  const request = { id: "m", kind: "command" as const, title: "/bin/zsh -lc 'rm -rf build\nls'" };
+  for (const rows of [renderApprovalCard(request), renderPolicyBlockCard(request, { hookId: "no-rm-rf", reason: "destructive deletes need a human" })]) {
+    const text = rows.map((row) => stripCardMark(row).replace(/\x1b\[[0-9;]*m/g, ""));
+    assert.ok(text.every((row) => !row.includes("\n")));
+    assert.ok(text.some((row) => /rm -rf build …/.test(row)), text.join("|"));
+    assert.ok(!text.some((row) => row.trim() === "ls" || row.trim() === "ls'?"), "the second command is not a stray row");
+  }
+});

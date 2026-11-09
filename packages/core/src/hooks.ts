@@ -9,6 +9,7 @@
 export type HookName =
   | "prompt.build"
   | "turn.start"
+  | "turn.end"
   | "tool.before"
   | "tool.after"
   | "outbound.before"
