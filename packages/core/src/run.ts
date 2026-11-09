@@ -127,7 +127,7 @@ async function leanCodexCommand(): Promise<string | undefined> {
 }
 import { applySkillEnvForRun, exportClaudeSkillSnapshot, recordSkillUse, resolveAgentSkillAllowlist, selectSkills } from "./skills.js";
 import { addMemory, searchMemoryWithReceipts, type SearchMemoryReceiptResult } from "./memory.js";
-import { runPiEmbeddedAgent, type PiAgentRunResult, type PiSessionMode } from "./pi.js";
+import { piToolsForSandbox, runPiEmbeddedAgent, type PiAgentRunResult, type PiSessionMode } from "./pi.js";
 import { completeChat, ProviderCompletionError } from "./provider.js";
 import { classifyTask, planRun } from "./router.js";
 import { appendEpisode } from "./store.js";
@@ -806,6 +806,8 @@ async function attemptRoute(
       sessionDir: options.sessionDir,
       timeoutMs: options.timeoutMs,
       onDelta: options.onDelta,
+      tools: piToolsForSandbox(options.nativeSandbox),
+      ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
     });
     return {
       responseText: piResult.stdout.trim(),

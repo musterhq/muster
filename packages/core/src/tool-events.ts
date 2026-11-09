@@ -86,3 +86,53 @@ export function codexItemToToolEvent(item: Record<string, unknown>, phase: "star
       return undefined;
   }
 }
+
+function piResultText(result: unknown): string | undefined {
+  if (typeof result === "string") return text(result);
+  if (!result || typeof result !== "object") return undefined;
+  const content = (result as { content?: unknown }).content;
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((block) => (block && typeof block === "object" ? text((block as { text?: unknown }).text) : undefined))
+      .filter((part): part is string => Boolean(part));
+    if (parts.length) return parts.join("\n");
+  }
+  return text((result as { message?: unknown }).message);
+}
+
+/** `write hello.txt`, `edit src/a.ts`, `grep TODO`: the tool and its main target. */
+function piToolTitle(toolName: string, args: Record<string, unknown>): string {
+  const target = text(args.path) ?? text(args.file_path) ?? text(args.pattern) ?? text(args.query) ?? text(args.url);
+  return target ? `${toolName} ${target}` : toolName;
+}
+
+/**
+ * Map pi AgentSession `tool_execution_start` / `tool_execution_end` to tool
+ * events. `args` for an end event are the ones recorded at its start (pi only
+ * sends them once). bash is a command; everything else is a generic tool.
+ */
+export function piToolEventToAgentToolEvent(
+  event: { readonly type: string; readonly toolCallId?: string; readonly toolName?: string; readonly args?: unknown; readonly result?: unknown; readonly isError?: boolean },
+  argsAtStart?: Record<string, unknown>,
+): AgentToolEvent | undefined {
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_end") return undefined;
+  const id = event.toolCallId ?? "";
+  const toolName = event.toolName ?? "tool";
+  const args = (argsAtStart ?? (event.args && typeof event.args === "object" ? event.args : {})) as Record<string, unknown>;
+  const isCommand = toolName === "bash";
+  const kind: AgentToolKind = isCommand ? "command" : "tool";
+  const title = isCommand ? (commandText(args.command) ?? "bash") : piToolTitle(toolName, args);
+  if (event.type === "tool_execution_start") return { phase: "start", id, kind, title };
+  const output = piResultText(event.result);
+  const failed = event.isError === true;
+  const exitCode = isCommand ? (failed ? Number(output?.match(/exited with code (\d+)/)?.[1] ?? 1) : 0) : undefined;
+  return {
+    phase: "end",
+    id,
+    kind,
+    title,
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(output ? { output } : {}),
+    failed,
+  };
+}

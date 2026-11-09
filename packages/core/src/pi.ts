@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
+import { piToolEventToAgentToolEvent, type AgentToolEvent } from "./tool-events.js";
+
 const execFileAsync = promisify(execFile);
 
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -24,6 +26,11 @@ const REQUIRED_SDK_EXPORTS = [
 ] as const;
 
 const DEFAULT_PI_ACTIVE_TOOLS = ["read", "grep", "find", "ls"] as const;
+
+/** pi's tools for a sandbox: read-only gets the read set; a writable workspace also edits, writes and runs commands. */
+export function piToolsForSandbox(sandbox?: "read-only" | "workspace-write" | "danger-full-access"): string[] {
+  return sandbox === "read-only" ? [...DEFAULT_PI_ACTIVE_TOOLS] : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+}
 
 export interface PiRuntimeStatus {
   readonly rootPath: string;
@@ -51,6 +58,8 @@ export interface PiAgentRunInput {
   readonly tools?: readonly string[];
   readonly timeoutMs?: number;
   readonly transport?: "sdk" | "cli";
+  /** Tool activity (bash commands, file tools) as provider-neutral events. */
+  readonly onToolEvent?: (event: AgentToolEvent) => void;
   readonly sessionMode?: PiSessionMode;
   readonly sessionDir?: string;
   readonly agentDir?: string;
@@ -296,7 +305,7 @@ export async function runPiInteractive(input: PiInteractiveRunInput = {}): Promi
 
 export async function listPiModels(input: PiModelListInput = {}): Promise<PiModelInfo[]> {
   const pi = await import("@earendil-works/pi-coding-agent");
-  const agentDir = input.agentDir ?? join(homedir(), ".pi", "agent");
+  const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));
   const { modelRegistry } = createPiModelRegistry(pi, agentDir);
   const sourceModels = input.availableOnly ? modelRegistry.getAvailable() : modelRegistry.getAll();
   return sourceModels
@@ -328,7 +337,7 @@ export async function listPiModels(input: PiModelListInput = {}): Promise<PiMode
 export async function inspectPiTools(input: PiToolInspectInput = {}): Promise<PiToolRegistryStatus> {
   const pi = await import("@earendil-works/pi-coding-agent");
   const cwd = input.cwd ?? process.cwd();
-  const agentDir = input.agentDir ?? join(homedir(), ".pi", "agent");
+  const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));
   const settingsManager = pi.SettingsManager.create(cwd, agentDir);
   const sessionManager = pi.SessionManager.inMemory(cwd);
   const resourceLoader = new pi.DefaultResourceLoader({
@@ -393,7 +402,7 @@ export async function inspectPiTools(input: PiToolInspectInput = {}): Promise<Pi
 export async function inspectPiCommands(input: PiCommandInspectInput = {}): Promise<PiCommandCatalogStatus> {
   const pi = await import("@earendil-works/pi-coding-agent");
   const cwd = input.cwd ?? process.cwd();
-  const agentDir = input.agentDir ?? join(homedir(), ".pi", "agent");
+  const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));
   const settingsManager = pi.SettingsManager.create(cwd, agentDir);
   const sessionManager = pi.SessionManager.inMemory(cwd);
   const resourceLoader = new pi.DefaultResourceLoader({
@@ -441,7 +450,7 @@ export async function runPiEmbeddedAgent(input: PiAgentRunInput): Promise<PiAgen
   try {
     const pi = await import("@earendil-works/pi-coding-agent");
     const cwd = input.cwd ?? process.cwd();
-    const agentDir = input.agentDir ?? join(homedir(), ".pi", "agent");
+    const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));
     const settingsManager = pi.SettingsManager.create(cwd, agentDir);
     const { authStorage, modelRegistry } = createPiModelRegistry(pi, agentDir);
     const selectedModel = resolvePiModel(modelRegistry, input.provider, input.model);
@@ -484,10 +493,19 @@ export async function runPiEmbeddedAgent(input: PiAgentRunInput): Promise<PiAgen
       })
     });
     let emittedAssistantChars = 0;
+    const toolArgs = new Map<string, Record<string, unknown>>();
     const unsubscribe = session.subscribe((event) => {
       eventTypes.push(event.type);
       eventCounts[event.type] = (eventCounts[event.type] ?? 0) + 1;
       eventTrace.push(normalizePiEvent(event, ++traceIndex));
+      if (input.onToolEvent && (event.type === "tool_execution_start" || event.type === "tool_execution_end")) {
+        if (event.type === "tool_execution_start" && event.args && typeof event.args === "object") toolArgs.set(event.toolCallId, event.args as Record<string, unknown>);
+        const mapped = piToolEventToAgentToolEvent(event, toolArgs.get(event.toolCallId));
+        if (event.type === "tool_execution_end") toolArgs.delete(event.toolCallId);
+        if (mapped) {
+          try { input.onToolEvent(mapped); } catch { /* a surface bug never fails the turn */ }
+        }
+      }
       if (input.onDelta && (event.type === "message_update" || event.type === "message_end")) {
         const text = extractAssistantTextFromEvent(event);
         if (text !== undefined) {
