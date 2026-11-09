@@ -1395,7 +1395,7 @@ async function chat(commandArgs: string[]): Promise<void> {
     resumeThreadId: readFlag(commandArgs, "--codex-thread"),
     importedFromCodex: Boolean(readFlag(commandArgs, "--codex-thread")),
   };
-  const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff"].includes(arg)).join(" ").trim();
+  const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff", "--describe"].includes(arg)).join(" ").trim();
   if (commandArgs.includes("--list") || commandArgs.includes("--sessions")) {
     printChatSessions(readNumberFlag(commandArgs, "--limit") ?? 15, commandArgs.includes("--all"));
     return;
@@ -1428,6 +1428,12 @@ async function chat(commandArgs: string[]): Promise<void> {
   const completeIndex = commandArgs.indexOf("--complete");
   if (completeIndex >= 0) {
     const fragment = commandArgs[completeIndex + 1] ?? "";
+    if (commandArgs.includes("--describe")) {
+      // value<TAB>label<TAB>description: the shape zsh/fish completion consumes.
+      const items = await chatTuiCompletionItems(fragment, state);
+      console.log(items.map((item) => [item.value, stripAnsi(item.label), stripAnsi(item.description ?? "")].join("\t")).join("\n"));
+      return;
+    }
     console.log((await chatTuiCompletions(fragment, state)).join("\n"));
     return;
   }
@@ -2545,11 +2551,15 @@ function chatCompletions(line: string): string[] {
 }
 
 async function chatTuiCompletions(line: string, state: ChatState): Promise<string[]> {
+  return (await chatTuiCompletionItems(line, state)).map((item) => item.value);
+}
+
+async function chatTuiCompletionItems(line: string, state: ChatState): Promise<Array<{ value: string; label: string; description?: string }>> {
   await ensureDefaultConfig();
   await initializeChatComposerState(state);
   // `--complete` is a script surface. Keep its historical plain toolset values;
   // encoded interactive actions belong only inside the pi-tui editor.
-  if (/^\/tools(?:\s+\S*)?$/i.test(line.trimStart())) return chatCompletions(line);
+  if (/^\/tools(?:\s+\S*)?$/i.test(line.trimStart())) return chatCompletions(line).map((value) => ({ value, label: value }));
   const provider = createMusterAutocompleteProvider({
     commands: chatCommandsDailyFirst(state),
     toolsets: CHAT_TOOLSETS,
@@ -2558,7 +2568,7 @@ async function chatTuiCompletions(line: string, state: ChatState): Promise<strin
     agents: chatAgentOptions,
   });
   const suggestions = await provider.getSuggestions([line], 0, line.length, { signal: new AbortController().signal });
-  return suggestions?.items.map((item) => item.value) ?? [];
+  return suggestions?.items.map((item) => ({ value: item.value, label: item.label, ...(item.description ? { description: item.description } : {}) })) ?? [];
 }
 
 async function renderLiveSuggestions(
@@ -5015,6 +5025,40 @@ async function chatAgentOptions(): Promise<string[]> {
   return [...new Set([...runtimeAgents, ...namedAgents])];
 }
 
+/** The menu's label column: the command plus whole argument hints that fit, never a half-cut `[a|b|c`. */
+function shortCommandUsage(usage: string, max = 28): string {
+  if (usage.length <= max) return usage;
+  const tokens = usage.split(/\s+/);
+  let label = tokens[0] ?? usage;
+  for (const token of tokens.slice(1)) {
+    const next = `${label} ${token}`;
+    const balanced = (next.match(/[[<(]/g) ?? []).length === (next.match(/[\]>)]/g) ?? []).length;
+    if (next.length > max - 2 || !balanced) break;
+    label = next;
+  }
+  return label.length < usage.length && label.length + 2 <= max ? `${label} …` : label.slice(0, max);
+}
+
+/** What each setting command is set to right now, shown first in its menu row. */
+async function chatCommandCurrentValues(state: ChatState): Promise<Record<string, string>> {
+  const config = await loadConfig().catch(() => undefined);
+  const runtimeId = state.runtime ?? config?.routing.defaultRuntime ?? "native";
+  const runtime = config?.runtimes[runtimeId];
+  const providerId = state.provider ?? runtime?.provider;
+  const provider = providerId ? config?.providers[providerId] : undefined;
+  const model = state.model ?? firstRuntimeModel(runtime) ?? provider?.defaultModel;
+  const effort = effortDisplayLabel(state.effortOverride ?? state.configuredEffort ?? "medium");
+  const claude = activeChatProvider(state) === "claude";
+  return {
+    ...(model ? { model: claude ? model : `${model} · ${effort}` } : {}),
+    "live-diff": liveDiffEnabled(state) ? "on" : "off",
+    reasoning: `${claude ? "extended thinking" : effort} · summaries ${state.reasoningMode === "full" ? "full" : "brief"}`,
+    speed: state.speedMode ?? "fast",
+    runtime: runtimeId,
+    ...(providerId ? { provider: providerId } : {}),
+  };
+}
+
 function createChatCompletionCatalog(state: ChatState): MusterCompletionCatalog {
   return {
     async complete(request) {
@@ -5023,9 +5067,17 @@ function createChatCompletionCatalog(state: ChatState): MusterCompletionCatalog 
           const fragment = request.fragment.toLowerCase();
           // Daily-driver commands surface first; the long tail stays reachable
           // by typing. 47 undifferentiated rows was the reported noise.
+          const current = await chatCommandCurrentValues(state);
           return chatCommandsDailyFirst(state)
             .filter((command) => command.name.startsWith(fragment) || command.aliases?.some((alias) => alias.startsWith(fragment)))
-            .map((command) => ({ value: `/${command.name}`, label: color(command.usage, "periwinkle"), description: color(command.description, "dim") }));
+            .map((command) => {
+              const value = current[command.name];
+              return {
+                value: `/${command.name}`,
+                label: color(shortCommandUsage(command.usage), "periwinkle"),
+                description: value ? `${color(value, "accent")}${color(` · ${command.description}`, "dim")}` : color(command.description, "dim"),
+              };
+            });
         }
         case "reasoning":
           if (!request.fragment) return [];

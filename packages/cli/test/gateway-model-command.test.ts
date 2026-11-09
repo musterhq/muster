@@ -85,6 +85,25 @@ rl.on("line", (line) => {
     const fallback = (await execFileAsync("tsx", [cliPath, "chat", "/model"], { cwd, env, timeout: 60_000 })).stdout;
     assert.doesNotMatch(fallback, /gpt-7-test/);
     assert.match(fallback, /codex\s+\S/, "a fallback list is still shown");
+
+// Spec: MUS-SPEC-02-2A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2a--the-slash-menu-shows-each-settings-current-value-and-never-cuts-a-hint-mid-word)
+test("the slash menu shows current values and whole argument hints", { timeout: 120_000 }, async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-slash-"));
+  const env = { ...process.env, MUSTER_ONBOARDING_HOME: join(cwd, ".test-home"), MUSTER_SKIP_ONBOARDING: "1", NO_COLOR: "1" };
+  delete (env as Record<string, string | undefined>).FORCE_COLOR;
+  try {
+    await execFileAsync("tsx", [cliPath, "init"], { cwd, env });
+    const { stdout } = await execFileAsync("tsx", [cliPath, "chat", "--model", "gpt-6.1-terra", "--complete", "/", "--describe"], { cwd, env, timeout: 60_000 });
+    const rows = stdout.trim().split("\n").map((line) => line.split("\t"));
+    const model = rows.find(([value]) => value === "/model");
+    assert.ok(model, stdout);
+    assert.match(model[2] ?? "", /^gpt-6\.1-terra · \S+/, `model row: ${model.join(" | ")}`);
+    const liveDiff = rows.find(([value]) => value === "/live-diff");
+    assert.match(liveDiff?.[2] ?? "", /^on\b/);
+    for (const [, label] of rows) {
+      assert.ok((label ?? "").length <= 28, `label fits the column: ${label}`);
+      assert.doesNotMatch(label ?? "", /\[[^\]]*$/, `no half-open bracket: ${label}`);
+    }
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

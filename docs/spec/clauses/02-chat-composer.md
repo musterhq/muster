@@ -51,3 +51,13 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** chat harness.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-2A — The slash menu shows each setting's current value and never cuts a hint mid-word
+
+- **Precondition:** chat with model `gpt-6.1-terra`, effort High, live diff on.
+- **Action:** type `/` (scripts: `muster chat --complete "/" --describe`).
+- **Expected result:** the `/model` row's description starts with the current value (`gpt-6.1-terra · High`), `/live-diff` with `on`; the label is the command plus at most a short argument hint that ends at a word or bracket boundary (no `[auto|low|medium|hi`).
+- **Test:** `packages/cli/test/gateway-model-command.test.ts` › "the slash menu shows current values and whole argument hints"
+- **Environment:** real CLI, `--complete --describe`.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
