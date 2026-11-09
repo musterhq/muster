@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -2922,6 +2922,10 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       ...(state.accessMode ? { accessMode: state.accessMode } : {}),
       // Ask mode: provider approval requests become cards in the transcript.
       onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
+      onPolicyBlock: (request, block) => {
+        if (state.statusSink) state.statusSink.upsertBlock(`policy:${request.id}`, () => renderPolicyBlockCard(request, block));
+        else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
+      },
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
       onToolEvent: painter ? (event) => painter.tool(event) : undefined,

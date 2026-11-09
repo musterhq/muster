@@ -1152,18 +1152,33 @@ const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
   cancel: "denied · turn stopped",
 };
 
+/** A request title on one row: the first line, then `…` when more lines follow. */
+function cardTitle(request: ApprovalRequest): string {
+  const raw = request.kind === "command" ? unwrapShellCommand(request.title) : request.title;
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 1 ? `${lines[0]} …` : (lines[0] ?? raw);
+}
+
 /** The approval card: pending with its keys, or settled with the decision. */
 export function renderApprovalCard(request: ApprovalRequest, decision?: ApprovalDecision): string[] {
   const verb = request.kind === "command" ? "Run" : request.kind === "edit" ? "Allow" : "Grant";
   const approved = decision === "accept" || decision === "acceptForSession";
   const glyph = decision ? renderActionBullet(approved ? "success" : "failure") : highlight("?");
-  const title = request.kind === "command" ? unwrapShellCommand(request.title) : request.title;
-  const rows = [`${glyph} ${verb} ${title}?`];
+  const rows = [`${glyph} ${verb} ${cardTitle(request)}?`];
   if (request.reason) rows.push(`  ${dim(`${RESULT_ELBOW} ${request.reason}`)}`);
   rows.push(decision
     ? `  ${dim(APPROVAL_LABELS[decision])}`
     : `  ${highlight("y")} ${dim("once ·")} ${highlight("a")} ${dim("this session ·")} ${highlight("n")} ${dim("deny ·")} ${highlight("esc")} ${dim("stop")}`);
   return ["", ...rows.map((row) => cardRow(row, decision && !approved ? "failure" : "tool"))];
+}
+
+/** A tool request a policy hook declined: red card with the rule and its reason. */
+export function renderPolicyBlockCard(request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }): string[] {
+  const rows = [
+    `${renderActionBullet("failure")} Blocked ${cardTitle(request)}`,
+    `  ${dim(`${RESULT_ELBOW} ${block.reason ?? "blocked by policy"}${block.hookId ? ` · policy ${block.hookId}` : ""}`)}`,
+  ];
+  return ["", ...rows.map((row) => cardRow(row, "failure"))];
 }
 
 /** A key while an approval card waits → its decision, or undefined to hold the key. */
@@ -1881,7 +1896,8 @@ class MusterChatScreen implements Component, MusterChatSink {
   setFooter(line: string): void {
     if (line === this.footer) return;
     this.footer = line;
-    this.tui.requestRender();
+    // Full repaint: an incremental one after a tall turn left a stale bar row behind.
+    this.tui.requestRender(true);
   }
 
   setHeaderLines(lines: readonly string[]): void {

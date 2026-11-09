@@ -65,6 +65,8 @@ export interface RoutingPolicy {
 
 export interface MusterConfig {
   readonly version: 1;
+  /** User policy hooks by event (see config-hooks.ts). */
+  readonly hooks?: import("./config-hooks.js").HookRules;
   readonly providers: Record<string, ProviderConfig>;
   readonly runtimes: Record<string, RuntimeConfig>;
   readonly routing: RoutingPolicy;
