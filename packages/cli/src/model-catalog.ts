@@ -88,8 +88,37 @@ export function modelProvider(model: string | undefined): ModelProvider | undefi
   return undefined;
 }
 
+/** `[model_providers.<id>]` tables in the Codex config: gateways Codex can run turns on. */
+export async function readCodexModelProviders(path = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "config.toml")): Promise<string[]> {
+  const text = await readFile(path, "utf8").catch(() => "");
+  const ids = new Set<string>();
+  for (const match of text.matchAll(/^\s*\[model_providers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\]\s*$/gm)) {
+    ids.add(match[1] ?? match[2] ?? match[3]!);
+  }
+  return [...ids];
+}
+
+export interface GatewayModelChoice {
+  /** Codex model provider id, when the model names one (`hybrow:auto/gpt`). */
+  readonly provider?: string;
+  readonly model: string;
+}
+
+/**
+ * `hybrow:auto/gpt` → provider `hybrow`, model `auto/gpt` when `hybrow` is a
+ * configured Codex provider. Ids that merely contain a colon (`llama3.1:8b`)
+ * pass through unchanged.
+ */
+export function splitGatewayModel(model: string, providers: readonly string[]): GatewayModelChoice {
+  const match = model.match(/^([A-Za-z0-9_-]+):(.+)$/);
+  if (match && providers.includes(match[1]!)) return { provider: match[1]!, model: match[2]! };
+  return { model };
+}
+
 export function modelDisplayLabel(model: string | undefined): string {
   if (!model) return "model";
+  const gateway = model.match(/^([A-Za-z0-9_-]+):(.+\/.+)$/);
+  if (gateway) return `${gateway[1]} · ${gateway[2]}`;
   return [...CODEX_MODELS, ...CLAUDE_MODELS].find((item) => item.value === model)?.label ?? model;
 }
 
