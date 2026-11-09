@@ -53,6 +53,12 @@ export interface CodexAppServerRunInput {
   /** Tool activity (commands, MCP calls, web searches) of the parent turn, in provider order. */
   readonly onToolEvent?: (event: AgentToolEvent) => void;
   /**
+   * Per-thread Codex config (`thread/start`/`thread/resume` `config`), e.g.
+   * `mcp_servers.<name>`. Travels over the protocol, never as `-c` arguments,
+   * so secrets in it stay out of the process list.
+   */
+  readonly threadConfig?: Readonly<Record<string, unknown>>;
+  /**
    * Every `item/*` and `turn/*` notification, raw. This is how an IDE paints
    * streaming file edits (`item/fileChange/outputDelta` carries the patch text
    * token by token) and tool activity live, the way the Codex app does.
@@ -325,7 +331,10 @@ export async function runCodexAppServer(input: CodexAppServerRunInput): Promise<
   const command = resolveCodexCommand(input.command);
   const conversationIdentity = input.cacheKey ?? `anonymous:${randomUUID()}`;
   const scopeKey = appServerScopeKey(input, command, conversationIdentity);
-  const key = `${scopeKey}\0instructions:${instructionsHash}`;
+  const threadConfigHash = input.threadConfig && Object.keys(input.threadConfig).length
+    ? createHash("sha256").update(JSON.stringify(input.threadConfig)).digest("hex")
+    : "";
+  const key = `${scopeKey}\0instructions:${instructionsHash}${threadConfigHash ? `\0thread-config:${threadConfigHash}` : ""}`;
   let lease: SessionLease;
   try {
     lease = await acquireSession({ input, command, key, scopeKey, keepAlive });
@@ -583,6 +592,7 @@ async function createSession(
     model: input.input.model,
     reasoning: input.input.reasoning,
     developerInstructions: input.input.developerInstructions,
+    ...(input.input.threadConfig ? { threadConfig: input.input.threadConfig } : {}),
     networkAccess: input.input.networkAccess,
     configOverrides: input.input.configOverrides,
     sandbox: input.input.sandbox,
@@ -760,6 +770,7 @@ class CodexAppServerClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly onClose?: () => void;
   private readonly developerInstructions?: string;
+  private readonly threadConfig?: Readonly<Record<string, unknown>>;
   private readonly sandbox: "read-only" | "workspace-write" | "danger-full-access";
   private nextId = 1;
   private stdoutBuffer = "";
@@ -787,6 +798,7 @@ class CodexAppServerClient {
     readonly model?: string;
     readonly reasoning?: "none" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     readonly developerInstructions?: string;
+    readonly threadConfig?: Readonly<Record<string, unknown>>;
     readonly sandbox?: "read-only" | "workspace-write" | "danger-full-access";
     readonly networkAccess?: boolean;
     readonly configOverrides?: readonly string[];
@@ -795,6 +807,7 @@ class CodexAppServerClient {
   }) {
     this.onClose = input.onClose;
     this.developerInstructions = input.developerInstructions;
+    this.threadConfig = input.threadConfig && Object.keys(input.threadConfig).length ? input.threadConfig : undefined;
     this.sandbox = input.sandbox ?? "workspace-write";
     const args = buildCodexAppServerArgs(input);
     this.child = spawn(input.command, args, {
@@ -872,6 +885,7 @@ class CodexAppServerClient {
       approvalPolicy: "never",
       sandbox: this.sandbox,
       ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
+      ...(this.threadConfig ? { config: this.threadConfig } : {}),
     }, 15_000);
     const thread = asRecord(result.thread);
     const threadId = stringValue(thread.id) ?? stringValue(thread.sessionId) ?? stringValue(result.sessionId) ?? stringValue(result.threadId);
@@ -887,6 +901,7 @@ class CodexAppServerClient {
       approvalPolicy: "never",
       sandbox: this.sandbox,
       ...(this.developerInstructions ? { developerInstructions: this.developerInstructions } : {}),
+      ...(this.threadConfig ? { config: this.threadConfig } : {}),
     }, 30_000);
     const thread = asRecord(result.thread);
     const resumedId = stringValue(thread.id) ?? stringValue(thread.sessionId) ?? stringValue(result.sessionId) ?? stringValue(result.threadId);
