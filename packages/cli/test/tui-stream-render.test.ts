@@ -373,8 +373,8 @@ test("a streamed turn renders as > prompt, ● narration, ⏺/⎿ action — and
     "⏺ Edit(src/auth.ts)",
     "  ⎿ +1 −1 · 86ms · receipt d3b9c1a2…",
     "    @@ -38,3 +38,4 @@",
-    "    -  const token = req.token;",
-    "    +  const token = getBearerToken(req);",
+    "    38 -   const token = req.token;",
+    "    38 +   const token = getBearerToken(req);",
     "  Done — the helper handles the missing-token case.",
   ]);
   for (const line of plain(harness.transcript())) {
