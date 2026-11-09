@@ -40,7 +40,10 @@ import {
   modelProvider,
   parseEffortValue,
   readCodexComposerDefaults,
+  readCodexModelProviders,
+  splitGatewayModel,
   type EffortValue,
+  type GatewayModelChoice,
   type ModelProvider,
 } from "./model-catalog.js";
 import { loadConfiguredGatewayPacks, startConfiguredFrappeIndexing } from "./gateway-registry.js";
@@ -2855,9 +2858,14 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // the turn runs. onDelta/onReasoningDelta already arrive in-process; the
   // painter coalesces them fence-aware so a code block never splits mid-fence.
   // Tool activity (commands, MCP calls) paints as cells between the blocks.
+  // `hybrow:auto/gpt` runs on the Codex model provider `hybrow` (a gateway in
+  // ~/.codex/config.toml); a provider prefix Codex does not know is refused
+  // before any spend instead of failing inside the provider.
+  const gateway = await resolveChatGatewayModel(state);
   let outcome: RunOutcome;
   try {
     outcome = await executeRun(config, {
+      ...(gateway?.provider ? { codexModelProvider: gateway.provider } : {}),
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
       onToolEvent: painter ? (event) => painter.tool(event) : undefined,
@@ -2869,9 +2877,9 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       // showed). Name the runtime ONLY for genuinely managed backends — an
       // openai-compatible or other provider must keep the default plan path,
       // or a stub/self-hosted route would spawn the real codex binary.
-      runtime: state.runtime ?? managedRuntimeForChat(loadedConfig, state),
-      provider: state.provider,
-      model: state.model,
+      runtime: gateway?.provider ? "codex" : (state.runtime ?? managedRuntimeForChat(loadedConfig, state)),
+      provider: gateway?.provider ? "codex" : state.provider,
+      model: gateway?.model ?? state.model,
       scopes: state.scopes.length ? state.scopes : undefined,
       recallLimit: state.recallLimit,
       cwd: workspaceCwd,
@@ -2900,6 +2908,20 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   printAssistantResponse(outcome, { streamed: (painter?.painted ?? 0) > 0, bullet: Boolean(state.statusSink), importedFromCodex: state.importedFromCodex });
   emitTurnCostChip(state, outcome);
   openMentionedCapabilityPicker(state, mentionedCapabilities, config);
+}
+
+async function resolveChatGatewayModel(state: ChatState): Promise<GatewayModelChoice | undefined> {
+  const model = state.model;
+  if (!model || !/^[A-Za-z0-9_-]+:/.test(model)) return undefined;
+  const providers = await readCodexModelProviders();
+  const choice = splitGatewayModel(model, providers);
+  if (choice.provider) return choice;
+  const onCodex = !state.runtime || state.runtime === "codex" || state.runtime === "native";
+  const prefix = model.slice(0, model.indexOf(":"));
+  if (onCodex && /\//.test(model)) {
+    throw new Error(`Unknown Codex model provider "${prefix}". Configured providers: ${providers.length ? providers.join(", ") : "none"} (add one under [model_providers.<id>] in ~/.codex/config.toml).`);
+  }
+  return undefined;
 }
 
 /**
@@ -4050,6 +4072,19 @@ async function openComposerPicker(state: ChatState): Promise<void> {
 
 async function selectChatModel(model: string, state: ChatState): Promise<void> {
   await initializeChatComposerState(state);
+  const gatewayProviders = await readCodexModelProviders();
+  const gateway = splitGatewayModel(model, gatewayProviders);
+  if (gateway.provider) {
+    state.model = model;
+    state.modelSource = "session";
+    state.activeProvider = "codex";
+    state.runtime = "codex";
+    state.provider = "codex";
+    await refreshChatTuiHeader(state);
+    const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+    console.log(color(`Model=${gateway.model} via ${gateway.provider} (Codex model provider) · provider_handles_cleared=${cleared}`, "green"));
+    return;
+  }
   const nextProvider = modelProvider(model);
   if (!nextProvider) {
     console.log(color(`Model not in the composer catalog: ${model}`, "yellow"));

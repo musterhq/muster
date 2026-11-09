@@ -240,6 +240,11 @@ export interface RunOptions {
   readonly onReasoningDelta?: (text: string) => void;
   /** Tool activity (commands, MCP calls, searches) while the turn runs; file edits come from the workspace observer. */
   readonly onToolEvent?: (event: AgentToolEvent) => void;
+  /**
+   * A `[model_providers.<id>]` from the Codex config (e.g. an OpenAI-compatible
+   * gateway) that Codex turns should use instead of the default provider.
+   */
+  readonly codexModelProvider?: string;
 }
 
 export interface RunOutcome {
@@ -643,7 +648,11 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
   const rotateWarmThread = Boolean(stored && !reuse);
   try {
     const codexEnv = options.codexHome ? { CODEX_HOME: options.codexHome } : undefined;
+    if (options.codexModelProvider && !/^[A-Za-z0-9_-]+$/.test(options.codexModelProvider)) {
+      throw new Error(`Invalid Codex model provider id: ${options.codexModelProvider}`);
+    }
     const configOverrides = [
+      ...(options.codexModelProvider ? [`model_provider=${JSON.stringify(options.codexModelProvider)}`] : []),
       ...await codexMcpDisableOverrides(options.inheritedToolDeny, options.codexHome),
       ...(options.nativeStrictWorkspace
         ? ["sandbox_workspace_write.exclude_tmpdir_env_var=true", "sandbox_workspace_write.exclude_slash_tmp=true"]

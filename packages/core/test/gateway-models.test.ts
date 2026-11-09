@@ -13,6 +13,7 @@ test("codex turns run on the chosen model provider and do not share warm session
   await writeFile(fake, `#!/usr/bin/env node
 import readline from "node:readline";
 import { appendFileSync } from "node:fs";
+if (process.argv[2] !== "app-server") process.exit(0);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");
 const rl = readline.createInterface({ input: process.stdin });
 const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
