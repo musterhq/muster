@@ -511,8 +511,17 @@ function composerValue(screen: string): string | undefined {
 }
 
 /** The reference draws NO box glyphs anywhere — any occurrence is stray. */
+/**
+ * Box frame glyphs in the popup/composer region. The status bar under the
+ * composer (after the last rule) uses `│` as a separator by design and is
+ * not part of the popup, so it is excluded.
+ */
 function strayBoxGlyphs(screen: string): boolean {
-  return /[╭╮╰╯│]/u.test(stripAnsi(screen));
+  const lines = stripAnsi(screen).split("\n");
+  let lastRule = -1;
+  lines.forEach((line, index) => { if (/^─{8,}\s*$/.test(line.trim())) lastRule = index; });
+  const region = lastRule >= 0 ? lines.slice(0, lastRule + 1) : lines;
+  return /[╭╮╰╯│]/u.test(region.join("\n"));
 }
 
 function selectedSuggestion(screen: string): string | undefined {
