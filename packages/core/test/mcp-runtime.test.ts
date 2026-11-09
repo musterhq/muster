@@ -76,6 +76,7 @@ rl.on("line", (line) => {
     assert.equal(server.command, "notes-mcp");
     assert.deepEqual(server.args, ["--stdio"]);
     assert.deepEqual(server.env, { NOTES_TOKEN: "s3cret-value" });
+    assert.equal(server.default_tools_approval_mode, "approve", "servers the user added are pre-approved; a never-approval thread otherwise blocks every call");
     assert.doesNotMatch(seen.argv.join(" "), /s3cret-value|notes-mcp/, "nothing about the server is on the command line");
   } finally {
     clearCodexAppServerSessions();

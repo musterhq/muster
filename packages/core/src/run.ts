@@ -1,3 +1,4 @@
+import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
 import type { AgentToolEvent } from "./tool-events.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -520,9 +521,9 @@ function emptyRecallReceipt(query: string, scopes: readonly MemoryScope[], limit
  * registry idea, kept in-repo with no runtime install). Native CLIs own their
  * own sessions/compaction, so they bypass the provider-direct render path.
  */
-type CliBackendRunner = (route: ModelRoute, prompts: PromptParts, options: RunOptions) => Promise<AttemptResult>;
+type CliBackendRunner = (route: ModelRoute, prompts: PromptParts, options: RunOptions, config?: MusterConfig) => Promise<AttemptResult>;
 
-const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options) => {
+const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, config) => {
   const stateCwd = options.cwd ?? process.cwd();
   const claudeCwd = options.cwd ?? process.cwd();
   // Resume THIS conversation's claude session when the stable config (cwd+model)
@@ -537,17 +538,26 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options) =
   const sessionId = options.conversationKey
     ? (reuse ? stored.handle : (options.sessionId ?? randomUUID()))
     : options.sessionId;
-  const claudeResult = await runClaudeCode({
-    prompt: prompts.user,
-    systemPrompt: prompts.system || undefined,
-    cwd: claudeCwd,
-    model: route.model,
-    timeoutMs: options.timeoutMs,
-    command: options.claudeCommand,
-    sessionId,
-    resume: reuse ? true : options.resume,
-    pluginDirs: prompts.claudePluginDirs,
-  });
+  // Muster's MCP servers ride along in a private config file for this turn only.
+  const mcp = config ? await resolveRuntimeMcpServers(config, stateCwd) : undefined;
+  const mcpFile = mcp && Object.keys(mcp.servers).length ? await writeClaudeMcpConfig(mcp.servers) : undefined;
+  let claudeResult: Awaited<ReturnType<typeof runClaudeCode>>;
+  try {
+    claudeResult = await runClaudeCode({
+      prompt: prompts.user,
+      systemPrompt: prompts.system || undefined,
+      cwd: claudeCwd,
+      model: route.model,
+      timeoutMs: options.timeoutMs,
+      command: options.claudeCommand,
+      sessionId,
+      resume: reuse ? true : options.resume,
+      pluginDirs: prompts.claudePluginDirs,
+      ...(mcpFile ? { mcpConfig: mcpFile.path } : {}),
+    });
+  } finally {
+    await mcpFile?.dispose().catch(() => {});
+  }
   // Persist the session for next turn on success; drop a broken one on failure.
   if (options.conversationKey && sessionId) {
     if (claudeResult.status === "completed") {
@@ -608,7 +618,7 @@ export async function codexMcpDisableOverrides(
   return requested.filter((id) => configured.has(id)).map((id) => `mcp_servers.${id}.enabled=false`);
 }
 
-const runCodexBackend: CliBackendRunner = async (route, prompts, options) => {
+const runCodexBackend: CliBackendRunner = async (route, prompts, options, config) => {
   const workspaceDir = options.workspaceDir ?? options.cwd ?? process.cwd();
   const stateCwd = options.cwd ?? process.cwd();
   const leanCommand = prompts.capabilityMode === "lean" ? await leanCodexCommand().catch(() => undefined) : undefined;
@@ -639,6 +649,9 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options) => {
         ? ["sandbox_workspace_write.exclude_tmpdir_env_var=true", "sandbox_workspace_write.exclude_slash_tmp=true"]
         : []),
     ];
+    const codexMcpThreadConfig = config
+      ? codexThreadMcpConfig((await resolveRuntimeMcpServers(config, stateCwd)).servers)
+      : {};
     const nativeTransport = normalizeNativeTransport(options.nativeTransport ?? process.env.MUSTER_NATIVE_TRANSPORT ?? process.env.MUSTER_CODEX_TRANSPORT);
     const useAppServer = useNativeSession
       && nativeTransport !== "exec"
@@ -664,6 +677,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options) => {
           onDelta: options.onDelta,
           onReasoningDelta: options.onReasoningDelta,
           ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
+          ...(Object.keys(codexMcpThreadConfig).length ? { threadConfig: codexMcpThreadConfig } : {}),
           command: leanCommand,
         })
       : await runCodex({
@@ -780,7 +794,7 @@ async function attemptRoute(
   options: RunOptions,
 ): Promise<AttemptResult> {
   const backend = CLI_BACKENDS[plan.runtimeId];
-  if (backend) return backend(route, prompts, options);
+  if (backend) return backend(route, prompts, options, config);
   if (plan.runtimeId === "pi") {
     const piResult = await runPiEmbeddedAgent({
       prompt: prompts.combined,
@@ -811,7 +825,7 @@ async function attemptRoute(
     return { responseText: "", status: "failed", errorMessage: `Provider not configured: ${route.provider}`, route };
   }
   if (provider.kind === "codex-cli") {
-    return runCodexBackend({ ...route, model: route.model || provider.defaultModel }, prompts, options);
+    return runCodexBackend({ ...route, model: route.model || provider.defaultModel }, prompts, options, config);
   }
   // Multi-turn, budgeted context for the provider-direct (API) path only: load
   // this conversation's prior turns, render them to fit the budget (stub old
