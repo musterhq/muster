@@ -359,14 +359,16 @@ process.exit(1);
       MUSTER_LMSTUDIO_URL: "http://127.0.0.1:9",
     };
     for (const key of ["FORCE_COLOR", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN"]) delete env[key];
-    const { stdout } = await execFileAsync("tsx", [cliPath, "onboard", "--preview", "--step", "provider", "--verify", "--no-color"], { cwd: root, env, timeout: 90_000, maxBuffer: 1024 * 1024 });
+    const { stdout: raw } = await execFileAsync("tsx", [cliPath, "onboard", "--preview", "--step", "provider", "--verify", "--no-color"], { cwd: root, env, timeout: 90_000, maxBuffer: 1024 * 1024 });
+    // A long result line wraps inside the body column; read the body as the user does.
+    const stdout = raw.split("\n").map((line) => line.replace(/^\s*[╭╰].*$/, "").replace(/^│/, "").replace(/│.*$/, "")).join(" ").replace(/\s+/g, " ");
     assert.match(stdout, /✓ Codex · replied in \d+(\.\d)? s/);
     assert.match(stdout, /✓ Anthropic-compatible proxy · cc\/claude-sonnet-5-5 · replied in \d+(\.\d)? s/);
     assert.match(stdout, /✗ Claude Code · Invalid API key/);
     assert.equal(requests.length, 1, "one small request to the gateway");
     assert.equal(requests[0]!.url, "/v1/messages");
     assert.ok(JSON.stringify(requests[0]!.headers).includes(token), "the referenced key is resolved only at request time");
-    assert.ok(!stdout.includes(token) && !stdout.includes("SECRET"), "the key is never printed");
+    assert.ok(!raw.includes(token) && !raw.includes("SECRET"), "the key is never printed");
   } finally {
     server.close();
   }

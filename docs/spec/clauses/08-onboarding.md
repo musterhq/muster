@@ -40,7 +40,7 @@
 - **Test:** `packages/cli/test/onboarding-v2.test.ts` › "leaving the model step verifies selected routes in parallel and offers edit or skip on failure"
 - **Environment:** injected `detect` and `verify`.
 - **Known gaps:** "Edit" returns to the list; there is no inline key or URL editor yet (phase 2: Add provider…).
-- **Evidence:** UNVERIFIED
+- **Evidence:** real run 2026-11-09, `muster onboard` in tmux on the founder laptop: ✓ Codex 8.5 s, ✓ Claude Code 3.0 s, ✓ Anthropic-compatible proxy 1.4 s, ✓ Codex provider hybrow 8.0 s, ✗ OpenAI API · no key — OPENAI_API_KEY is not set (`~/.muster-work/review/screens/onboarding-v2/after-04-verify-one-failure.png`).
 
 ## MUS-SPEC-08-3B — A route that failed verification is never saved as the default
 
@@ -70,4 +70,4 @@
 - **Test:** `packages/cli/test/onboarding-v2.test.ts` › "the finish screen counts ready capabilities and names the exact fix for each missing one"
 - **Environment:** injected `detect` and `verify`.
 - **Known gaps:** integrations and channels are not verified in phase 1, so they always count as missing until their own setup command runs.
-- **Evidence:** UNVERIFIED
+- **Evidence:** same run: Ready 6/8 with `fix: export OPENAI_API_KEY=<your key>` and the Slack setup command; saved config kept only `apiKeyEnv: ANTHROPIC_AUTH_TOKEN`, no key value (`after-05-finish.png`).
