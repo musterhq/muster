@@ -95,6 +95,8 @@ test("picker-class audit enumerates every bare name/id invocation as choices, ne
   assert.ok(idCommands.every((command) => command.bareBehavior === "picker" && command.pickerInvocations?.length));
   assert.deepEqual(pickerClassInvocations(), [
     "/provider",
+    "/schedule remove",
+    "/schedule run",
     "/tasks why",
     "/tasks assign",
     "/resume",

@@ -37,7 +37,7 @@ test("an open chat shows a due reminder as a card, once", async () => {
     await ticker!.tick();
     const cards = plain(harness.transcript()).filter((line) => /reminder/i.test(line) && line.includes("stretch"));
     assert.equal(cards.length, 1, plain(harness.transcript()).join("\n"));
-    assert.ok(harness.transcript().some((line) => line !== stripCardMark(line)), "rendered as a card band");
+    assert.ok(plain(harness.transcript()).some((line) => /◆ Reminder/.test(line)), "rendered as a reminder card");
 
     clock = new Date(clock.getTime() + 60_000);
     await ticker!.tick();

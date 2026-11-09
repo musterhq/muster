@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS run_receipts (
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
 
+/** Columns added for automations (#165); added in place on older databases. */
+const AUTOMATION_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ["kind", "TEXT"],
+  ["at", "TEXT"],
+  ["tz", "TEXT"],
+  ["deliver", "TEXT"],
+  ["completed_at", "TEXT"],
+  ["last_detail", "TEXT"],
+];
+
 type Row = Record<string, string | number | null>;
 
 function rowToJob(row: Row): ScheduleJob {
@@ -85,6 +95,12 @@ function rowToJob(row: Row): ScheduleJob {
   if (row.last_run_id != null) job.lastRunId = row.last_run_id as string;
   if (row.last_status != null) job.lastStatus = row.last_status as "completed" | "failed";
   if (row.disabled) job.disabled = true;
+  if (row.kind != null) job.kind = row.kind as ScheduleJob["kind"];
+  if (row.at != null) job.at = row.at as string;
+  if (row.tz != null) job.tz = row.tz as string;
+  if (row.deliver != null) job.deliver = row.deliver as string;
+  if (row.completed_at != null) job.completedAt = row.completed_at as string;
+  if (row.last_detail != null) job.lastDetail = row.last_detail as string;
   return job as ScheduleJob;
 }
 
@@ -203,6 +219,22 @@ function enableWal(db: DatabaseSync): void {
   }
 }
 
+function addMissingColumns(db: DatabaseSync): void {
+  const have = new Set((db.prepare("PRAGMA table_info(jobs)").all() as Row[]).map((row) => row.name as string));
+  const missing = AUTOMATION_COLUMNS.filter(([name]) => !have.has(name));
+  if (!missing.length) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // Re-check under the write lock: a concurrent opener may have added them.
+    const now = new Set((db.prepare("PRAGMA table_info(jobs)").all() as Row[]).map((row) => row.name as string));
+    for (const [name, type] of missing) if (!now.has(name)) db.exec(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export class SchedulerStore {
   private constructor(
     private readonly db: DatabaseSync,
@@ -226,6 +258,7 @@ export class SchedulerStore {
       db.exec("PRAGMA busy_timeout = 5000;");
       enableWal(db);
       db.exec(SCHEMA);
+      addMissingColumns(db);
       const store = new SchedulerStore(db, legacyJsonPath, validateCron);
       store.migrateLegacyJson();
       return store;
@@ -284,9 +317,21 @@ export class SchedulerStore {
 
   insertJob(job: ScheduleJob): void {
     this.db.prepare(
-      `INSERT INTO jobs (id, cron, prompt, flow_id, profile, created_at, next_run_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(job.id, job.cron, job.prompt, job.flowId ?? null, job.profile ?? null, job.createdAt, job.nextRunAt ?? null);
+      `INSERT INTO jobs (id, cron, prompt, flow_id, profile, created_at, next_run_at, kind, at, tz, deliver)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      job.id, job.cron, job.prompt, job.flowId ?? null, job.profile ?? null, job.createdAt, job.nextRunAt ?? null,
+      job.kind ?? null, job.at ?? null, job.tz ?? null, job.deliver ?? null,
+    );
+  }
+
+  recordManualRun(id: string, result: { status: "completed" | "failed"; runId?: string; detail?: string }, at: Date): void {
+    this.db.prepare(
+      `UPDATE jobs SET last_run_at = ?, last_run_id = ?, last_status = ?, last_detail = ?,
+         completed_at = CASE WHEN at IS NOT NULL THEN ? ELSE completed_at END,
+         next_run_at = CASE WHEN at IS NOT NULL THEN NULL ELSE next_run_at END
+       WHERE id = ?`,
+    ).run(at.toISOString(), result.runId ?? null, result.status, result.detail ?? null, at.toISOString(), id);
   }
 
   listJobs(): ScheduleJob[] {
@@ -310,7 +355,11 @@ export class SchedulerStore {
    * is marked interrupted — outcome unknown, never implicitly replayed: its
    * occurrence was already advanced past when it was claimed.
    */
-  claimDue(now: Date, computeNext: (cron: string, from: Date) => Date): { claimed: ClaimedRun[]; skipped: SkippedRun[] } {
+  claimDue(
+    now: Date,
+    computeNext: (cron: string, from: Date, tz?: string) => Date,
+    only?: (job: ScheduleJob) => boolean,
+  ): { claimed: ClaimedRun[]; skipped: SkippedRun[] } {
     const claimed: ClaimedRun[] = [];
     const skipped: SkippedRun[] = [];
     this.db.exec("BEGIN IMMEDIATE");
@@ -328,26 +377,33 @@ export class SchedulerStore {
       }
 
       const advance = this.db.prepare("UPDATE jobs SET next_run_at = ? WHERE id = ?");
+      // A one-off is consumed by its claim: it can never be claimed again.
+      const complete = this.db.prepare("UPDATE jobs SET next_run_at = NULL, completed_at = ? WHERE id = ?");
       const insertReceipt = this.db.prepare(
         "INSERT INTO run_receipts (run_key, job_id, scheduled_at, claimed_at, pid, status) VALUES (?, ?, ?, ?, ?, 'running')",
       );
       for (const row of this.db.prepare("SELECT * FROM jobs ORDER BY rowid").all() as Row[]) {
         const job = rowToJob(row);
+        if (job.completedAt) continue; // a fired one-off
+        if (only && !only(job)) continue; // left for another ticker
         if (job.disabled) {
           skipped.push({ job, detail: "disabled" });
           continue;
         }
         // Legacy jobs (created before nextRunAt) derive it from their last run/creation.
-        const nextRunAt = job.nextRunAt
-          ? new Date(job.nextRunAt)
-          : computeNext(job.cron, new Date(job.lastRunAt ?? job.createdAt));
+        const nextRunAt = job.at
+          ? new Date(job.at)
+          : job.nextRunAt
+            ? new Date(job.nextRunAt)
+            : computeNext(job.cron, new Date(job.lastRunAt ?? job.createdAt), job.tz);
         if (nextRunAt > now) continue; // not due yet
         if (running.has(job.id)) {
           skipped.push({ job, detail: `previous run still in progress (${running.get(job.id)!.runKey})` });
           continue;
         }
         const scheduledAt = nextRunAt.toISOString();
-        advance.run(computeNext(job.cron, now).toISOString(), job.id);
+        if (job.at) complete.run(now.toISOString(), job.id);
+        else advance.run(computeNext(job.cron, now, job.tz).toISOString(), job.id);
         const runKey = `${job.id}@${scheduledAt}`;
         insertReceipt.run(runKey, job.id, scheduledAt, now.toISOString(), process.pid);
         claimed.push({ job, runKey });
@@ -374,8 +430,8 @@ export class SchedulerStore {
     try {
       this.db.prepare("UPDATE run_receipts SET status = ?, run_id = ?, detail = ? WHERE run_key = ?")
         .run(result.status, result.runId ?? null, result.detail ?? null, claim.runKey);
-      this.db.prepare("UPDATE jobs SET last_run_at = ?, last_run_id = ?, last_status = ? WHERE id = ?")
-        .run(at.toISOString(), result.runId ?? null, result.status, claim.job.id);
+      this.db.prepare("UPDATE jobs SET last_run_at = ?, last_run_id = ?, last_status = ?, last_detail = ? WHERE id = ?")
+        .run(at.toISOString(), result.runId ?? null, result.status, result.detail ?? null, claim.job.id);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");

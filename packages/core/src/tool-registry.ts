@@ -7,6 +7,8 @@ import { persistToolResult, resultFetch } from "./context-renderer.js";
 import type { FlowToolRegistry } from "./flow.js";
 import { addMemory, findMemory, formatMemoryScope, isVisibleInScopes, parseMemoryScope, searchMemory } from "./memory.js";
 import { activeProfile } from "./profiles.js";
+import { createAutomation, describeAutomation, formatAutomationsTable, listAutomations, MAX_ACTIVE_AUTOMATIONS, MAX_AUTOMATION_TEXT, WHEN_FORMS } from "./automations.js";
+import { removeSchedule } from "./scheduler.js";
 import { openSessionStore, type SessionSearchArgs } from "./sessions.js";
 import { buildCockpitState } from "./store.js";
 import type { ContextObject, MemoryScope } from "./types.js";
@@ -137,6 +139,7 @@ export const BUILTIN_TOOLSETS: Record<string, ToolsetDef> = {
   memory_write: { description: "Write scoped durable memory under config.memory.policy", tools: ["memory_write"] },
   sessions: { description: "Read-only search, navigation, and status over persisted local sessions", tools: ["session_search", "session_status"] },
   shell: { description: "Run allowlisted commands", tools: ["terminal"] },
+  schedule: { description: "Create, list and remove reminders and routines", tools: ["schedule_manage"] },
   results: { description: "Fetch persisted oversized tool results", tools: ["result_fetch"] },
   discovery: { description: "Search, describe, and call the authorized tool catalog", tools: ["tool_search", "tool_describe", "tool_call"] },
   core: { description: "Everything safe by default", tools: [], includes: ["files", "web", "memory", "sessions", "results", "discovery"] },
@@ -636,6 +639,47 @@ function insideWorkspace(ctx: ToolContext, target: string): string {
   return absolute;
 }
 
+interface ScheduleManageArgs {
+  readonly action?: string;
+  readonly kind?: string;
+  readonly message?: string;
+  readonly when?: string;
+  readonly cron?: string;
+  readonly tz?: string;
+  readonly deliver?: string;
+  readonly id?: string;
+}
+
+async function scheduleManage(args: ScheduleManageArgs, ctx: ToolContext): Promise<ToolResult> {
+  try {
+    if (args.action === "create") {
+      const job = await createAutomation({
+        kind: (args.kind ?? "reminder") as "reminder" | "run",
+        text: String(args.message ?? ""),
+        when: args.when,
+        cron: args.cron,
+        tz: args.tz,
+        deliver: args.deliver,
+        cwd: ctx.cwd,
+        enforceActiveCap: true,
+      });
+      return { ok: true, data: describeAutomation(job) };
+    }
+    if (args.action === "list") {
+      return { ok: true, data: formatAutomationsTable(await listAutomations(ctx.cwd)).join("\n") };
+    }
+    if (args.action === "remove") {
+      if (!args.id) return { ok: false, error: "remove needs an id (see action list)." };
+      return (await removeSchedule(args.id, ctx.cwd))
+        ? { ok: true, data: `Removed ${args.id}.` }
+        : { ok: false, error: `No automation ${args.id}.` };
+    }
+    return { ok: false, error: 'action must be "create", "list" or "remove".' };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function registerBuiltinTools(registry: ToolRegistryV2): void {
   registry.register<ToolSearchArgs>({
     name: "tool_search", toolset: "discovery", description: "Search the authorized tool catalog by name, toolset, or description.",
@@ -894,6 +938,27 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
+    },
+  });
+  registry.register<ScheduleManageArgs>({
+    name: "schedule_manage", toolset: "schedule",
+    description: `Set reminders and routines that run by themselves. create: kind "reminder" delivers a fixed message at a time (no model call); kind "run" runs a prompt then delivers the answer. Give when ("in 5m", "in 2h", "in 1d", or an ISO time with offset) for one-off, or cron (5 fields, optional tz) for recurring. deliver: terminal (the user's open Muster chat), desktop, or channel:<id>. Messages up to ${MAX_AUTOMATION_TEXT} characters; at most ${MAX_ACTIVE_AUTOMATIONS} active jobs. The result states exactly what was scheduled — repeat it to the user. list shows all jobs; remove takes an id.`,
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      properties: {
+        action: { type: "string", enum: ["create", "list", "remove"] },
+        kind: { type: "string", enum: ["reminder", "run"], description: "create: reminder (default) or run." },
+        message: { type: "string", maxLength: MAX_AUTOMATION_TEXT, description: "create: the reminder text, or the prompt for a run." },
+        when: { type: "string", description: `create one-off: ${WHEN_FORMS}.` },
+        cron: { type: "string", description: "create recurring: five-field cron, e.g. \"0 9 * * 1-5\"." },
+        tz: { type: "string", description: "IANA time zone the cron is read in, e.g. Asia/Kolkata." },
+        deliver: { type: "string", description: "terminal (default), desktop, or channel:<id>." },
+        id: { type: "string", description: "remove: the job id (sched_…)." },
+      },
+    },
+    async handler(args, ctx) {
+      return scheduleManage(args, ctx);
     },
   });
   registry.register<{ id: string; offset?: number; limit?: number }>({
