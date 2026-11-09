@@ -52,9 +52,48 @@ export async function resolveRuntimeMcpServers(config: MusterConfig, cwd = proce
       };
       continue;
     }
+    if (server.origin?.plugin) {
+      // Plugin bundles keep secrets as `${VAR}` references in config; they
+      // resolve from the environment for this turn only.
+      const missing = new Set<string>();
+      const expanded = expandEnvReferences(server, missing);
+      if (missing.size) {
+        skipped.push({ name, reason: `needs ${[...missing].join(", ")} in the environment` });
+        continue;
+      }
+      servers[name] = expanded;
+      continue;
+    }
     servers[name] = server;
   }
   return { servers, skipped };
+}
+
+const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
+
+function expandEnvReferences(server: McpServerConfig, missing: Set<string>): McpServerConfig {
+  const expand = (value: string) => value.replace(ENV_REFERENCE, (_match, name: string, fallback: string | undefined) => {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") return value;
+    if (fallback !== undefined) return fallback;
+    missing.add(name);
+    return "";
+  });
+  const map = (record: Record<string, string> | undefined) => record ? Object.fromEntries(Object.entries(record).map(([key, value]) => [key, expand(value)])) : undefined;
+  const transport = server.transport;
+  if (transport.kind === "stdio") {
+    return {
+      ...server,
+      transport: {
+        ...transport,
+        command: expand(transport.command),
+        ...(transport.args ? { args: transport.args.map(expand) } : {}),
+        ...(transport.env ? { env: map(transport.env) } : {}),
+        ...(transport.cwd ? { cwd: expand(transport.cwd) } : {}),
+      },
+    };
+  }
+  return { ...server, transport: { ...transport, url: expand(transport.url), ...(transport.headers ? { headers: map(transport.headers) } : {}) } };
 }
 
 /** Codex app-server `thread/start` / `thread/resume` `config` entries (`mcp_servers.<name>`). */
@@ -67,6 +106,7 @@ export function codexThreadMcpConfig(servers: Readonly<Record<string, McpServerC
           command: transport.command,
           ...(transport.args?.length ? { args: [...transport.args] } : {}),
           ...(transport.env && Object.keys(transport.env).length ? { env: { ...transport.env } } : {}),
+          ...(transport.cwd ? { cwd: transport.cwd } : {}),
         }
       : {
           url: transport.url,

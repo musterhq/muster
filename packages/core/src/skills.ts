@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:f
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { pluginBundleSkillRoots } from "./plugin-bundles.js";
 import { musterRoot } from "./profiles.js";
 import { readJsonFile } from "./store.js";
 import { estimateTokens } from "./tokens.js";
@@ -159,7 +160,8 @@ function serialize(skill: SkillRecord): string {
 }
 
 function parse(raw: string): SkillRecord {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n\n([\s\S]*)$/);
+  // Skills written elsewhere (Claude Code, Codex plugins) may skip the blank line after the frontmatter.
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n(?:\r?\n)?([\s\S]*)$/);
   if (!match) throw new Error("Malformed SKILL.md");
   const frontmatter = parseFrontmatter(match[1]);
   const meta = frontmatter.metadata.muster ?? {};
@@ -216,8 +218,8 @@ function parseFrontmatter(raw: string): {
     inMetadata = false;
     const parsed = parseKeyValue(line);
     if (!parsed) continue;
-    if (parsed.key === "name") result.name = parsed.value.trim();
-    if (parsed.key === "description") result.description = parsed.value.trim();
+    if (parsed.key === "name") result.name = unquote(parsed.value.trim());
+    if (parsed.key === "description") result.description = unquote(parsed.value.trim());
     if (parsed.key === "user-invocable") result.skill = { ...result.skill, userInvocable: parseBoolean(parsed.value) };
     if (parsed.key === "disable-model-invocation") result.skill = { ...result.skill, disableModelInvocation: parseBoolean(parsed.value) };
     if (parsed.key === "command-dispatch" && (parsed.value === "prompt" || parsed.value === "tool")) result.skill = { ...result.skill, commandDispatch: parsed.value };
@@ -232,6 +234,10 @@ function parseFrontmatter(raw: string): {
     skill: result.skill,
     metadata: { muster: result.metadata.muster, openclaw: normalizeOpenClawMetadata(result.metadata.openclaw) },
   };
+}
+
+function unquote(value: string): string {
+  return value.replace(/^(["'])(.*)\1$/, "$2");
 }
 
 function parseKeyValue(line: string): { key: string; value: string } | undefined {
@@ -444,6 +450,10 @@ function buildSkillSearchRoots(cwd: string, options: SkillDiscoveryOptions): Ski
       { path: join(homedir(), ".agents", "skills"), indexed: false, candidates: false },
       { path: join(homedir(), ".openclaw", "skills"), indexed: false, candidates: false },
     );
+  }
+  // Installed plugin bundles are discovered in place (see plugin-bundles.ts).
+  for (const dir of pluginBundleSkillRoots(cwd)) {
+    roots.push({ path: dir, indexed: false, candidates: false });
   }
   for (const dir of options.extraDirs ?? []) {
     roots.push({ path: expandHome(dir, cwd), indexed: false, candidates: false });

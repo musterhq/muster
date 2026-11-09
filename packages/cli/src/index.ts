@@ -102,6 +102,12 @@ import {
   saveFlow,
   inspectClaudeCode,
   inspectCapabilityPack,
+  detectPluginBundle,
+  inspectPluginBundleSource,
+  installPluginBundle,
+  isGitPluginSource,
+  listPluginBundles,
+  removePluginBundle,
   inspectCapabilityManifest,
   computeCapabilityEntrypointDigest,
   loadCapabilityPack,
@@ -620,7 +626,7 @@ Usage:
   muster artifacts plan --format docx|xlsx|pptx|pdf [--destination local|google-drive|microsoft-365] [--polished]
   muster artifacts create --format docx|xlsx|pptx|pdf --title "..." [--summary "..."] [--spec spec.json] [--out path]
   muster artifacts verify <file> [--format docx|xlsx|pptx|pdf] [--require text]
-  muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path> | load <path>
+  muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path|git-url> | install <path|git-url> | remove <id> | load <path>
   muster mcp serve                          # Muster's memory and sessions as an MCP server (stdio)
   muster mcp list | status [name] | login <name> | logout <name> | catalog | check [id] | install <id> | oauth status|setup|import ... | add-http <name> <url> [--oauth ...] | add-stdio <name> <command> [args...] | test <name>
   muster dashboard status | start [--port 7461] [--host 127.0.0.1]
@@ -1757,7 +1763,7 @@ async function printChatHeader(state: ChatState): Promise<void> {
       ["memory", "recall, add, promote, indexed search"],
       ["sessions", "name, resume, history, reset"],
       ["skills", "list, inspect, curate, run"],
-      ["plugins", "inspect, load, policy"],
+      ["plugins", "inspect, install, list, remove, load, policy"],
       ["mcp", "list, add-stdio, test, remove"],
       ["dashboard", "status, start"],
       ["agents", "@agent route, sub-runs"],
@@ -7327,7 +7333,27 @@ async function pluginsCommand(args: string[]): Promise<void> {
     return;
   }
   if (action === "inspect" && path) {
+    if (isGitPluginSource(path) || await detectPluginBundle(resolve(path))) {
+      await printPluginBundleInspection(isGitPluginSource(path) ? path : resolve(path));
+      return;
+    }
     await capability(["inspect", path]);
+    return;
+  }
+  if (action === "install" && path) {
+    const source = isGitPluginSource(path) ? path : resolve(path);
+    const { entry, inspection } = await installPluginBundle(source, { allowHighRisk: args.includes("--allow-high-risk"), force: args.includes("--force") });
+    console.log(`installed=${entry.id} format=${entry.format} version=${entry.version ?? "-"} source=${pluginBundleSourceLabel(entry.source)} commit=${entry.commit ?? "-"} digest=${entry.digest}`);
+    console.log(`path=${entry.installedPath}`);
+    for (const server of inspection.servers) console.log(`mcp_server=${server.name} status=added`);
+    for (const skill of inspection.skills) console.log(`skill=${skill.name} status=discoverable`);
+    for (const part of inspection.ignored) console.log(`ignored=${part.part} reason="${part.reason}"`);
+    console.log("next=muster mcp list");
+    return;
+  }
+  if ((action === "remove" || action === "uninstall") && path) {
+    const entry = await removePluginBundle(path);
+    console.log(`removed=${entry.id} servers=${entry.mcpServers.length} skills=${entry.skills.length}`);
     return;
   }
   if (action === "load" && path) {
@@ -7341,6 +7367,11 @@ async function pluginsCommand(args: string[]): Promise<void> {
     return;
   }
   if (action === "list" || action === undefined) {
+    const bundles = await listPluginBundles();
+    for (const bundle of bundles) {
+      console.log(`plugin=${bundle.id} format=${bundle.format} source=${pluginBundleSourceLabel(bundle.source)} sha=${bundle.commit ?? "-"} servers=${bundle.mcpServers.length} skills=${bundle.skills.length} risk=${bundle.risk} version=${bundle.version ?? "-"}`);
+    }
+    if (!policy && bundles.length) return;
     if (!policy) {
       const catalog = listBuiltinPlugins();
       const installable = catalog.filter((plugin) => plugin.packPath || plugin.setup).length;
@@ -7363,7 +7394,45 @@ async function pluginsCommand(args: string[]): Promise<void> {
     for (const [slot, owner] of slots) console.log(`slot=${slot} owner=${owner}`);
     return;
   }
-  throw new Error("Usage: muster plugins list|catalog|setup <id>|reuse <provider>|context frappe <setup|docs|module|build>|check <id>|enable <id>|disable <id>|policy|inspect <path>|load <path> [--allow-high-risk]");
+  throw new Error("Usage: muster plugins list|catalog|setup <id>|reuse <provider>|context frappe <setup|docs|module|build>|check <id>|enable <id>|disable <id>|policy|inspect <path|git-url>|install <path|git-url> [--allow-high-risk] [--force]|remove <id>|load <path> [--allow-high-risk]");
+}
+
+function pluginBundleSourceLabel(source: { readonly type: "local"; readonly path: string } | { readonly type: "git"; readonly url: string; readonly ref?: string }): string {
+  return source.type === "local" ? `local:${source.path}` : `git:${source.url}${source.ref ? `#${source.ref}` : ""}`;
+}
+
+/** What `install` would add, read without running any plugin code. Env and header values are never printed. */
+async function printPluginBundleInspection(source: string): Promise<void> {
+  const report = await inspectPluginBundleSource(source);
+  console.log(`bundle=${report.id} format=${report.format} version=${report.version ?? "-"} manifest=${report.manifestPath}`);
+  console.log(`source=${source}${report.commit ? ` commit=${report.commit}` : ""}`);
+  console.log(`install_path=${report.installRoot}`);
+  console.log(`status=${report.status} risk=${report.risk} permissions=${report.permissions.join(",") || "-"}`);
+  for (const blocker of report.blockers) console.log(`status=blocked blocker="${blocker}"`);
+  for (const server of report.servers) {
+    const transport = server.config.transport;
+    const flags = server.flags.length ? ` flags=${server.flags.join(",")}` : "";
+    if (transport.kind === "stdio") {
+      const args = transport.args?.length ? ` args="${transport.args.join(" ")}"` : "";
+      const env = transport.env && Object.keys(transport.env).length ? ` env_keys=${Object.keys(transport.env).join(",")}` : "";
+      const cwd = transport.cwd ? ` cwd=${transport.cwd}` : "";
+      console.log(`mcp_server=${server.name} transport=stdio command=${transport.command}${args}${cwd}${env}${flags}`);
+    } else {
+      const headers = transport.headers && Object.keys(transport.headers).length ? ` header_keys=${Object.keys(transport.headers).join(",")}` : "";
+      console.log(`mcp_server=${server.name} transport=http url=${transport.url}${headers}${flags}`);
+    }
+  }
+  if (!report.servers.length) console.log("mcp_servers=none");
+  for (const skill of report.skills) console.log(`skill=${skill.name} path=${skill.path} description="${skill.description.slice(0, 80)}"`);
+  if (!report.skills.length) console.log("skills=none");
+  for (const part of report.ignored) console.log(`ignored=${part.part} reason="${part.reason}"`);
+  for (const warning of report.warnings) console.log(`warning="${warning}"`);
+  console.log("runs_plugin_code=no");
+  if (report.status === "blocked") {
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`next=muster plugins install ${source}${report.risk === "high" ? " --allow-high-risk" : ""}`);
 }
 
 interface ProviderReuseSource {
@@ -8361,7 +8430,8 @@ async function mcpCommand(args: string[]): Promise<void> {
         ? `stdio ${server.transport.command} ${(server.transport.args ?? []).join(" ")}`.trim()
         : `http ${server.transport.url}`;
       const auth = server.auth ? `\tauth=${server.auth}` : "";
-      console.log(`${serverName}\t${transport}\tinclude=${server.tools?.include?.join(",") || "-"} exclude=${server.tools?.exclude?.join(",") || "-"}${auth}`);
+      const origin = server.origin?.plugin ? `\tplugin=${server.origin.plugin}` : "";
+      console.log(`${serverName}\t${transport}\tinclude=${server.tools?.include?.join(",") || "-"} exclude=${server.tools?.exclude?.join(",") || "-"}${auth}${origin}`);
     }
     return;
   }
