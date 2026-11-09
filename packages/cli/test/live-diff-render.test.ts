@@ -246,7 +246,7 @@ test("the feed streams cards live and closes with a summary", async () => {
 
   const totals = await feed.finish();
   assert.deepEqual(totals, { files: 2, additions: 3, deletions: 1 });
-  assert.deepEqual(lines.slice(-5), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "     1 + late", "▸ 2 files changed · +3 −1"]);
+  assert.deepEqual(lines.slice(-7), ["⏺ Create(late.ts)", "  ⎿ +1 −0 · 400ms · receipt d3b9c1a2…", "    @@ -0,0 +1 @@", "     1 + late", "▸ 2 files changed · +3 −1", "    src/run.ts  +2 −1", "    late.ts     +1 −0"]);
   assert.deepEqual(fake.control().calls, ["start", "flush", "stop"], "flush precedes stop so tail edits still render");
 });
 
@@ -425,7 +425,7 @@ test("the feed never renders the harness's own .muster bookkeeping", async () =>
   assert.equal(lines.some((line) => line.includes("runId")), false, "no run-record JSON leaks via the diff feed");
   assert.equal(lines.some((line) => line.includes(".muster")), false, "no harness-internal path is shown");
   assert.deepEqual(totals, { files: 2, additions: 2, deletions: 0 }, "totals count only the user's files");
-  assert.equal(lines.at(-1), "▸ 2 files changed · +2 −0");
+  assert.deepEqual(lines.slice(-3), ["▸ 2 files changed · +2 −0", "    server.js  +1 −0", "    test.js    +1 −0"]);
 });
 
 test("the real observer is constructed with the .muster ignore merged over caller options", async () => {
@@ -504,4 +504,37 @@ test("diff cards number every row from the hunk header", () => {
     "    11 + const alsoAdded = 3;",
     "    12   const after = 4;",
   ]);
+});
+
+// Spec: MUS-SPEC-01-5A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-5a--a-multi-file-turn-ends-with-a-per-file-summary)
+test("a multi-file turn ends with one row per file under the summary", async () => {
+  const lines: string[] = [];
+  const fake = fakeObserver({
+    onFlush: (emit) => {
+      emit(patchEvent({ path: "src/a.ts", diff: "@@ -1,2 +1,3 @@\n-x\n+y\n+z" }));
+      emit(patchEvent({ path: "README.md", diff: "@@ -1,0 +2 @@\n+more" }));
+      emit(patchEvent({ path: "test/a.test.ts", changeKind: "add", diff: "@@ -0,0 +1,5 @@\n+1\n+2\n+3\n+4\n+5" }));
+    },
+  });
+  const feed = await startLiveDiffFeed({ cwd: "/repo", emit: (line) => lines.push(line), color: false, createObserver: fake.create });
+  await feed.finish();
+  const summary = lines.indexOf("▸ 3 files changed · +8 −1");
+  assert.ok(summary >= 0, lines.join("\n"));
+  assert.deepEqual(lines.slice(summary + 1), [
+    "    src/a.ts        +2 −1",
+    "    README.md       +1 −0",
+    "    test/a.test.ts  +5 −0",
+  ]);
+
+  const single: string[] = [];
+  const one = fakeObserver({ onFlush: (emit) => emit(patchEvent({ path: "x.ts", diff: "@@ -1 +1 @@\n-a\n+b" })) });
+  await (await startLiveDiffFeed({ cwd: "/repo", emit: (line) => single.push(line), color: false, createObserver: one.create })).finish();
+  assert.equal(single.at(-1), "▸ 1 file changed · +1 −1", "one file keeps just the summary");
+
+  const many: string[] = [];
+  const lots = fakeObserver({ onFlush: (emit) => { for (let index = 1; index <= 11; index += 1) emit(patchEvent({ path: `f${index}.ts`, diff: "@@ -1 +1 @@\n-a\n+b" })); } });
+  await (await startLiveDiffFeed({ cwd: "/repo", emit: (line) => many.push(line), color: false, createObserver: lots.create })).finish();
+  const tail = many.slice(many.indexOf("▸ 11 files changed · +11 −11") + 1);
+  assert.equal(tail.length, 9);
+  assert.equal(tail.at(-1), "    … +3 more files");
 });

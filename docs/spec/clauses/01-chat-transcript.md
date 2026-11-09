@@ -101,3 +101,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure renderer.
 - **Known gaps:** word-level (intra-line) highlighting is a follow-up.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-5A — A multi-file turn ends with a per-file summary
+
+- **Precondition:** a turn changes three files (`src/a.ts` +2 −1, `README.md` +1 −0, `test/a.test.ts` +5 −0) in that order.
+- **Action:** the turn ends.
+- **Expected result:** the summary row `▸ 3 files changed · +8 −1` is followed by one row per file in change order with aligned paths and its own `+N −M`; a one-file turn keeps only the summary row; more than 8 files show 8 rows and `… +N more files`.
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "a multi-file turn ends with one row per file under the summary"
+- **Environment:** live diff feed with an injected observer.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
