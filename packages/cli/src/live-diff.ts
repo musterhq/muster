@@ -183,7 +183,7 @@ export function renderLiveDiffResult(
   const segments = [renderStatSegment(stat, paint)];
   if (event.binary) segments.push(tint("binary", MUTED_RGB, paint));
   if (options.elapsedMs !== undefined && Number.isFinite(options.elapsedMs)) {
-    segments.push(tint(`${Math.max(0, Math.round(options.elapsedMs))}ms`, MUTED_RGB, paint));
+    segments.push(tint(formatElapsed(options.elapsedMs), MUTED_RGB, paint));
   }
   if (event.receiptHash) segments.push(tint(`receipt ${shortReceipt(event.receiptHash)}`, MUTED_RGB, paint));
   return `  ${tint(RESULT_ELBOW, MUTED_RGB, paint)} ${segments.join(tint(" · ", MUTED_RGB, paint))}`;
@@ -212,6 +212,14 @@ export function renderLiveDiffFileRows(files: ReadonlyMap<string, LiveDiffStat>,
   const rows = shown.map(([path, stat]) => `    ${path.padEnd(width)}  ${renderStatSegment(stat, paint)}`);
   if (entries.length > shown.length) rows.push(tint(`    … +${entries.length - shown.length} more files`, MUTED_RGB, paint));
   return rows;
+}
+
+/** `86ms`, `68.0s`, `1m 46s`: the same reading as command cells. */
+function formatElapsed(ms: number): string {
+  const value = Math.max(0, ms);
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${Math.floor(value / 60_000)}m ${Math.round((value % 60_000) / 1000)}s`;
 }
 
 /** The verb a change kind reads as in the action headline. */

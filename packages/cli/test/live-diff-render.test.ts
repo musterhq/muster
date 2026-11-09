@@ -542,7 +542,8 @@ test("a multi-file turn ends with one row per file under the summary", async () 
 // Spec: MUS-SPEC-01-6A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-6a--diff-cards-show-turn-time-readably)
 test("diff card timing reads like command timing", () => {
   const row = (elapsedMs: number) => renderLiveDiffCard(patchEvent({ diff: "@@ -1 +1 @@\n-a\n+b" }), { color: false, elapsedMs })[1];
-  assert.equal(row(67_985), "  ⎿ +1 −1 · 68.0s · receipt d3b9c1a2…");
+  assert.equal(row(67_985), "  ⎿ +1 −1 · 1m 8s · receipt d3b9c1a2…");
+  assert.equal(row(12_400), "  ⎿ +1 −1 · 12.4s · receipt d3b9c1a2…");
   assert.equal(row(86), "  ⎿ +1 −1 · 86ms · receipt d3b9c1a2…");
   assert.equal(row(105_975), "  ⎿ +1 −1 · 1m 46s · receipt d3b9c1a2…");
 });
