@@ -88,3 +88,40 @@ test("memory_write through MCP obeys memory.policy", { timeout: 90_000 }, async 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-16-4A (docs/spec/clauses/16-automations.md#mus-spec-16-4a--agents-set-reminders-through-schedule_manage)
+test("an agent sets, lists and removes a reminder over MCP", { timeout: 90_000 }, async () => {
+  const cwd = await workspace();
+  const client = await connect(cwd);
+  try {
+    await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    const list = await client.request("tools/list");
+    const tool = (list.result as { tools: Array<{ name: string; inputSchema?: unknown }> }).tools.find((entry) => entry.name === "schedule_manage");
+    assert.ok(tool?.inputSchema, "schedule_manage is listed with a schema");
+
+    const before = Date.now();
+    const created = await client.request("tools/call", { name: "schedule_manage", arguments: { action: "create", kind: "reminder", when: "in 5 minutes", message: "stretch" } });
+    assert.notEqual((created.result as { isError?: boolean }).isError, true, text(created));
+    const echo = text(created);
+    const id = echo.match(/sched_[a-z0-9]+/)?.[0];
+    assert.ok(id, echo);
+    assert.match(echo, /reminder/);
+    assert.match(echo, /"stretch"/);
+    assert.match(echo, /terminal/);
+    const iso = echo.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/)?.[0];
+    assert.ok(iso, echo);
+    const delta = Date.parse(iso!) - before;
+    assert.ok(delta >= 4.5 * 60_000 && delta <= 5.5 * 60_000, `fires ~5 minutes out (${delta} ms)`);
+
+    const listed = await client.request("tools/call", { name: "schedule_manage", arguments: { action: "list" } });
+    assert.match(text(listed), new RegExp(`${id}[\\s\\S]*stretch`));
+
+    const removed = await client.request("tools/call", { name: "schedule_manage", arguments: { action: "remove", id } });
+    assert.match(text(removed), new RegExp(`Removed ${id}`));
+    const after = await client.request("tools/call", { name: "schedule_manage", arguments: { action: "list" } });
+    assert.doesNotMatch(text(after), new RegExp(id!));
+  } finally {
+    client.close();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
