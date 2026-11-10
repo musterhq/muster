@@ -129,5 +129,5 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Expected result:** the echo says `at 2026-11-10 10:17` — the same local time the reminder card shows — never a raw UTC ISO stamp with milliseconds; the table shows `2026-11-11 09:00` for the routine; the done reminder's NEXT RUN reads `done` and its ENABLED column does not; no row is wider than 110 columns (WHAT is cut with `…`).
 - **Test:** `packages/core/test/automations.test.ts` › "automation echoes and the table show local times, and the table fits the width"
 - **Environment:** pure formatters with `TZ=Asia/Kolkata`.
-- **Known gaps:** times are the machine's local time; a routine with its own `tz` still shows the machine's clock (its zone is named in WHEN).
+- **Known gaps:** times are the machine's local time; a routine with its own `tz` still shows the machine's clock (its zone is named in WHEN). The `schedule_manage` tool result also carries the exact UTC instant for the model (`packages/cli/test/mcp-serve.test.ts` › "an agent sets, lists and removes a reminder over MCP").
 - **Evidence:** live, 2026-11-10 (IST): `schedule remind "in 10m" …` → `at 2026-11-10 11:59`; `schedule list` in a 110-column tmux pane fits the width with WHAT cut by `…`. Red→green: automations.test.ts.
