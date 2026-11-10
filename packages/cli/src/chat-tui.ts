@@ -1236,6 +1236,27 @@ export function isQueueFollowUpKey(data: string): boolean {
   return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
 }
 
+/**
+ * Ctrl+C: the first press interrupts a running turn (like Esc) or clears a
+ * draft; a second press within the window, or a press on an idle empty
+ * composer, quits.
+ */
+export class CtrlCGate {
+  static readonly WINDOW_MS = 2000;
+  private lastPressAt = Number.NEGATIVE_INFINITY;
+
+  press(state: { readonly running: boolean; readonly hasText: boolean }, now = Date.now()): "interrupt" | "clear" | "quit" {
+    const repeat = now - this.lastPressAt <= CtrlCGate.WINDOW_MS;
+    this.lastPressAt = now;
+    if (repeat) return "quit";
+    if (state.running) return "interrupt";
+    if (state.hasText) return "clear";
+    return "quit";
+  }
+}
+
+export const CTRL_C_AGAIN_HINT = "ctrl+c again to quit";
+
 /** Alt+Up pulls the newest queued follow-up back into the composer. */
 export function isEditQueuedKey(data: string): boolean {
   return data === "\x1b[1;3A" || data === "\x1b\x1b[A" || matchesKey(data, "alt+up");
@@ -1307,6 +1328,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   editor.onSubmit = (text) => {
     void sink.submit(text);
   };
+  const ctrlC = new CtrlCGate();
   return {
     input(data) {
       if (sink.settings) {
@@ -1332,6 +1354,16 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       }
       if (data === "\x04") {
         sink.toggleLiveDiff();
+        return;
+      }
+      if (data === "\x03") {
+        const action = ctrlC.press({ running: sink.running, hasText: Boolean(editor.getText()) });
+        if (action === "quit") sink.exited = true;
+        else {
+          if (action === "interrupt") sink.interruptTurn();
+          else editor.setText("");
+          sink.appendLine(dim(`  ${CTRL_C_AGAIN_HINT}`));
+        }
         return;
       }
       if (data === "\x1b" && sink.interruptTurn()) return;
@@ -1595,6 +1627,7 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   };
   tui.addChild(screen);
   tui.setFocus(editor);
+  const ctrlC = new CtrlCGate();
   tui.addInputListener((data) => {
     // An approval card owns the keyboard until it is answered.
     if (screen.approvals.pending && !parseSgrMouseSequence(data)) {
@@ -1648,7 +1681,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       return { consume: true };
     }
     if (data === "\x03") {
-      screen.stop();
+      const action = ctrlC.press({ running: screen.running, hasText: Boolean(editor.getText()) });
+      if (action === "quit") {
+        screen.exited = true;
+        screen.stop();
+      } else {
+        if (action === "interrupt") screen.interruptTurn();
+        else editor.setText("");
+        screen.appendLine(dim(`  ${CTRL_C_AGAIN_HINT}`));
+        tui.requestRender(true);
+      }
       return { consume: true };
     }
     if (matchesKey(data, "escape") && screen.closeLiveDiff(true)) return { consume: true };
