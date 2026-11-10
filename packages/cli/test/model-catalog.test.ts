@@ -60,3 +60,25 @@ test("status-row model labels use provider names and Codex effort labels", () =>
   assert.equal(formatModelStatus("gpt-5.6-sol", "medium"), "5.6 Sol · Medium");
   assert.equal(formatModelStatus("claude-opus-5-5", "ultra"), "Opus 5.5");
 });
+
+// Spec: MUS-SPEC-09-2B (docs/spec/clauses/09-status-bar.md#mus-spec-09-2b--a-chat-names-its-runtime-one-way-and-a-session-reopens-on-its-runtime)
+test("runtime names match everywhere and a session reopens on the runtime and model it last used", async () => {
+  const { runtimeDisplayName } = await import("../src/model-catalog.js");
+  assert.equal(runtimeDisplayName("native"), "codex", "the default runtime is Codex, by name");
+  assert.equal(runtimeDisplayName("claude-code"), "claude-code");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readChatSessionRoute, writeChatSessionRoute, sessionRouteToRestore } = await import("../src/chat-session-route.js");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-route-"));
+  try {
+    writeChatSessionRoute("qa-4", { runtime: "claude-code", provider: "claude-code", model: "sonnet" }, cwd);
+    writeChatSessionRoute("qa-5", { runtime: "codex", provider: "codex", model: "gpt-6.1-terra" }, cwd);
+    assert.deepEqual(readChatSessionRoute("qa-4", cwd), { runtime: "claude-code", provider: "claude-code", model: "sonnet" });
+    assert.equal(readChatSessionRoute("never-used", cwd), undefined);
+    assert.deepEqual(sessionRouteToRestore({}, readChatSessionRoute("qa-4", cwd)), { runtime: "claude-code", provider: "claude-code", model: "sonnet" });
+    assert.equal(sessionRouteToRestore({ model: "gpt-6.1-terra" }, readChatSessionRoute("qa-4", cwd)), undefined, "a flag on the command line wins");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

@@ -61,3 +61,13 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Environment:** pure renderer, NO_COLOR-equivalent (ANSI stripped).
 - **Known gaps:** below 100 columns the panel is cut by the frame like before; the compact header is the default there.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-09-2B — A chat names its runtime one way, and a session reopens on its runtime
+
+- **Precondition:** the default runtime id is `native` (Codex's app-server); session `qa-4` last ran on `claude-code` / `sonnet`.
+- **Action:** read the `/runtime` row's current value and `/status`; open the `/model` picker; quit and run `muster chat --session qa-4` (no `--runtime`/`--model` flags), then the same with `--model gpt-6.1-terra`.
+- **Expected result:** the runtime is called `codex` in the slash menu, `/status` and the header (never `native` in one place and `codex` in another); after the `/model` picker loads Codex's model names the header is rebuilt, so header and status bar name the model the same way. Reopening `qa-4` starts on `claude-code` / `sonnet`; a flag on the command line wins over the remembered route.
+- **Test:** `packages/cli/test/model-catalog.test.ts` › "runtime names match everywhere and a session reopens on the runtime and model it last used"
+- **Environment:** pure name map; route store in a temp workspace.
+- **Known gaps:** the header rebuild after the picker is proven in the live tmux run only.
+- **Evidence:** UNVERIFIED
