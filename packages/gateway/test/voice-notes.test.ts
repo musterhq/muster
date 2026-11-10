@@ -151,3 +151,53 @@ test("a voice note with speech off gets a setup hint, not an empty turn", async 
     await harness.stop();
   }
 });
+
+const RICH_ANSWER = [
+  "Two plus two is four. See https://example.com/math",
+  "```js",
+  "console.log(2 + 2)",
+  "```",
+  "| a | b |",
+  "|---|---|",
+  "| 1 | 2 |",
+  "Done.",
+].join("\n");
+
+function textUpdate(updateId: number, text: string) {
+  return { update_id: updateId, message: { message_id: updateId, from: { id: CHAT }, chat: { id: CHAT, type: "private" }, date: 1, text } };
+}
+
+// Spec: MUS-SPEC-21-2D (docs/spec/clauses/21-voice.md#mus-spec-21-2d--spoken-replies-are-opt-in-mirror-answers-voice-with-voice)
+test("mirror replies to a voice note with text and a voice message, text gets text only", async () => {
+  const mirror = await startTelegram("muster-voice-tg-mirror-", { ...WHISPER, tts: { provider: "say" }, reply: "mirror", maxReplyChars: 30 }, RICH_ANSWER);
+  try {
+    await mirror.post(voiceUpdate(9301, { file_id: "VOICE1", duration: 4, mime_type: "audio/ogg", file_size: VOICE_BYTES.length }));
+    assert.equal(texts(mirror.bot).length, 1, "the reply is sent as text");
+    assert.ok(texts(mirror.bot)[0].startsWith("🎙 \"what is two plus two\""));
+    const voices = mirror.bot.sent("sendVoice");
+    assert.equal(voices.length, 1, "and as a voice message");
+    assert.equal(voices[0].body.chat_id, String(CHAT));
+    assert.equal((voices[0].body.voice as { type: string }).type, "audio/ogg");
+    const say = (await readFakeVoiceCalls(mirror.log)).filter((call) => call.tool === "say");
+    assert.equal(say.length, 1);
+    // Code, URL and table skipped; capped at maxReplyChars on a sentence boundary.
+    assert.equal(say[0].argv[say[0].argv.length - 1], "Two plus two is four.");
+
+    await mirror.post(textUpdate(9302, "and three plus three?"));
+    assert.equal(texts(mirror.bot).length, 2);
+    assert.equal(mirror.bot.sent("sendVoice").length, 1, "a text message gets text only");
+  } finally {
+    await mirror.stop();
+  }
+
+  const off = await startTelegram("muster-voice-tg-reply-off-", { ...WHISPER, tts: { provider: "say" }, reply: "off" }, RICH_ANSWER);
+  try {
+    await off.post(voiceUpdate(9401, { file_id: "VOICE1", duration: 4, mime_type: "audio/ogg", file_size: VOICE_BYTES.length }));
+    await off.post(textUpdate(9402, "hello"));
+    assert.equal(texts(off.bot).length, 2);
+    assert.equal(off.bot.sent("sendVoice").length, 0, "reply off: no audio");
+    assert.equal((await readFakeVoiceCalls(off.log)).filter((call) => call.tool === "say").length, 0);
+  } finally {
+    await off.stop();
+  }
+});
