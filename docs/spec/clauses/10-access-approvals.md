@@ -51,3 +51,33 @@
 - **Environment:** fake app-server.
 - **Known gaps:** `git push` leaves the machine and is not auto-approved (use `/access ask` or `full`); network policy is Codex's.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1E — The default mode reaches Claude Code without being set
+
+- **Precondition:** runtime `claude-code`; the chat never ran `/access` and no `--access` flag or `chat.access` setting exists (the status bar says `auto-edit`).
+- **Action:** run a turn with no access mode.
+- **Expected result:** `claude` is started with `--permission-mode acceptEdits`, the same as an explicit `auto-edit`.
+- **Test:** `packages/core/test/access-approvals.test.ts` › "claude turns default to acceptEdits when no access mode is set"
+- **Environment:** fake `claude` binary.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1F — The approval card shows every line of a multi-line command
+
+- **Precondition:** chat in `ask`; a turn asks to run `/bin/zsh -lc 'printf hi > hello.txt\nls'` (two commands on two lines).
+- **Action:** the card appears; the user answers it.
+- **Expected result:** while pending, the card's title row reads `Run printf hi > hello.txt …?` and below it every line of the command is shown in full (`printf hi > hello.txt`, `ls`), so the user sees all of what they approve. Once answered, the card collapses to the title row and the decision.
+- **Test:** `packages/cli/test/access-approvals.test.ts` › "a pending approval card shows every line of a multi-line command"
+- **Environment:** card renderer.
+- **Known gaps:** past 60 lines the card shows the first 60 and a count of the rest.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1G — Changing access mid-chat keeps the Codex conversation
+
+- **Precondition:** a chat on the Codex app-server with one finished turn; its warm app-server process still holds the thread (a thread has one writer).
+- **Action:** `/access read-only` (or any other mode), then send a prompt in the same conversation.
+- **Expected result:** the turn runs in the new mode on the SAME thread: Muster closes the idle warm process that holds the thread, waits for it to exit, and resumes the thread in a process with the new sandbox. The turn never fails with "failed to initialize thread persistence" and never falls back to a fresh thread.
+- **Test:** `packages/core/test/access-approvals.test.ts` › "an access change resumes the same Codex thread instead of colliding with the warm writer"
+- **Environment:** fake app-server that refuses to resume a thread while another live process holds its writer lock.
+- **Known gaps:** a warm process that is busy with a turn is left alone; the new turn waits behind the chat's own turn order.
+- **Evidence:** live repro before the fix, 2026-11-10: `/tmp/qafix-tr`, session qafix-acc1 — `✖ Command failed (exit 1): codex … failed to initialize thread persistenc` right after `/access read-only`.

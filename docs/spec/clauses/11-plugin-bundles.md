@@ -77,3 +77,13 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Environment:** temp workspace; real CLI.
 - **Known gaps:** there is no kill list or signed catalog for bundles yet.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-11-1H — A Codex turn can read an installed bundle's skill through `skill_view`
+
+- **Precondition:** an initialized workspace; a Claude-format bundle with skill `greet` ("Greet the user warmly") installed with `muster plugins install`. The turn prompt advertises "Available skills (read with skill_view before relying on one)". Codex turns reach Muster's tools through `muster mcp serve`, which chat attaches to every turn.
+- **Action:** an MCP client starts `muster mcp serve`, lists tools and calls `skill_view {"name":"greet"}`, then `skill_view {"name":"nope"}`.
+- **Expected result:** `tools/list` includes `skill_view` with a `name` input; the call returns the skill's name, description and full body; an unknown name is an `isError` result that names the skill. Still no shell or file-write tools.
+- **Test:** `packages/cli/test/mcp-serve.test.ts` › "skill_view over MCP returns an installed bundle's skill"
+- **Environment:** the real CLI as a child process, temp workspace.
+- **Known gaps:** skill files referenced from SKILL.md (scripts, references) are not served; the model reads them from the path given.
+- **Evidence:** UNVERIFIED

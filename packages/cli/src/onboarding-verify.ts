@@ -81,10 +81,13 @@ export const verifyRoute: RouteVerifier = async (target) => {
         reasoning: "low",
         timeoutMs: 90_000,
         ...(target.codexProvider ? { configOverrides: [`model_provider=${JSON.stringify(target.codexProvider)}`] } : {}),
+        ...(target.codexProvider && target.model ? { model: target.model } : {}),
       });
       if (result.status === "completed") return { ok: true, ms: result.durationMs, ...(target.model ? { model: target.model } : {}) };
       // Codex reports the turn's own failure as a JSON event; the exit message is only a header.
       const eventError = parseCodexEvents(result.stdout).failureMessage ?? lastCodexErrorEvent(result.stdout);
+      const rejected = target.codexProvider && !target.model ? rejectedModel(eventError ?? "") : undefined;
+      if (rejected) return { ok: false, error: `Codex's default model ${rejected} is not served by ${target.codexProvider}` };
       return { ok: false, error: shortError(eventError || result.errorMessage || result.stderr || "codex turn failed", secrets) };
     }
     if (target.kind === "claude") {
@@ -103,6 +106,12 @@ export const verifyRoute: RouteVerifier = async (target) => {
     return { ok: false, error: shortError(error instanceof Error ? error.message : String(error), secrets) };
   }
 };
+
+/** "The 'gpt-6.1-terra' model is not supported …" → gpt-6.1-terra. */
+function rejectedModel(message: string): string | undefined {
+  const match = message.match(/['"`]([^'"`]+)['"`] model is not supported|model ['"`]([^'"`]+)['"`] (?:is not supported|does not exist|not found)|unknown model:? ['"`]?([^\s'"`]+)/i);
+  return match ? (match[1] ?? match[2] ?? match[3]) : undefined;
+}
 
 function lastCodexErrorEvent(stdout: string): string | undefined {
   let message: string | undefined;

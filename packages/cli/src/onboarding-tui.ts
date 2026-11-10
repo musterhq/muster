@@ -252,7 +252,8 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
   const verifier = options.verify ?? verifyRoute;
   const detection = (options.detect ?? detectProviders)().catch(() => undefined);
   if (args.includes("--preview") || !input.isTTY || !output.isTTY) {
-    const previewStep = readPreviewStep(args);
+    // `--verify` alone means "verify my routes": open on the model step, the one it checks.
+    const previewStep = readPreviewStep(args) ?? (args.includes("--verify") ? steps.findIndex((step) => step.id === "provider") : undefined);
     if (previewStep !== undefined) state.stepIndex = previewStep;
     state.detected = await detection;
     const stepId = currentStep(state).id;
@@ -737,7 +738,11 @@ function routeFix(id: string, state: OnboardingState): string {
   if (id === "openai") return "export OPENAI_API_KEY=<your key>";
   if (id === "ollama") return "ollama serve";
   if (id === "lmstudio") return "lms server start";
-  if (status?.codexProvider) return `check [model_providers.${status.codexProvider}] in $CODEX_HOME/config.toml`;
+  if (status?.codexProvider) {
+    const result = state.verify?.results[id];
+    if (result && !result.ok && /is not served by/.test(result.error)) return `muster chat --model ${status.codexProvider}:<model> with a model it serves`;
+    return `check [model_providers.${status.codexProvider}] in $CODEX_HOME/config.toml`;
+  }
   return choicesFor(providerStep(), state).find((item) => item.id === id)?.configureLater?.[0] ?? VERIFY_COMMAND;
 }
 

@@ -557,6 +557,10 @@ async function acquireSession(input: {
   }
   if (cached) invalidateCachedSession(key, cached);
   if (keepAlive) closeSupersededSessions(scopeKey, key);
+  // A thread has one writer. When this turn resumes a thread that an idle warm
+  // process opened under other settings (an /access or sandbox change), that
+  // process must let go before a new one can resume it.
+  if (input.input.threadId) await releaseThreadWriters(input.input.threadId, key);
 
   const existing = keepAlive ? SESSION_CREATIONS.get(key) : undefined;
   if (existing) {
@@ -748,6 +752,19 @@ function scheduleIdleClose(session: CachedSession): void {
   session.idleTimer.unref?.();
 }
 
+async function releaseThreadWriters(threadId: string, protectedKey: string): Promise<void> {
+  const holders: CachedSession[] = [];
+  for (const [key, session] of SESSION_CACHE) {
+    if (key === protectedKey || session.threadId !== threadId || session.pendingRuns > 0) continue;
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    SESSION_CACHE.delete(key);
+    holders.push(session);
+  }
+  if (!holders.length) return;
+  recordGatewayWarmThreadCount();
+  await Promise.all(holders.map((session) => session.client.closeAndWait()));
+}
+
 function closeSupersededSessions(scopeKey: string, protectedKey: string): void {
   for (const [key, session] of SESSION_CACHE) {
     if (key !== protectedKey && session.scopeKey === scopeKey) invalidateCachedSession(key, session);
@@ -840,6 +857,17 @@ class CodexAppServerClient {
 
   isAlive(): boolean {
     return !this.closed && this.child.exitCode === null && !this.child.killed;
+  }
+
+  /** Close and wait (bounded) for the process to exit, so the thread's writer lock is released. */
+  async closeAndWait(timeoutMs = 5_000): Promise<void> {
+    const exited = this.child.exitCode !== null || this.child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => this.child.once("exit", () => resolve()));
+    this.close();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([exited, new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); })]);
+    if (timer) clearTimeout(timer);
   }
 
   close(): void {
@@ -1028,6 +1056,26 @@ class CodexAppServerClient {
     let lastMessageItemId: string | undefined;
     let lastDeltaText = "";
     let lastReasoningPart: string | undefined;
+    // A provider stream that drops before completion makes Codex re-send the
+    // request ("error" with willRetry), and the answer streams again under a
+    // new item id. `attemptText` is what this sampling attempt has streamed;
+    // after a retry, `retryShadow` holds it and the retry's deltas are held in
+    // `retryBuffer` until they diverge from it, so the same reply is painted once.
+    let attemptText = "";
+    let retryShadow: string | undefined;
+    let retryBuffer = "";
+    const emitDelta = (itemId: string | undefined, delta: string): void => {
+      // Each agentMessage item is its own paragraph; without the break,
+      // "…run pytest." and "add currently…" stream as one sentence.
+      if (itemId && lastMessageItemId && itemId !== lastMessageItemId && !/\n\s*$/.test(lastDeltaText)) {
+        input.onDelta?.("\n\n");
+        attemptText += "\n\n";
+      }
+      if (itemId) lastMessageItemId = itemId;
+      lastDeltaText = delta;
+      attemptText += delta;
+      input.onDelta?.(delta);
+    };
     // Raw events remain observable for multi-agent graph consumers, but the
     // synthesized parent turn must never consume a child's output. Older
     // servers omitted one or both IDs, so a missing ID remains compatible.
@@ -1089,20 +1137,48 @@ class CodexAppServerClient {
           const delta = stringValue(params.delta) ?? "";
           if (delta) {
             firstDeltaMs ??= Date.now() - started;
-            // Each agentMessage item is its own paragraph; without the break,
-            // "…run pytest." and "add currently…" stream as one sentence.
             const itemId = stringValue(params.itemId);
-            if (itemId && lastMessageItemId && itemId !== lastMessageItemId && !/\n\s*$/.test(lastDeltaText)) input.onDelta?.("\n\n");
-            if (itemId) lastMessageItemId = itemId;
-            lastDeltaText = delta;
-            input.onDelta?.(delta);
+            if (retryShadow !== undefined) {
+              retryBuffer += delta;
+              if (retryShadow.startsWith(retryBuffer)) {
+                // Still repeating what the failed attempt already painted.
+                if (itemId) lastMessageItemId = itemId;
+                continue;
+              }
+              const shadow = retryShadow;
+              retryShadow = undefined;
+              if (retryBuffer.startsWith(shadow)) {
+                // The retry goes further than the first attempt: paint only the tail.
+                if (itemId) lastMessageItemId = itemId;
+                attemptText = shadow;
+                emitDelta(itemId, retryBuffer.slice(shadow.length));
+              } else {
+                emitDelta(itemId, retryBuffer);
+              }
+              retryBuffer = "";
+              continue;
+            }
+            emitDelta(itemId, delta);
+          }
+          continue;
+        }
+        if (method === "error") {
+          if (!belongsToActiveTurn(params)) continue;
+          if (params.willRetry === true && attemptText) {
+            retryShadow = attemptText;
+            retryBuffer = "";
           }
           continue;
         }
         if (method === "item/started") {
           if (!belongsToActiveTurn(params)) continue;
           const event = codexItemToToolEvent(asRecord(params.item), "start");
-          if (event) input.onToolEvent?.(event);
+          if (event) {
+            attemptText = "";
+            retryShadow = undefined;
+            retryBuffer = "";
+            input.onToolEvent?.(event);
+          }
           continue;
         }
         if (method === "item/reasoning/summaryTextDelta") {

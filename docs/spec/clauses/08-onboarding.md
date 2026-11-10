@@ -71,3 +71,13 @@
 - **Environment:** injected `detect` and `verify`.
 - **Known gaps:** integrations and channels are not verified in phase 1, so they always count as missing until their own setup command runs.
 - **Evidence:** same run: Ready 6/8 with `fix: export OPENAI_API_KEY=<your key>` and the Slack setup command; saved config kept only `apiKeyEnv: ANTHROPIC_AUTH_TOKEN`, no key value (`after-05-finish.png`).
+
+## MUS-SPEC-08-3D — A Codex model provider is verified with a model it serves
+
+- **Precondition:** `$CODEX_HOME/config.toml` has `model = "gpt-6.1-terra"` (served only by OpenAI) and `[model_providers.hybrow]` with `base_url = "https://router.example/v1"`; `ANTHROPIC_BASE_URL=https://router.example` and `ANTHROPIC_MODEL=cc/claude-sonnet-5-5` point at the same gateway. A second provider `gw2` has a Codex profile `[profiles.gw]` with `model_provider = "gw2"` and `model = "auto/gpt"`. A third provider `bare` has neither.
+- **Action:** detect, then verify each Codex provider route against a fake `codex` that rejects any model other than the ones each provider serves with "[400]: The 'gpt-6.1-terra' model is not supported".
+- **Expected result:** detection gives `codex-provider:hybrow` the model `cc/claude-sonnet-5-5` (same gateway host) and `codex-provider:gw2` the model `auto/gpt` (its profile); verification runs `codex exec -m <that model>` with `model_provider` set and succeeds. For `bare`, the failure says Codex's default model is not served by that provider, and the finish screen's fix is `muster chat --model bare:<model>` with a model it serves — never "check [model_providers.bare] in config.toml". `muster onboard --preview --verify` without `--step` opens on the model step and verifies it, instead of printing step 1.
+- **Test:** `packages/cli/test/onboarding-v2.test.ts` › "a Codex model provider is verified with a model it serves, and a rejected default model gets a model fix"
+- **Environment:** `detectProviders` with a temp CODEX_HOME; `verifyRoute` with `MUSTER_CODEX_COMMAND` pointing at a fake codex.
+- **Known gaps:** without a profile or a same-host env model, Muster cannot know the gateway's model names, so it verifies with Codex's default and explains the fix.
+- **Evidence:** UNVERIFIED

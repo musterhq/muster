@@ -681,8 +681,8 @@ export interface NarrationPainter {
   flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
   reasoning(text: string): void;
-  /** Flush both buffers at end of turn. */
-  finish(): void;
+  /** Flush both buffers at end of turn and close any cell still running (as interrupted, or as ended without a result). */
+  finish(options?: { readonly interrupted?: boolean }): void;
   /** Characters of assistant narration painted so far. */
   readonly painted: number;
 }
@@ -738,6 +738,18 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   };
   /** The tool whose headline is the last thing painted; its result hangs right under it. */
   let headlineToolId: string | undefined;
+  /** Cells painted as running that have not had their end event yet. */
+  const openCells = new Map<string, AgentToolEvent>();
+  const closeOpenCells = (interrupted: boolean): void => {
+    if (!options.block || !bullets) return;
+    const label = interrupted ? "interrupted" : "no result (the turn ended)";
+    for (const [id, event] of openCells) {
+      const name = toolCellName(event);
+      const title = toolCellTitle(event);
+      options.block(`tool:${id}`, () => ["", ...[formatToolLine(name, title, "failure"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
+    }
+    openCells.clear();
+  };
   const paintTool = (event: AgentToolEvent): void => {
     flushAll();
     blockOpen = false;
@@ -746,8 +758,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       const title = toolCellTitle(event);
       // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
+        openCells.set(event.id, event);
         options.block(`tool:${event.id}`, () => ["", ...[formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`].map((row) => cardRow(row))]);
       } else {
+        openCells.delete(event.id);
         const tone: CardTone = event.failed ? "failure" : "tool";
         options.block(`tool:${event.id}`, (expanded) => ["", ...[
           formatToolLine(name, title, event.failed ? "failure" : "success"),
@@ -807,12 +821,13 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
         }
       });
     },
-    finish() {
+    finish(finishOptions) {
       drainReasoning();
       for (const event of message.flush("message_end")) {
         if (event.type === "block") paintMessage(event.text);
       }
       blockOpen = false;
+      closeOpenCells(Boolean(finishOptions?.interrupted));
     },
     get painted() {
       return painted;
@@ -1170,12 +1185,25 @@ function cardTitle(request: ApprovalRequest): string {
   return lines.length > 1 ? `${lines[0]} …` : (lines[0] ?? raw);
 }
 
+const APPROVAL_COMMAND_MAX_LINES = 60;
+
+/** A pending card lists a multi-line command in full: the user approves what they can see. */
+function approvalCommandRows(request: ApprovalRequest): string[] {
+  if (request.kind !== "command") return [];
+  const lines = unwrapShellCommand(request.title).split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const shown = lines.slice(0, APPROVAL_COMMAND_MAX_LINES).map((line) => `    ${line}`);
+  if (lines.length > shown.length) shown.push(`    ${dim(`… +${lines.length - shown.length} more lines`)}`);
+  return shown;
+}
+
 /** The approval card: pending with its keys, or settled with the decision. */
 export function renderApprovalCard(request: ApprovalRequest, decision?: ApprovalDecision): string[] {
   const verb = request.kind === "command" ? "Run" : request.kind === "edit" ? "Allow" : "Grant";
   const approved = decision === "accept" || decision === "acceptForSession";
   const glyph = decision ? renderActionBullet(approved ? "success" : "failure") : highlight("?");
   const rows = [`${glyph} ${verb} ${cardTitle(request)}?`];
+  if (!decision) rows.push(...approvalCommandRows(request));
   if (request.reason) rows.push(`  ${dim(`${RESULT_ELBOW} ${request.reason}`)}`);
   rows.push(decision
     ? `  ${dim(APPROVAL_LABELS[decision])}`
@@ -1235,6 +1263,27 @@ export class ApprovalQueue {
 export function isQueueFollowUpKey(data: string): boolean {
   return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
 }
+
+/**
+ * Ctrl+C: the first press interrupts a running turn (like Esc) or clears a
+ * draft; a second press within the window, or a press on an idle empty
+ * composer, quits.
+ */
+export class CtrlCGate {
+  static readonly WINDOW_MS = 2000;
+  private lastPressAt = Number.NEGATIVE_INFINITY;
+
+  press(state: { readonly running: boolean; readonly hasText: boolean }, now = Date.now()): "interrupt" | "clear" | "quit" {
+    const repeat = now - this.lastPressAt <= CtrlCGate.WINDOW_MS;
+    this.lastPressAt = now;
+    if (repeat) return "quit";
+    if (state.running) return "interrupt";
+    if (state.hasText) return "clear";
+    return "quit";
+  }
+}
+
+export const CTRL_C_AGAIN_HINT = "ctrl+c again to quit";
 
 /** Alt+Up pulls the newest queued follow-up back into the composer. */
 export function isEditQueuedKey(data: string): boolean {
@@ -1307,6 +1356,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   editor.onSubmit = (text) => {
     void sink.submit(text);
   };
+  const ctrlC = new CtrlCGate();
   return {
     input(data) {
       if (sink.settings) {
@@ -1332,6 +1382,16 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       }
       if (data === "\x04") {
         sink.toggleLiveDiff();
+        return;
+      }
+      if (data === "\x03") {
+        const action = ctrlC.press({ running: sink.running, hasText: Boolean(editor.getText()) });
+        if (action === "quit") sink.exited = true;
+        else {
+          if (action === "interrupt") sink.interruptTurn();
+          else editor.setText("");
+          sink.appendLine(dim(`  ${CTRL_C_AGAIN_HINT}`));
+        }
         return;
       }
       if (data === "\x1b" && sink.interruptTurn()) return;
@@ -1595,6 +1655,7 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   };
   tui.addChild(screen);
   tui.setFocus(editor);
+  const ctrlC = new CtrlCGate();
   tui.addInputListener((data) => {
     // An approval card owns the keyboard until it is answered.
     if (screen.approvals.pending && !parseSgrMouseSequence(data)) {
@@ -1648,7 +1709,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       return { consume: true };
     }
     if (data === "\x03") {
-      screen.stop();
+      const action = ctrlC.press({ running: screen.running, hasText: Boolean(editor.getText()) });
+      if (action === "quit") {
+        screen.exited = true;
+        screen.stop();
+      } else {
+        if (action === "interrupt") screen.interruptTurn();
+        else editor.setText("");
+        screen.appendLine(dim(`  ${CTRL_C_AGAIN_HINT}`));
+        tui.requestRender(true);
+      }
       return { consume: true };
     }
     if (matchesKey(data, "escape") && screen.closeLiveDiff(true)) return { consume: true };

@@ -131,3 +131,32 @@ test("alt+up pulls the last queued message back into the composer", { timeout: 3
   await tick();
   runtime.release();
 });
+
+// Spec: MUS-SPEC-02-1F (docs/spec/clauses/02-chat-composer.md#mus-spec-02-1f--ctrlc-interrupts-first-and-quits-only-on-a-second-press)
+test("ctrl+c interrupts a running turn and only a second press quits", { timeout: 3000 }, async () => {
+  const runtime = fakeRuntime();
+  const { chat, first } = start(runtime);
+  await tick();
+  chat.type("keep this draft");
+  chat.input("\x03");
+  await first;
+  await tick();
+  assert.equal(runtime.interrupted, 1, "the first ctrl+c interrupts the turn");
+  assert.equal(chat.exited(), false, "the first ctrl+c does not quit");
+  assert.equal(chat.text(), "keep this draft");
+  assert.match(plain(chat.transcript()), /ctrl\+c again to quit/i);
+  chat.input("\x03");
+  assert.equal(chat.exited(), true, "a second ctrl+c within the window quits");
+
+  const idle = createMusterChatHarness({ onSubmit: runtime.onSubmit, onInterrupt: runtime.onInterrupt });
+  idle.input("\x03");
+  assert.equal(idle.exited(), true, "ctrl+c on an idle, empty composer quits");
+
+  const drafting = createMusterChatHarness({ onSubmit: runtime.onSubmit, onInterrupt: runtime.onInterrupt });
+  drafting.type("half a thought");
+  drafting.input("\x03");
+  assert.equal(drafting.exited(), false);
+  assert.equal(drafting.text(), "", "ctrl+c with text clears the composer first");
+  drafting.input("\x03");
+  assert.equal(drafting.exited(), true);
+});

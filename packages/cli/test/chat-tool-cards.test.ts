@@ -100,3 +100,25 @@ test("cards render as full-width bands, failures tinted, separated by a gap", as
     if (previous !== undefined) process.env.NO_COLOR = previous;
   }
 });
+
+// Spec: MUS-SPEC-01-2C (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-2c--a-turn-that-ends-with-a-cell-still-open-closes-the-cell)
+test("a cell still running when the turn ends is closed as interrupted", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  painter().tool({ phase: "start", id: "s1", kind: "command", title: "sleep 30; echo finished" });
+  painter().tool({ phase: "start", id: "s2", kind: "command", title: "pytest -q" });
+  painter().tool({ phase: "end", id: "s2", kind: "command", title: "pytest -q", exitCode: 0, durationMs: 1000 });
+  painter().finish({ interrupted: true });
+  let text = plain(chat.transcript());
+  assert.equal(text.filter((row) => row.includes("Bash(sleep 30; echo finished)")).length, 1, "one cell, updated in place");
+  const at = text.findIndex((row) => row.includes("Bash(sleep 30; echo finished)"));
+  assert.equal(text[at + 1], "  ⎿ interrupted");
+  assert.ok(!text.some((row) => row.includes("running…")), text.join("\n"));
+  assert.ok(text.includes("  ⎿ exit 0 · 1.0s"), "a finished cell is left as it was");
+
+  painter().tool({ phase: "start", id: "s3", kind: "command", title: "make" });
+  painter().finish();
+  text = plain(chat.transcript());
+  const make = text.findIndex((row) => row.includes("Bash(make)"));
+  assert.equal(text[make + 1], "  ⎿ no result (the turn ended)");
+  await finish();
+}));

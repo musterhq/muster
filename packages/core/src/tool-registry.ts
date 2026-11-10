@@ -9,6 +9,7 @@ import { addMemory, findMemory, formatMemoryScope, isVisibleInScopes, parseMemor
 import { activeProfile } from "./profiles.js";
 import { createAutomation, describeAutomation, formatAutomationsTable, listAutomations, MAX_ACTIVE_AUTOMATIONS, MAX_AUTOMATION_TEXT, WHEN_FORMS } from "./automations.js";
 import { removeSchedule } from "./scheduler.js";
+import { listSkills } from "./skills.js";
 import { openSessionStore, type SessionSearchArgs } from "./sessions.js";
 import { buildCockpitState } from "./store.js";
 import type { ContextObject, MemoryScope } from "./types.js";
@@ -141,6 +142,7 @@ export const BUILTIN_TOOLSETS: Record<string, ToolsetDef> = {
   shell: { description: "Run allowlisted commands", tools: ["terminal"] },
   schedule: { description: "Create, list and remove reminders and routines", tools: ["schedule_manage"] },
   results: { description: "Fetch persisted oversized tool results", tools: ["result_fetch"] },
+  skills: { description: "Read the skills the turn prompt lists", tools: ["skill_view"] },
   discovery: { description: "Search, describe, and call the authorized tool catalog", tools: ["tool_search", "tool_describe", "tool_call"] },
   core: { description: "Everything safe by default", tools: [], includes: ["files", "web", "memory", "sessions", "results", "discovery"] },
   full: { description: "Core plus shell", tools: [], includes: ["core", "shell"] },
@@ -959,6 +961,27 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
     },
     async handler(args, ctx) {
       return scheduleManage(args, ctx);
+    },
+  });
+  registry.register<{ name: string }>({
+    name: "skill_view", toolset: "skills",
+    description: "Read a skill by name: its description and full instructions. Use it for any skill listed under \"Available skills\" before relying on it.",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: { name: { type: "string", description: "The skill name, e.g. greet (from [skill:greet])." } },
+    },
+    async handler(args, ctx) {
+      const name = String(args.name ?? "").replace(/^\[?skill:/, "").replace(/\]$/, "").trim();
+      if (!name) return { ok: false, error: "skill_view needs a skill name." };
+      const config = await loadConfig(ctx.cwd).catch(() => undefined);
+      const skills = await listSkills(ctx.cwd, ["active"], config?.skills?.load);
+      const skill = skills.find((entry) => entry.name === name);
+      if (!skill) {
+        const known = skills.map((entry) => entry.name).slice(0, 20);
+        return { ok: false, error: `Skill not found: ${name}.${known.length ? ` Available: ${known.join(", ")}.` : ""}` };
+      }
+      return { ok: true, data: `# ${skill.name} (v${skill.version})\n${skill.description}\n\n${skill.body.trim()}\n` };
     },
   });
   registry.register<{ id: string; offset?: number; limit?: number }>({

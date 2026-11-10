@@ -125,3 +125,40 @@ test("an agent sets, lists and removes a reminder over MCP", { timeout: 90_000 }
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-11-1H (docs/spec/clauses/11-plugin-bundles.md#mus-spec-11-1h--a-codex-turn-can-read-an-installed-bundles-skill-through-skill_view)
+test("skill_view over MCP returns an installed bundle's skill", { timeout: 120_000 }, async () => {
+  const cwd = await workspace();
+  const { mkdir } = await import("node:fs/promises");
+  const { execFile } = await import("node:child_process");
+  const bundle = join(cwd, "src", "hello-kit");
+  const files: Record<string, string> = {
+    ".claude-plugin/plugin.json": JSON.stringify({ name: "hello-kit", version: "0.1.0", description: "Greetings" }),
+    "skills/greet/SKILL.md": "---\nname: greet\ndescription: Greet the user warmly\n---\n\nSay hello and use the user's name.\n",
+  };
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(join(bundle, path, ".."), { recursive: true });
+    await writeFile(join(bundle, path), content, "utf8");
+  }
+  await new Promise<void>((done, fail) => execFile("tsx", [cliPath, "plugins", "install", bundle], { cwd, env: { ...process.env, MUSTER_ONBOARDING_HOME: join(cwd, ".test-home") } }, (error) => error ? fail(error) : done()));
+  const client = await connect(cwd);
+  try {
+    await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    const tools = ((await client.request("tools/list")).result as { tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> }).tools;
+    const view = tools.find((tool) => tool.name === "skill_view");
+    assert.ok(view, `skill_view is listed: ${tools.map((tool) => tool.name).join(", ")}`);
+    assert.ok(view.inputSchema?.properties?.name, "it takes a skill name");
+    assert.ok(!tools.some((tool) => /terminal|write_file|shell/.test(tool.name)), "still no shell or file writes");
+    const found = await client.request("tools/call", { name: "skill_view", arguments: { name: "greet" } });
+    assert.notEqual((found.result as { isError?: boolean }).isError, true, text(found));
+    assert.match(text(found), /greet/);
+    assert.match(text(found), /Greet the user warmly/);
+    assert.match(text(found), /Say hello and use the user's name\./);
+    const missing = await client.request("tools/call", { name: "skill_view", arguments: { name: "nope" } });
+    assert.equal((missing.result as { isError?: boolean }).isError, true);
+    assert.match(text(missing), /nope/);
+  } finally {
+    client.close();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

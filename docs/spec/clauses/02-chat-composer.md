@@ -61,3 +61,13 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** real CLI, `--complete --describe`.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-1F — Ctrl+C interrupts first and quits only on a second press
+
+- **Precondition:** chat; a turn is running and the composer holds a draft.
+- **Action:** press Ctrl+C; press Ctrl+C again within 2 s. Separately: with no turn running, press Ctrl+C once with an empty composer, and once with text in the composer.
+- **Expected result:** the first press interrupts the turn like Esc (the chat stays open, the draft stays in the composer, a dim hint says Ctrl+C again quits); the second press within 2 s quits. When idle, Ctrl+C on an empty composer quits at once; with text, the first press clears the composer and a second press within 2 s quits.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "ctrl+c interrupts a running turn and only a second press quits"
+- **Environment:** chat harness, fake runtime.
+- **Known gaps:** the 2 s window uses the wall clock; it is not tested past expiry.
+- **Evidence:** UNVERIFIED

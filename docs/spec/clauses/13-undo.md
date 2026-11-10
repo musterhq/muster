@@ -21,3 +21,13 @@
 - **Environment:** as above.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-13-1C — Undo in a folder that is not a git repository says why it cannot work
+
+- **Precondition:** chat in a folder that is not a git repository, so the workspace observer cannot start (`live diff off: not a git repository`); the last turn edited `data.csv`.
+- **Action:** `/undo`.
+- **Expected result:** the reply says plainly that undo needs a git repository (and how to get one: `git init`); it never says the last turn changed no files. With live diff turned off by the user, the reply says undo needs live diff on.
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "undo in a folder that is not a git repository says it needs git, never that nothing changed"
+- **Environment:** real non-git temp dir, real workspace observer.
+- **Known gaps:** Muster does not undo untracked turns itself; the user needs git.
+- **Evidence:** UNVERIFIED

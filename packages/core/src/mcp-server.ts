@@ -7,7 +7,7 @@ import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { createToolRegistry, registerBuiltinTools, type ToolContext, type ToolRegistryV2 } from "./tool-registry.js";
 
-/** What an outside runtime gets: memory, sessions, results and reminders. No shell, no file writes; runtimes have their own. */
+/** What an outside runtime gets: memory, sessions, results, reminders and skills (read-only). No shell, no file writes; runtimes have their own. */
 export const MCP_SERVE_TOOLS: readonly string[] = [
   "memory_search",
   "memory_get",
@@ -16,6 +16,7 @@ export const MCP_SERVE_TOOLS: readonly string[] = [
   "session_status",
   "result_fetch",
   "schedule_manage",
+  "skill_view",
 ];
 
 export interface MusterMcpServerOptions {
@@ -53,7 +54,7 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
             protocolVersion: typeof message.params?.protocolVersion === "string" ? message.params.protocolVersion : "2025-06-18",
             capabilities: { tools: { listChanged: false } },
             serverInfo: { name: "muster", version: options.version },
-            instructions: "Muster's durable memory, session history and reminders. Search memory before asking the user something they may have told you before; write memory only for durable facts. Use schedule_manage when the user asks to be reminded or wants something to run later or on a schedule.",
+            instructions: "Muster's durable memory, session history and reminders. Search memory before asking the user something they may have told you before; write memory only for durable facts. Use schedule_manage when the user asks to be reminded or wants something to run later or on a schedule. Read a listed skill with skill_view before relying on it.",
           });
         case "ping":
           return reply(id, {});

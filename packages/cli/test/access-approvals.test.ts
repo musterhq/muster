@@ -64,10 +64,24 @@ test("/access shows the current mode", { timeout: 120_000 }, async () => {
 test("approval and policy cards keep a multi-line command on one title row", async () => {
   const { renderApprovalCard, renderPolicyBlockCard, stripCardMark } = await import("../src/chat-tui.js");
   const request = { id: "m", kind: "command" as const, title: "/bin/zsh -lc 'rm -rf build\nls'" };
-  for (const rows of [renderApprovalCard(request), renderPolicyBlockCard(request, { hookId: "no-rm-rf", reason: "destructive deletes need a human" })]) {
+  // A pending card lists every line (MUS-SPEC-10-1F); an answered card and a policy card stay on one title row.
+  for (const rows of [renderApprovalCard(request, "accept"), renderPolicyBlockCard(request, { hookId: "no-rm-rf", reason: "destructive deletes need a human" })]) {
     const text = rows.map((row) => stripCardMark(row).replace(/\x1b\[[0-9;]*m/g, ""));
     assert.ok(text.every((row) => !row.includes("\n")));
     assert.ok(text.some((row) => /rm -rf build …/.test(row)), text.join("|"));
     assert.ok(!text.some((row) => row.trim() === "ls" || row.trim() === "ls'?"), "the second command is not a stray row");
   }
+});
+
+// Spec: MUS-SPEC-10-1F (docs/spec/clauses/10-access-approvals.md#mus-spec-10-1f--the-approval-card-shows-every-line-of-a-multi-line-command)
+test("a pending approval card shows every line of a multi-line command", async () => {
+  const { renderApprovalCard, stripCardMark } = await import("../src/chat-tui.js");
+  const request = { id: "m2", kind: "command" as const, title: "/bin/zsh -lc 'printf hi > hello.txt\nls'" };
+  const text = renderApprovalCard(request).map((row) => stripCardMark(row).replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.ok(text.some((row) => /Run printf hi > hello\.txt …\?/.test(row)), text.join("|"));
+  assert.ok(text.some((row) => row.trim() === "printf hi > hello.txt"), `first line in full: ${text.join("|")}`);
+  assert.ok(text.some((row) => row.trim() === "ls"), `second line shown: ${text.join("|")}`);
+  assert.ok(text.findIndex((row) => row.trim() === "ls") < text.findIndex((row) => /y once/.test(row)), "the command comes before the keys");
+  const answered = renderApprovalCard(request, "decline").map((row) => stripCardMark(row).replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.ok(!answered.some((row) => row.trim() === "ls"), "an answered card collapses to its title");
 });

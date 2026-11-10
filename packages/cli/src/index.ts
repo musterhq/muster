@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
 import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
-import { startLiveDiffFeed } from "./live-diff.js";
+import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
   BACKEND_CARD_PROVIDERS,
@@ -270,7 +270,6 @@ import {
   forgetTurnMemories,
   type RecordedTurn,
   type MusterConfig as ChatMusterConfig,
-  undoWorkspacePatches,
   type WorkspacePatchEvent,
   ACCESS_MODES,
   isAccessMode,
@@ -1339,6 +1338,8 @@ interface ChatState {
   usage?: ChatSessionUsage;
   /** Every turn of this chat with its file changes and provider ids (`/rewind`). */
   turnStack?: RecordedTurn[];
+  /** Why the latest turn ran without the workspace observer (not a git repo, live diff off); `/undo` says so. */
+  lastTurnUntracked?: string;
   /** Observer events of the last turn that changed files (`/undo`). */
   lastTurnPatches?: readonly WorkspacePatchEvent[];
   /** How much turns may do without asking (`/access`); unset means auto-edit. */
@@ -3223,6 +3224,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // ~/.codex/config.toml); a provider prefix Codex does not know is refused
   // before any spend instead of failing inside the provider.
   const gateway = await resolveChatGatewayModel(state);
+  const turnStartedAt = Date.now();
   let outcome: RunOutcome;
   try {
     outcome = await executeRun(config, {
@@ -3266,12 +3268,13 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       ...(resumeThreadId ? { sessionId: resumeThreadId, resume: true } : {}),
     });
   } finally {
-    painter?.finish();
+    painter?.finish({ interrupted: lastChatInterruptAt >= turnStartedAt });
     stopWorking();
     await liveDiff.finish().catch(() => {});
   }
   // /undo works on the most recent turn that changed files; /rewind on any turn.
   if (turnPatches.length) state.lastTurnPatches = turnPatches;
+  state.lastTurnUntracked = liveDiff.active ? undefined : liveDiff.inactiveReason;
   state.turnStack = [...(state.turnStack ?? []), {
     prompt,
     runId: outcome.plan.runId,
@@ -3346,7 +3349,11 @@ function emitChatLine(state: ChatState, line: string): void {
   console.log(line);
 }
 
+/** When the user last interrupted a chat turn; a turn that started before it ended interrupted. */
+let lastChatInterruptAt = 0;
+
 async function interruptChatTurn(): Promise<boolean> {
+  lastChatInterruptAt = Date.now();
   const [codex, claude] = await Promise.all([
     interruptActiveCodexTurn("cli-chat").catch(() => false),
     interruptClaudeSubprocesses(),
@@ -5441,17 +5448,8 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
 
 async function undoLastChatTurn(state: ChatState): Promise<void> {
   const patches = state.lastTurnPatches;
-  if (!patches?.length) {
-    console.log(color("Nothing to undo: the last turn changed no files.", "dim"));
-    return;
-  }
-  const result = await undoWorkspacePatches(patches);
-  state.lastTurnPatches = undefined;
-  const rows = [
-    `${color("↺", result.restored.length ? "green" : "yellow")} Undid ${result.restored.length} ${result.restored.length === 1 ? "file" : "files"}${result.skipped.length ? `, skipped ${result.skipped.length}` : ""}`,
-    ...result.restored.map((file) => `  ${color("⎿", "dim")} ${file.path} ${color(`(reverted +${file.additions} −${file.deletions})`, "dim")}`),
-    ...result.skipped.map((file) => `  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`),
-  ];
+  const rows = await undoLastTurnRows({ patches, ...(state.lastTurnUntracked ? { untrackedReason: state.lastTurnUntracked } : {}) });
+  if (patches?.length) state.lastTurnPatches = undefined;
   for (const row of rows) console.log(row);
 }
 
