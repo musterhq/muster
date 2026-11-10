@@ -41,3 +41,13 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Environment:** pure renderers, injected clock.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-09-1E — After a resize the bar is rebuilt for the new width
+
+- **Precondition:** chat open at 110 columns; the bar reads `gpt-6.1-terra · High │ /private/tmp/qa-nogit │ ctx 7% │ 144.0k tok`.
+- **Action:** the window is resized to 60 columns; a turn summary row (`▸ gpt-6.1-terra · … · 11.1s`) is longer than the width.
+- **Expected result:** the bar is rebuilt for 60 columns, so low-priority segments drop out whole (never `… │ 144.`); the summary row's continuation keeps the row's indent instead of wrapping to column 0.
+- **Test:** `packages/cli/test/status-bar.test.ts` › "after a resize the bar is rebuilt for the new width and the summary row keeps its indent"
+- **Environment:** `FooterSlot` with `formatStatusBar` as its source; pure `renderTranscriptLine`.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
