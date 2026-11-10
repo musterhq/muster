@@ -189,3 +189,22 @@ test("a policy block replaces the command's cell; a blocked prompt goes back to 
   assert.equal(promptBackAfterHookBlock(new Error("Command failed (exit 1)"), "other", sink), false);
   assert.deepEqual(opened, ["deploy to prod"]);
 }));
+
+// Spec: MUS-SPEC-01-7B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-7b--a-blank-row-separates-a-tool-cell-from-the-narration-after-it)
+test("the narration after a tool cell starts below a blank row", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  painter().delta("I’ll check the current directory.\n\n");
+  painter().flush();
+  painter().tool({ phase: "start", id: "gap1", kind: "command", title: "ls -la" });
+  painter().tool({ phase: "end", id: "gap1", kind: "command", title: "ls -la", exitCode: 0, durationMs: 50, output: "total 8\ndata.csv" });
+  painter().delta("Reversed: tëst Ünïcödé\nAnd one more line.\n\n");
+  await finish();
+  const text = plain(chat.transcript());
+  const last = text.indexOf("    data.csv");
+  assert.ok(last > 0, text.join("\n"));
+  assert.equal(text[last + 1], "", "a blank row after the cell");
+  assert.equal(text[last + 2], "● Reversed: tëst Ünïcödé");
+  const opener = text.indexOf("● I’ll check the current directory.");
+  assert.equal(text[opener + 1], "", "the cell keeps its own blank row above it");
+  assert.equal(text[text.indexOf("● Reversed: tëst Ünïcödé") + 1], "  And one more line.", "no extra blank row inside one block");
+}));

@@ -171,3 +171,23 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure renderer (`formatToolEndLines` → `renderTranscriptLine`), NO_COLOR.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10, Codex turn running `python3 -c "print('abc '*60)"`: the output row is 110 columns ending `abc…`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-7A — Reasoning summaries do not wear the spinner's glyph
+
+- **Precondition:** chat TUI; the live status row is the spinner `✻ Working` / `✻ Composing`.
+- **Action:** the provider streams reasoning summaries ("Implementing now", "Waiting for next input") during a turn.
+- **Expected result:** each summary row starts with `∴ ` (violet, italic), never `✻ `, so a finished turn shows no row that looks like a stale spinner; the spinner keeps `✻`.
+- **Test:** `packages/cli/test/tui-stream-render.test.ts` › "reasoning summaries use their own glyph, not the spinner's"
+- **Environment:** narration painter, NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-7B — A blank row separates a tool cell from the narration after it
+
+- **Precondition:** chat TUI; a turn narrates, runs `ls -la`, then narrates again.
+- **Action:** the cell ends and the next message delta arrives.
+- **Expected result:** one blank row sits between the cell's last row and the next `●` block (cells already have a blank row above them); consecutive narration in one block gets no extra blank row.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "the narration after a tool cell starts below a blank row"
+- **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it; NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

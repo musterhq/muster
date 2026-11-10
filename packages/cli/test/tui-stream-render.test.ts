@@ -480,3 +480,21 @@ test("command cells drop the shell wrapper, quoted or not", () => {
   assert.equal(unwrapShellCommand("bash -c \"ls -la\""), "ls -la");
   assert.equal(unwrapShellCommand("git status"), "git status");
 });
+
+// Spec: MUS-SPEC-01-7A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-7a--reasoning-summaries-do-not-wear-the-spinners-glyph)
+test("reasoning summaries use their own glyph, not the spinner's", () => {
+  const previous = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line) });
+    painter.reasoning("Implementing now");
+    painter.reasoning("\n\nWaiting for next input");
+    painter.finish();
+    assert.deepEqual(plain(lines), ["∴ Implementing now", "∴ Waiting for next input"]);
+    for (const line of plain(lines)) assert.ok(!line.startsWith("✻"), `reasoning row must not look like the spinner: ${line}`);
+  } finally {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  }
+});
