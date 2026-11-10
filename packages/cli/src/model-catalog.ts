@@ -91,7 +91,8 @@ export function buildComposerCatalog(auth: { readonly codex: boolean; readonly c
 
 export function modelProvider(model: string | undefined): ModelProvider | undefined {
   if (!model) return undefined;
-  if (CLAUDE_MODELS.some((item) => item.value === model) || model.startsWith("claude-")) return "claude";
+  // Claude Code also takes its short names (`sonnet`, the /runtime claude-code default).
+  if (CLAUDE_MODELS.some((item) => item.value === model) || model.startsWith("claude-") || /^(?:sonnet|opus|haiku|fable)$/i.test(model)) return "claude";
   if (CODEX_MODELS.some((item) => item.value === model) || liveCodexModels.some((item) => item.value === model) || model.startsWith("gpt-")) return "codex";
   return undefined;
 }
