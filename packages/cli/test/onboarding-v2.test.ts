@@ -401,6 +401,7 @@ test("a Codex model provider is verified with a model it serves, and a rejected 
   await writeFile(fake, `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("--version")) process.exit(0);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
 const m = args.indexOf("-m");
 const model = m >= 0 ? args[m + 1] : "gpt-6.1-terra";
@@ -454,4 +455,14 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, o
   const finish = renderOnboarding(state, 160, false);
   assert.doesNotMatch(finish, /check \[model_providers\.bare\]/);
   assert.match(finish, /muster chat --model bare:<model>/);
+
+  const verified: string[] = [];
+  const view = fakeTtyOutput();
+  await runMusterOnboardingTui(["--preview", "--verify", "--no-color"], {
+    cwd: codexHome,
+    output: view.output,
+    detect: async () => detected,
+    verify: async (target) => { verified.push(target.id); return { ok: true, ms: 1000 }; },
+  });
+  assert.ok(verified.length > 0, "--verify without --step still verifies the model step");
 });

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readCodexModelProviders } from "./model-catalog.js";
@@ -129,8 +130,17 @@ export async function detectProviders(environment: DetectEnvironment = {}): Prom
     }
     : { badge: "no key", ready: false, kind: "openai-http", label: "OpenAI API", ...(openaiBase ? { baseUrl: openaiBase } : {}) };
 
+  const hints = await readCodexProviderHints(join(codexHome, "config.toml"));
+  const envRouteModels = [result["anthropic-proxy"], result.openai].filter((route): route is ProviderStatus => Boolean(route?.baseUrl && route.model));
   for (const id of codexProviders) {
+    // Codex's global `model` is often one only OpenAI serves; verify a gateway
+    // with a model it is known to serve: a Codex profile for this provider,
+    // else the model of an env route on the same gateway host.
+    const baseUrl = hints.baseUrls[id];
+    const model = hints.profileModels[id]
+      ?? (baseUrl ? envRouteModels.find((route) => sameHost(route.baseUrl!, baseUrl))?.model : undefined);
     result[`codex-provider:${id}`] = {
+      ...(model ? { model } : {}),
       badge: codex === undefined ? "needs codex" : "codex config",
       ready: codex !== undefined,
       kind: "codex-provider",
@@ -146,6 +156,46 @@ export async function detectProviders(environment: DetectEnvironment = {}): Prom
     result.lmstudio = { badge: "running", ready: true, kind: "local-openai", label: "LM Studio (local)", detail: `${lmStudioModels.length} model${lmStudioModels.length === 1 ? "" : "s"} at ${hostOf(lmStudioBase)} · Space to add`, baseUrl: `${lmStudioBase}/v1`, model: lmStudioModels[0] };
   }
   return result;
+}
+
+function sameHost(a: string, b: string): boolean {
+  try {
+    return new URL(a).host === new URL(b).host;
+  } catch {
+    return false;
+  }
+}
+
+/** `[model_providers.<id>] base_url` and `[profiles.*]` model per provider, from the Codex config. */
+export async function readCodexProviderHints(path: string): Promise<{ baseUrls: Record<string, string>; profileModels: Record<string, string> }> {
+  const text = await readFile(path, "utf8").catch(() => "");
+  const baseUrls: Record<string, string> = {};
+  const profiles: Record<string, { provider?: string; model?: string }> = {};
+  let section: { kind: "provider" | "profile"; id: string } | undefined;
+  const unquote = (value: string): string => value.trim().replace(/^(["'])(.*)\1$/, "$2");
+  for (const line of text.split(/\r?\n/)) {
+    const header = line.match(/^\s*\[([^\]]+)\]\s*$/);
+    if (header) {
+      const parts = header[1]!.trim().match(/^(model_providers|profiles)\.("[^"]+"|'[^']+'|[A-Za-z0-9_-]+)$/);
+      section = parts ? { kind: parts[1] === "profiles" ? "profile" : "provider", id: unquote(parts[2]!) } : undefined;
+      continue;
+    }
+    if (!section) continue;
+    const pair = line.match(/^\s*([A-Za-z_]+)\s*=\s*(.+?)\s*(#.*)?$/);
+    if (!pair) continue;
+    const value = unquote(pair[2]!);
+    if (section.kind === "provider" && pair[1] === "base_url") baseUrls[section.id] = value;
+    if (section.kind === "profile" && (pair[1] === "model" || pair[1] === "model_provider")) {
+      const profile = (profiles[section.id] ??= {});
+      if (pair[1] === "model") profile.model = value;
+      else profile.provider = value;
+    }
+  }
+  const profileModels: Record<string, string> = {};
+  for (const profile of Object.values(profiles)) {
+    if (profile.provider && profile.model && !profileModels[profile.provider]) profileModels[profile.provider] = profile.model;
+  }
+  return { baseUrls, profileModels };
 }
 
 function normalizeOllamaHost(value: string | undefined): string | undefined {
