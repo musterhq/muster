@@ -119,3 +119,105 @@ test("say synthesizes and ffmpeg converts to ogg opus", async () => {
     await ws.done();
   }
 });
+
+interface FakeOpenAIRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly authorization?: string;
+  readonly contentType?: string;
+  readonly body: Buffer;
+}
+
+async function startFakeOpenAIAudio(): Promise<{ url: string; requests: FakeOpenAIRequest[]; failWith(status: number | undefined): void; close(): Promise<void> }> {
+  const { createServer } = await import("node:http");
+  const requests: FakeOpenAIRequest[] = [];
+  let failure: number | undefined;
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks);
+      requests.push({ method: request.method ?? "", path: request.url ?? "", authorization: request.headers.authorization, contentType: request.headers["content-type"], body });
+      if (failure) {
+        response.writeHead(failure, { "content-type": "application/json" });
+        // Some servers echo the presented key back; it must never surface.
+        response.end(JSON.stringify({ error: { message: `Incorrect API key provided: ${request.headers.authorization ?? ""}` } }));
+        return;
+      }
+      if (request.url === "/v1/audio/transcriptions") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ text: " cloud transcript " }));
+        return;
+      }
+      if (request.url === "/v1/audio/speech") {
+        response.writeHead(200, { "content-type": "audio/ogg" });
+        response.end(Buffer.concat([Buffer.from("OggS"), Buffer.from("opus-bytes")]));
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
+  });
+  await new Promise<void>((resolvePromise) => server.listen(0, "127.0.0.1", resolvePromise));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    url: `http://127.0.0.1:${port}/v1`,
+    requests,
+    failWith: (status) => { failure = status; },
+    close: () => new Promise<void>((resolvePromise) => { server.closeAllConnections(); server.close(() => resolvePromise()); }),
+  };
+}
+
+// Spec: MUS-SPEC-21-1D (docs/spec/clauses/21-voice.md#mus-spec-21-1d--cloud-providers-run-only-when-configured-and-keys-never-leak)
+test("openai voice providers use the env key, write audio, and never print the key", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-voice-openai-"));
+  const server = await startFakeOpenAIAudio();
+  const KEY = "sk-test-123";
+  try {
+    const voice: VoiceConfig = {
+      stt: { provider: "openai", baseUrl: server.url, apiKeyEnv: "VOICE_KEY", model: "whisper-1" },
+      tts: { provider: "openai", baseUrl: server.url, apiKeyEnv: "VOICE_KEY", model: "tts-1", voice: "alloy" },
+    };
+    const env = { PATH: process.env.PATH, VOICE_KEY: KEY };
+    const input = join(cwd, "clip.ogg");
+    await writeFile(input, "OggS audio bytes");
+
+    const heard = await transcribe(input, { voice, cwd, env });
+    assert.equal(heard.text, "cloud transcript");
+    assert.equal(heard.local, false);
+    const stt = server.requests[0];
+    assert.equal(stt.method, "POST");
+    assert.equal(stt.path, "/v1/audio/transcriptions");
+    assert.equal(stt.authorization, `Bearer ${KEY}`);
+    assert.match(stt.contentType ?? "", /^multipart\/form-data; boundary=/);
+    assert.ok(stt.body.includes("OggS audio bytes"), "the audio is uploaded");
+    assert.ok(stt.body.includes("whisper-1"), "the model is sent");
+
+    const output = join(cwd, "reply.ogg");
+    const spoken = await synthesize("hello there", { voice, cwd, env, format: "ogg-opus", output });
+    assert.equal(spoken.path, output);
+    assert.equal(spoken.mime, "audio/ogg");
+    assert.equal(await readFile(output, "utf8"), "OggSopus-bytes");
+    const tts = server.requests[1];
+    assert.equal(tts.path, "/v1/audio/speech");
+    assert.equal(tts.authorization, `Bearer ${KEY}`);
+    const ttsBody = JSON.parse(tts.body.toString("utf8")) as Record<string, unknown>;
+    assert.equal(ttsBody.input, "hello there");
+    assert.equal(ttsBody.model, "tts-1");
+    assert.equal(ttsBody.response_format, "opus");
+
+    server.failWith(401);
+    const leaks = (error: Error) => error.message.includes(KEY) || (error.stack ?? "").includes(KEY);
+    await assert.rejects(transcribe(input, { voice, cwd, env }), (error: Error) => /openai/.test(error.message) && /401/.test(error.message) && !leaks(error));
+    await assert.rejects(synthesize("hi", { voice, cwd, env, format: "ogg-opus" }), (error: Error) => /openai/.test(error.message) && /401/.test(error.message) && !leaks(error));
+
+    const before = server.requests.length;
+    await assert.rejects(transcribe(input, { voice, cwd, env: { PATH: process.env.PATH } }), /VOICE_KEY/);
+    await assert.rejects(synthesize("hi", { voice, cwd, env: { PATH: process.env.PATH } }), /VOICE_KEY/);
+    assert.equal(server.requests.length, before, "no request without a key");
+  } finally {
+    await server.close();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
