@@ -1268,6 +1268,30 @@ export function formatStatusBar(info: StatusBarInfo, width: number): string {
   return truncateToWidth(row, width, "…");
 }
 
+/**
+ * The status bar, built for one width. The bar is rebuilt after each turn and
+ * whenever the frame is painted at a different width (a resize), so segments
+ * drop out whole instead of the old row being cut mid-segment.
+ */
+export class FooterSlot {
+  line = "";
+  private width = -1;
+
+  constructor(private readonly source: (width: number) => string | Promise<string>) {}
+
+  staleFor(width: number): boolean {
+    return width !== this.width;
+  }
+
+  async refresh(width: number): Promise<boolean> {
+    this.width = width;
+    const line = await this.source(width);
+    if (line === this.line) return false;
+    this.line = line;
+    return true;
+  }
+}
+
 const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
   accept: "approved once",
   acceptForSession: "approved for this session",
@@ -1859,13 +1883,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   });
   await screen.refreshStatusLine();
   if (options.footerLine) {
-    screen.refreshFooter = async () => {
+    const slot = new FooterSlot(options.footerLine);
+    screen.refreshFooter = async (width = Math.max(40, Math.min(terminal.columns || 120, 240))) => {
       try {
-        screen.setFooter(await options.footerLine!(Math.max(40, Math.min(terminal.columns || 120, 240))));
+        await slot.refresh(width);
+        screen.setFooter(slot.line);
       } catch {
         /* the bar is chrome; a probe failure never breaks the chat */
       }
     };
+    screen.footerStaleFor = (width) => slot.staleFor(width);
     void screen.refreshFooter();
   }
   const rawEscapeHandler = (chunk: Buffer | string): void => {
@@ -2094,7 +2121,9 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   private footer = "";
   /** Recomputes the bar; set by runMusterChatTui when a footer source exists. */
-  refreshFooter?: () => Promise<void>;
+  refreshFooter?: (width?: number) => Promise<void>;
+  /** True when the bar was built for another width (the window was resized). */
+  footerStaleFor?: (width: number) => boolean;
 
   setFooter(line: string): void {
     if (line === this.footer) return;
@@ -2398,6 +2427,7 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   render(width: number): string[] {
     const frameWidth = Math.max(40, Math.min(width, 240));
+    if (this.footerStaleFor?.(frameWidth)) void this.refreshFooter?.(frameWidth);
     const composer = [
       ...renderQueuedBand(this.followUps.queued, frameWidth),
       ...renderMusterComposer(this.editor, frameWidth),
@@ -3191,7 +3221,7 @@ function sliceAnsiRange(value: string, start: number, end: number): string {
  * column.
  */
 function hangingIndent(clean: string, cleanWidth: number): string {
-  const match = clean.match(/^( *)(?:([●⏺⎿>✻]) )?/u);
+  const match = clean.match(/^( *)(?:([●⏺⎿>✻▸]) )?/u);
   const leading = match?.[1]?.length ?? 0;
   const glyph = match?.[2] ? 2 : 0;
   return " ".repeat(Math.max(0, Math.min(leading + glyph, cleanWidth - 10)));

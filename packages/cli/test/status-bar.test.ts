@@ -73,7 +73,6 @@ test("after a resize the bar is rebuilt for the new width and the summary row ke
   await slot.refresh(60);
   const narrow = plain(slot.line);
   assert.ok(narrow.length <= 60, narrow);
-  assert.ok(!/│ \S*…?$/.test(narrow) || !narrow.endsWith("144."), narrow);
   assert.doesNotMatch(narrow, /144\.$|tok…/, "segments drop whole, never cut mid-segment");
   const summary = renderTranscriptLine("▸ gpt-6.1-terra · 139.5k in · 118.0k cached · 185 out · $0.0123 · 11.1s", 60, 60).map(plain);
   assert.ok(summary.length > 1);
