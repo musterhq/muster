@@ -87,7 +87,7 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Precondition:** chat.
 - **Action:** `/shortcuts`; `/help`.
 - **Expected result:** `/shortcuts` lists every chat key: Enter (send, or steer a running turn), Ctrl+Q / Alt+Enter (queue), Alt+↑ (edit queued), Esc (stop the turn), Ctrl+C (interrupt, twice to quit), Ctrl+O (expand output), Ctrl+D (live file view), PgUp/PgDn (scroll), Tab (complete), `\` at line end, `@agent`. In `/help` and `/shortcuts` every description starts in the same column; a usage wider than that column puts its description on the next row, in the same column.
-- **Test:** `packages/cli/test/chat-composer.test.ts` › "/shortcuts lists every chat key and help rows line up"
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "/shortcuts lists every chat key and help rows line up" and › "muster chat --shortcuts prints the keys in aligned columns" (the panel printer used to collapse the padding to one space)
 - **Environment:** pure list and row formatter.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED

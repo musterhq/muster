@@ -214,3 +214,16 @@ test("/shortcuts lists every chat key and help rows line up", async () => {
   const long = rows.findIndex((row) => row.startsWith("/reasoning"));
   assert.ok(rows[long + 1]!.trim() === "choose thinking effort" && rows[long + 1]!.indexOf("choose") === columns[0], "a usage wider than the column puts its text on the next row, aligned");
 });
+
+// Spec: MUS-SPEC-02-2C (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2c--shortcuts-lists-every-key-and-help-columns-line-up)
+test("muster chat --shortcuts prints the keys in aligned columns", { timeout: 60_000 }, async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { resolve } = await import("node:path");
+  const cli = resolve(import.meta.dirname, "..", "src", "index.ts");
+  const { stdout } = await promisify(execFile)("tsx", [cli, "chat", "--shortcuts"], { env: { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1" } });
+  const rows = stdout.split("\n").filter((row) => /^ {2}\S/.test(row));
+  assert.ok(rows.length >= 10, stdout);
+  const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
+  assert.ok(starts.every((start) => start > 0 && start === starts[0]), `descriptions start in one column:\n${stdout}`);
+});
