@@ -93,6 +93,27 @@ export const matrixChannel: ChannelAdapter = {
     if (event.type !== "m.room.message" || !event.event_id || !event.room_id || !event.sender) return [];
     if (own && event.sender === own) return [];
     const content = event.content ?? {};
+    if (content.msgtype === "m.audio") {
+      // Audio is exposed as an attachment; the shared runner transcribes it.
+      const url = typeof content.url === "string" && content.url.startsWith("mxc://") ? content.url : undefined;
+      if (!url) return [];
+      const info = (content.info ?? {}) as { mimetype?: unknown; size?: unknown; duration?: unknown };
+      return [{
+        surfaceId: context.gateway ? matrixSurfaceId(context.gateway) : "matrix:unconfigured",
+        conversationId: event.room_id,
+        senderId: event.sender,
+        text: "",
+        attachments: [{
+          name: typeof content.body === "string" && content.body ? content.body : "audio",
+          mime: typeof info.mimetype === "string" ? info.mimetype : "audio/ogg",
+          url,
+          ...(typeof info.duration === "number" ? { seconds: info.duration / 1000 } : {}),
+          ...(typeof info.size === "number" ? { sizeBytes: info.size } : {}),
+        }],
+        replyTo: event.event_id,
+        raw: event,
+      }];
+    }
     if (content.msgtype !== "m.text" && content.msgtype !== "m.emote") return [];
     const relates = content["m.relates_to"] as { rel_type?: unknown } | undefined;
     if (relates?.rel_type === "m.replace") return [];
@@ -140,6 +161,39 @@ export const matrixChannel: ChannelAdapter = {
       url: uploaded.content_uri,
       info: { mimetype: artifact.mime, size: bytes.length },
     });
+    return { messageIds: result.event_id ? [result.event_id] : [] };
+  },
+  async downloadAttachment(attachment, context) {
+    const match = /^mxc:\/\/([^/]+)\/([^/?#]+)$/.exec(attachment.url ?? "");
+    if (!match) throw new Error("matrix: attachment is not an mxc:// URL");
+    const config = matrixConfig(context.gateway);
+    const token = requireSecretEnv(context.env, config.accessTokenEnv, "Matrix access token");
+    const base = config.homeserverUrl.replace(/\/+$/, "");
+    const media = `${encodePath(match[1])}/${encodePath(match[2])}`;
+    // Authenticated media (Matrix 1.11) first, the legacy endpoint for older homeservers.
+    for (const path of [`/_matrix/client/v1/media/download/${media}`, `/_matrix/media/v3/download/${media}`]) {
+      const response = await context.fetcher(`${base}${path}`, { headers: { authorization: `Bearer ${token}` }, signal: context.signal });
+      if (response.ok) return new Uint8Array(await response.arrayBuffer());
+      if (response.status !== 404 && response.status !== 400) throw new Error(`matrix media download failed: HTTP ${response.status}`);
+    }
+    throw new Error("matrix media download failed: not found");
+  },
+  async sendVoice(peer, audio, context) {
+    const bytes = await readFile(audio.path);
+    const uploaded = await matrixApi<{ content_uri?: string }>(context, "POST", `/_matrix/media/v3/upload?filename=${encodeURIComponent(basename(audio.path))}`, undefined, {
+      raw: new Blob([bytes]),
+      contentType: audio.mime || "audio/ogg",
+    });
+    if (!uploaded.content_uri) throw new Error("matrix upload returned no content_uri");
+    const content: Record<string, unknown> = {
+      msgtype: "m.audio",
+      body: "Voice reply",
+      url: uploaded.content_uri,
+      info: { mimetype: audio.mime || "audio/ogg", size: bytes.length, ...(audio.seconds ? { duration: Math.round(audio.seconds * 1000) } : {}) },
+      "org.matrix.msc3245.voice": {},
+    };
+    if (peer.replyTo) content["m.relates_to"] = { "m.in_reply_to": { event_id: peer.replyTo } };
+    const result = await matrixApi<{ event_id?: string }>(context, "PUT", `/_matrix/client/v3/rooms/${encodePath(peer.conversationId)}/send/m.room.message/${encodePath(`muster-${randomUUID()}`)}`, content);
     return { messageIds: result.event_id ? [result.event_id] : [] };
   },
   renderApproval: numberedApprovalRender,

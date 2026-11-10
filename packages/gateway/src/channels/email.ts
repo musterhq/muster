@@ -118,15 +118,17 @@ export const emailChannel: ChannelAdapter = {
     if (parsed.precedence && ["bulk", "junk", "list", "auto_reply"].includes(parsed.precedence)) return [];
     if (parsed.listId) return [];
     const body = stripQuotedReply(parsed.text);
-    if (!body) return [];
+    const attachments = (parsed.attachments ?? []).map((attachment) => ({ name: attachment.name, mime: attachment.mime, bytes: attachment.bytes, sizeBytes: attachment.sizeBytes }));
+    if (!body && !attachments.length) return [];
     const isReply = Boolean(parsed.inReplyTo || parsed.references.length);
-    const text = !isReply && parsed.subject.trim() && !body.startsWith("/") ? `${parsed.subject.trim()}\n\n${body}` : body;
+    const text = (!isReply && parsed.subject.trim() && !body.startsWith("/") ? `${parsed.subject.trim()}\n\n${body}` : body).trim();
     const raw: EmailRaw = { kind: "email", from: parsed.from, subject: parsed.subject, messageId: parsed.messageId, references: parsed.references };
     return [{
       surfaceId: context.gateway ? emailSurfaceId(context.gateway) : "email:unconfigured",
       conversationId: parsed.references[0] ?? parsed.inReplyTo ?? parsed.messageId ?? `<${parsed.from}>`,
       senderId: parsed.from,
       text,
+      ...(attachments.length ? { attachments } : {}),
       replyTo: parsed.messageId,
       raw,
     }];
