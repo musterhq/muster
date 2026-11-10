@@ -7780,6 +7780,10 @@ async function pluginsCommand(args: string[]): Promise<void> {
       await printPluginBundleInspection(isGitPluginSource(path) ? path : resolve(path));
       return;
     }
+    if (!existsSync(resolve(path))) throw new Error(`No such folder: ${resolve(path)}`);
+    if (!existsSync(join(resolve(path), "manifest.json"))) {
+      throw new Error(`No plugin found in ${resolve(path)}: looked for .claude-plugin/plugin.json, .codex-plugin/plugin.json and plugin.json (or a capability pack's manifest.json).`);
+    }
     await capability(["inspect", path]);
     return;
   }
