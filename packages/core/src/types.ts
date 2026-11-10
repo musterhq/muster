@@ -111,6 +111,8 @@ export interface MusterConfig {
   readonly appearance?: Readonly<Record<string, unknown>>;
   /** Model defaults owned by the settings registry: default. */
   readonly models?: Readonly<Record<string, unknown>>;
+  /** Speech-to-text, text-to-speech and spoken replies (voice.ts). Off when absent. */
+  readonly voice?: import("./voice.js").VoiceConfig;
 }
 
 /** "auto": write freely. "ask": every write needs a consent receipt. "never": only explicit user requests. */
