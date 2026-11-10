@@ -1,5 +1,5 @@
 import { printBanner, renderBanner } from "./banner.js";
-import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatTokenPair, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { readChatSessionRoute, sessionRouteToRestore, writeChatSessionRoute } from "./chat-session-route.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
@@ -2637,7 +2637,7 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       state.sessionName = safeChatSessionName(args);
       state.sessionWorkspaceCwd = chatWorkspaceCwd(state);
       ensureNamedChatSession(state.sessionName, chatSessionWorkspaceCwd(state));
-      console.log(color(`session=${state.sessionName}`, "green"));
+      console.log(color(`Conversation named ${state.sessionName}.`, "green"));
       return true;
     case "history":
       printChatHistory(state.sessionName, args ? Number(args) || 40 : 40, chatSessionWorkspaceCwd(state));
@@ -4313,19 +4313,19 @@ async function printChatStatus(state: ChatState): Promise<void> {
     const messages = store.loadActiveMessages(session.id).length;
     const fallbacks = config.routing.fallbacks ?? [];
     printChatPanel("Status", [
-      `${color("conversation".padEnd(12), "accent")} ${state.sessionName}`,
-      `${color("runtime".padEnd(12), "accent")} ${runtimeDisplayName(runtime)}`,
-      `${color("provider".padEnd(12), "accent")} ${provider?.id ?? providerId ?? "-"}`,
-      `${color("model".padEnd(12), "accent")} ${model ?? "-"}`,
-      `${color("speed".padEnd(12), "accent")} ${state.speedMode ?? "fast"}${(state.speedMode ?? "fast") === "fast" ? " (warm native, light context)" : " (full memory + skills)"}`,
-      `${color("scopes".padEnd(12), "accent")} ${formatChatScopes(activeChatScopes(state))}${state.scopes.length ? " (explicit)" : " (default)"}`,
-      `${color("recall".padEnd(12), "accent")} limit ${state.recallLimit ?? 5}`,
-      `${color("messages".padEnd(12), "accent")} ${messages}`,
-      `${color("tokens".padEnd(12), "accent")} in ${session.tokensIn} / out ${session.tokensOut}`,
-      ...(fallbacks.length ? [`${color("fallbacks".padEnd(12), "accent")} ${formatFallbackRoutes(config)}`] : []),
-      `${color("resume".padEnd(12), "accent")} /resume ${state.sessionName}`,
-      `${color("history".padEnd(12), "accent")} /history ${Math.min(Math.max(messages, 10), 40)}`,
-      `${color("inspect".padEnd(12), "accent")} muster sessions show ${session.id}`,
+      `${color("conversation".padEnd(14), "accent")} ${state.sessionName}`,
+      `${color("runtime".padEnd(14), "accent")} ${runtimeDisplayName(runtime)}`,
+      `${color("provider".padEnd(14), "accent")} ${provider?.id ?? providerId ?? "-"}`,
+      `${color("model".padEnd(14), "accent")} ${model ?? "-"}`,
+      `${color("speed".padEnd(14), "accent")} ${state.speedMode ?? "fast"}${(state.speedMode ?? "fast") === "fast" ? " (warm native, light context)" : " (full memory + skills)"}`,
+      `${color("scopes".padEnd(14), "accent")} ${formatChatScopes(activeChatScopes(state))}${state.scopes.length ? " (explicit)" : " (default)"}`,
+      `${color("recall".padEnd(14), "accent")} limit ${state.recallLimit ?? 5}`,
+      `${color("messages".padEnd(14), "accent")} ${messages}`,
+      `${color("tokens".padEnd(14), "accent")} ${formatTokenPair(session.tokensIn, session.tokensOut)}`,
+      ...(fallbacks.length ? [`${color("fallbacks".padEnd(14), "accent")} ${formatFallbackRoutes(config)}`] : []),
+      `${color("resume".padEnd(14), "accent")} /resume ${state.sessionName}`,
+      `${color("history".padEnd(14), "accent")} /history ${Math.min(Math.max(messages, 10), 40)}`,
+      `${color("inspect".padEnd(14), "accent")} muster sessions show ${session.id}`,
     ]);
   } finally {
     store.close();
@@ -6328,7 +6328,7 @@ function selectChatSessionForResume(value: string, state: ChatState): void {
     return;
   }
   state.workspaceCwd = undefined;
-  console.log(color(`session=${state.sessionName}`, "green"));
+  console.log(color(`Resumed session ${state.sessionName}.`, "green"));
 }
 
 function readNumberFromText(value: string): number | undefined {

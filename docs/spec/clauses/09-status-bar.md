@@ -80,4 +80,4 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Test:** `packages/cli/test/status-bar.test.ts` › "/status keys line up and token counts are compact"
 - **Environment:** pure `formatTokenPair`; real CLI through tsx for `/status` in a scratch folder, NO_COLOR.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, tmux, built CLI, session pol-1: `conversation   pol-1` … `tokens         228.1k in · 495 out` … `inspect        muster sessions show sess_19320998-624` (before: `tokens       in 228102 / out 495`, `conversation pol-1` with one space). On main before this change the columns were already aligned (#184's `printChatPanel` keeps a fitting row's spacing; QA saw collapsed spacing on 9a72dd4). The id is not cut: `sess_` + 12 is the store's id format (`sessions.ts:172`) and `muster sessions show sess_19320998-624` opens it. Captures: `screens/polish/qa30-before-status.ansi`, `qa30-after-status.ansi`. Red→green: status-bar.test.ts.

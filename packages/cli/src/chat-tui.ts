@@ -349,6 +349,11 @@ export function formatTimingsChip(line: string): string | undefined {
   return renderChip(`▸ ${parts.join(" · ")}`);
 }
 
+/** `732.1k in · 1.4k out` — a session's token totals at a glance. */
+export function formatTokenPair(input: number, output: number): string {
+  return `${compactCount(input)} in · ${compactCount(output)} out`;
+}
+
 export function compactCount(value: number): string {
   if (!Number.isFinite(value)) return "0";
   const abs = Math.abs(value);
