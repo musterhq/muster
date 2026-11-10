@@ -1,7 +1,9 @@
 import { accessSync, constants } from "node:fs";
-import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join } from "node:path";
+import { profileDataDir } from "./profiles.js";
 import { runSubprocess } from "./subprocess.js";
 import type { SubprocessError } from "./subprocess.js";
 
@@ -292,8 +294,38 @@ export function ttsEnabled(voice: VoiceConfig | undefined): boolean {
   return Boolean(voice?.tts?.provider && voice.tts.provider !== "off");
 }
 
-/** Transcribe an audio file with the configured speech-to-text provider. */
+/** Transcribe an audio file with the configured speech-to-text provider. Leaves a receipt. */
 export async function transcribe(file: string, options: TranscribeOptions): Promise<TranscribeResult> {
+  const started = Date.now();
+  const provider = options.voice?.stt?.provider ?? "off";
+  try {
+    const result = await transcribeWith(file, options);
+    const seconds = result.seconds ?? (result.local ? undefined : await estimatedSeconds(file));
+    await recordVoiceReceipt({
+      kind: "voice.stt",
+      provider,
+      model: options.voice?.stt?.model && !result.local ? options.voice.stt.model : undefined,
+      local: result.local,
+      ok: true,
+      audioSeconds: seconds,
+      durationMs: result.durationMs,
+      costUsd: estimateVoiceCostUsd("voice.stt", provider, { seconds }),
+      transcriptPreview: result.text.slice(0, 200),
+      surfaceId: options.surfaceId,
+    }, options.cwd);
+    return result;
+  } catch (error) {
+    if (provider !== "off") {
+      await recordVoiceReceipt({
+        kind: "voice.stt", provider, local: isLocalProvider(provider), ok: false,
+        durationMs: Date.now() - started, costUsd: 0, error: errorSummary(error), surfaceId: options.surfaceId,
+      }, options.cwd);
+    }
+    throw error;
+  }
+}
+
+async function transcribeWith(file: string, options: TranscribeOptions): Promise<TranscribeResult> {
   const stt = options.voice?.stt;
   if (!stt || stt.provider === "off") throw new Error("Speech-to-text is off. Run `muster voice doctor` to turn it on.");
   const env = options.env ?? process.env;
@@ -348,8 +380,35 @@ export async function transcribe(file: string, options: TranscribeOptions): Prom
 
 // ---- Text to speech ---------------------------------------------------------------------
 
-/** Speak `text` into an audio file with the configured text-to-speech provider. */
+/** Speak `text` into an audio file with the configured text-to-speech provider. Leaves a receipt. */
 export async function synthesize(text: string, options: SynthesizeOptions): Promise<SynthesizeResult> {
+  const started = Date.now();
+  const provider = options.voice?.tts?.provider ?? "off";
+  try {
+    const result = await synthesizeWith(text, options);
+    await recordVoiceReceipt({
+      kind: "voice.tts",
+      provider,
+      local: result.local,
+      ok: true,
+      characters: result.characters,
+      durationMs: result.durationMs,
+      costUsd: estimateVoiceCostUsd("voice.tts", provider, { characters: result.characters }),
+      surfaceId: options.surfaceId,
+    }, options.cwd);
+    return result;
+  } catch (error) {
+    if (provider !== "off") {
+      await recordVoiceReceipt({
+        kind: "voice.tts", provider, local: isLocalProvider(provider), ok: false, characters: text.length,
+        durationMs: Date.now() - started, costUsd: 0, error: errorSummary(error), surfaceId: options.surfaceId,
+      }, options.cwd);
+    }
+    throw error;
+  }
+}
+
+async function synthesizeWith(text: string, options: SynthesizeOptions): Promise<SynthesizeResult> {
   const tts = options.voice?.tts;
   if (!tts || tts.provider === "off") throw new Error("Text-to-speech is off. Run `muster voice doctor` to turn it on.");
   if (!text.trim()) throw new Error("Nothing to speak.");
@@ -434,4 +493,77 @@ export function limitMessage(seconds: number, maxSeconds: number): string {
 
 export function sizeLimitMessage(bytes: number, maxBytes: number): string {
   return `Voice notes up to ${formatBytes(maxBytes)}; this one is ${formatBytes(bytes)}.`;
+}
+
+// ---- Receipts ---------------------------------------------------------------------------
+
+/**
+ * One line in the voice ledger (`<data>/voice-ledger.jsonl`). Never holds the
+ * audio, a key, the spoken text, or more than 200 characters of transcript.
+ */
+export interface VoiceReceipt {
+  readonly id: string;
+  readonly kind: "voice.stt" | "voice.tts";
+  readonly createdAt: string;
+  readonly provider: string;
+  readonly model?: string;
+  readonly local: boolean;
+  readonly ok: boolean;
+  readonly audioSeconds?: number;
+  readonly characters?: number;
+  readonly durationMs: number;
+  /** Estimate from public list prices; 0 for local providers. */
+  readonly costUsd: number;
+  readonly transcriptPreview?: string;
+  readonly error?: string;
+  readonly surfaceId?: string;
+}
+
+export function voiceLedgerPath(cwd = process.cwd()): string {
+  return join(profileDataDir(cwd), "voice-ledger.jsonl");
+}
+
+function isLocalProvider(provider: string): boolean {
+  return provider === "whisper-cpp" || provider === "command" || provider === "say";
+}
+
+function errorSummary(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
+}
+
+async function estimatedSeconds(file: string): Promise<number> {
+  // Voice notes are ~16 kbit/s Opus; only used to estimate a cloud cost when the provider reports no duration.
+  const size = await stat(file).then((info) => info.size).catch(() => 0);
+  return Math.max(1, Math.round(size / 2_000));
+}
+
+/** Rough list prices: OpenAI transcription $0.006/min, OpenAI speech $15/1M chars, ElevenLabs ~$0.30/1K chars. */
+export function estimateVoiceCostUsd(kind: VoiceReceipt["kind"], provider: string, usage: { readonly seconds?: number; readonly characters?: number }): number {
+  if (isLocalProvider(provider)) return 0;
+  if (kind === "voice.stt") return provider === "openai" ? Math.round(((usage.seconds ?? 0) / 60) * 0.006 * 1e6) / 1e6 : 0;
+  const characters = usage.characters ?? 0;
+  if (provider === "openai") return Math.round(characters * 0.000015 * 1e6) / 1e6;
+  if (provider === "elevenlabs") return Math.round(characters * 0.0003 * 1e6) / 1e6;
+  return 0;
+}
+
+async function recordVoiceReceipt(input: Omit<VoiceReceipt, "id" | "createdAt">, cwd = process.cwd()): Promise<void> {
+  const receipt: VoiceReceipt = {
+    id: `voice_${randomUUID()}`,
+    createdAt: new Date().toISOString(),
+    ...input,
+    ...(input.transcriptPreview !== undefined ? { transcriptPreview: input.transcriptPreview.slice(0, 200) } : {}),
+  };
+  try {
+    const path = voiceLedgerPath(cwd);
+    await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
+    await appendFile(path, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    // A receipt that cannot be written never fails the speech operation itself.
+  }
+}
+
+export async function listVoiceReceipts(cwd = process.cwd()): Promise<VoiceReceipt[]> {
+  const raw = await readFile(voiceLedgerPath(cwd), "utf8").catch(() => "");
+  return raw.split("\n").filter(Boolean).map((line) => JSON.parse(line) as VoiceReceipt);
 }
