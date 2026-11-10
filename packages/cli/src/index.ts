@@ -26,6 +26,7 @@ import { hasCompletedMusterOnboarding, runMusterOnboardingTui } from "./onboardi
 import { formatWorkspaceMismatchBanner, isParallelWorkPrompt, parallelTaskChoiceForKey, workspaceMismatchChoiceForKey, workspaceOverrideForMismatchChoice } from "./directory-awareness.js";
 import { runFrappe2RealPromptsQa } from "./qa-frappe2.js";
 import { runFrappeConnectCommand } from "./frappe-connect-command.js";
+import { attachChatAutomations, handleAutomationCommand } from "./chat-automations.js";
 import { CHAT_COMMANDS, directPluginCommand, dynamicPluginCommands, type ChatCommandDef } from "./chat-command-catalog.js";
 import { unknownShellCommandMessage, unknownSlashCommandMessage } from "./command-suggestion.js";
 import { threadConflictCure } from "./thread-conflict.js";
@@ -231,6 +232,17 @@ import {
   listSchedules,
   removeSchedule,
   runDueSchedules,
+  createAutomation,
+  daemonJobFilter,
+  describeAutomation,
+  desktopNotifier,
+  formatAutomationRun,
+  formatAutomationsTable,
+  runAutomationsTick,
+  type AutomationDeliverers,
+  type AutomationRunOutcome,
+  type ScheduleJob,
+  type MusterConfig as AutomationConfig,
   loadEvolveSuite,
   evolve,
   renderEvolveReport,
@@ -356,7 +368,7 @@ const SHELL_COMMANDS = [
   "episodes", "feedback", "candidates", "eval", "capability", "roster", "artifacts", "plugins", "mcp", "dashboard",
   "context", "latency", "memory", "goal", "tui", "provider", "runtime", "qa", "pi", "state", "migrate", "sessions",
   "skills", "pulse", "subagents", "tasks", "board", "demo", "benchmark", "run", "tokens", "traces", "profile",
-  "schedule", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe",
+  "schedule", "daemon", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe",
 ] as const;
 
 function readCliPackageVersion(): string {
@@ -527,6 +539,9 @@ async function main(): Promise<void> {
     case "schedule":
       await scheduleCommand(args);
       return;
+    case "daemon":
+      await daemonCommand(args);
+      return;
     case "evolve":
       await evolveCommand(args);
       return;
@@ -574,7 +589,7 @@ function wantsHelp(args: readonly string[]): boolean {
  * (`muster chat --help` lists slash commands; `eval retrieval --help` explains
  * seeding). Everything else is answered from the master usage table.
  */
-const SELF_HELP_COMMANDS = new Set(["chat", "eval"]);
+const SELF_HELP_COMMANDS = new Set(["chat", "eval", "daemon"]);
 
 /**
  * Usage lines for one command, lifted from the single master help text so the
@@ -695,7 +710,9 @@ Usage:
   muster tokens [--limit 20]
   muster traces [--limit N] [--trace <id>]     # OpenTelemetry spans — set MUSTER_TRACE=1 to record, MUSTER_OTLP_ENDPOINT to export
   muster profile create|list|use|current [name] | clone <from> <to>
-  muster schedule add "*/5 * * * *" "prompt" | list | remove <id> | run-due
+  muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<id>] | list | remove <id> | run-due
+  muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<id>]   # one-off reminder (also: ISO time)
+  muster daemon [--interval 20] [--once]   # run due reminders and routines; see muster daemon --help
   muster evolve <suite.json> [--runtime pi] [--provider anthropic] [--model ...] [--iterations 2]
   muster evolve selfcheck
   muster flow save <file.json> | list | check <id> | run <id> [--toolset core|full] [--allow-command cmd] [--allow-host host] [--pack dir]
@@ -1760,6 +1777,11 @@ async function interactiveChat(state: ChatState): Promise<void> {
       // and the composer queues the text as the next turn instead.
       onSteer: (text) => steerActiveCodexTurn(text, "cli-chat", chatConversationKey(state.sessionName)).catch(() => false),
       onDecisionKey: (data, sink) => handleChatDecisionKey(data, state, sink),
+      // Reminders fire into this transcript while the chat is open (#165).
+      onReady: (sink) => {
+        const ticker = attachChatAutomations(sink);
+        return () => ticker.stop();
+      },
       onSubmit: async (text, sink) => {
         state.statusSink = sink;
         try {
@@ -2451,6 +2473,29 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       return true;
     case "rewind":
       await rewindChat(args, state);
+      return true;
+    case "remind":
+    case "schedule":
+    case "automations":
+    {
+      // Bare `/schedule remove|run` picks the job from a list instead of printing usage.
+      const [verb, id] = args.trim().split(/\s+/);
+      let commandArgs = args;
+      if (name !== "remind" && (verb === "remove" || verb === "run") && !id && state.statusSink) {
+        const jobs = (await listSchedules()).filter((job) => !job.completedAt);
+        if (!jobs.length) {
+          console.log("No automations.");
+          return true;
+        }
+        const picked = await state.statusSink.selectFromList(
+          verb === "remove" ? "Remove which automation?" : "Run which automation now?",
+          jobs.map((job) => ({ value: job.id, label: job.id, description: `${job.kind ?? "run"} · ${job.prompt.slice(0, 50)}` })),
+        );
+        if (!picked) return true;
+        commandArgs = `${verb} ${picked}`;
+      }
+      for (const line of await handleAutomationCommand(name === "remind" ? "remind" : "schedule", commandArgs)) console.log(line);
+    }
       return true;
     case "access":
       setChatAccessMode(args, state);
@@ -11584,24 +11629,34 @@ function printProfileIsolationSummary(profile: string): void {
 async function scheduleCommand(commandArgs: string[]): Promise<void> {
   const [action, ...rest] = commandArgs;
   if (action === "add") {
-    const positional = stripFlags(rest, ["--profile"]);
+    const positional = stripFlags(rest, ["--profile", "--tz", "--kind", "--deliver"]);
     const [cron, ...promptParts] = positional;
     const prompt = promptParts.join(" ").trim();
-    if (!cron || !prompt) throw new Error('Usage: muster schedule add "*/5 * * * *" "prompt" [--profile name]');
-    const job = await addSchedule(cron, prompt, { profile: readFlag(rest, "--profile") });
-    console.log(`Scheduled ${job.id}: [${job.cron}] ${job.prompt}`);
-    console.log("No daemon runs these. Add to external cron: * * * * * cd <repo> && pnpm hc schedule run-due");
+    if (!cron || !prompt) throw new Error('Usage: muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<id>] [--profile name]');
+    const kind = readFlag(rest, "--kind") ?? "run";
+    if (kind !== "run" && kind !== "reminder") throw new Error(`Unknown --kind ${kind}: use run or reminder.`);
+    const deliver = readFlag(rest, "--deliver");
+    const tz = readFlag(rest, "--tz");
+    // Plain cron prompts without automation flags stay legacy jobs (log-only).
+    const job = kind === "run" && !deliver && !tz
+      ? await addSchedule(cron, prompt, { profile: readFlag(rest, "--profile"), kind: "run" })
+      : await createAutomation({ kind, text: prompt, cron, tz, deliver, profile: readFlag(rest, "--profile") });
+    console.log(describeAutomation(job));
+    console.log("Runs while `muster daemon` is running (see muster daemon --help), or via: muster schedule run-due");
+    return;
+  }
+  if (action === "remind") {
+    const positional = stripFlags(rest, ["--deliver"]);
+    const [when, ...messageParts] = positional;
+    const message = messageParts.join(" ").trim();
+    if (!when || !message) throw new Error('Usage: muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<id>]');
+    const job = await createAutomation({ kind: "reminder", text: message, when, deliver: readFlag(rest, "--deliver") ?? "terminal" });
+    console.log(describeAutomation(job));
+    console.log("Fires in an open `muster chat` or while `muster daemon` is running.");
     return;
   }
   if (action === "list") {
-    const jobs = await listSchedules();
-    if (!jobs.length) {
-      console.log("No schedules.");
-      return;
-    }
-    for (const job of jobs) {
-      console.log(`${job.id} [${job.cron}] ${job.prompt.slice(0, 60)} last=${job.lastRunAt ?? "-"} status=${job.lastStatus ?? "-"}`);
-    }
+    for (const line of formatAutomationsTable(await listSchedules())) console.log(line);
     return;
   }
   if (action === "remove" && rest[0]) {
@@ -11610,20 +11665,116 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     return;
   }
   if (action === "run-due") {
-    const config = await loadConfig();
-    const results = await runDueSchedules(async (job) =>
-      executeScheduledJob(job, { config, registry: builtinFlowRegistry() })
-    );
-    if (!results.length) {
-      console.log("No jobs due.");
-      return;
-    }
-    for (const result of results) {
-      console.log(`${result.job.id}: ${result.status}${result.runId ? ` run=${result.runId}` : ""}${result.detail ? ` (${result.detail})` : ""}`);
-    }
+    const results = await tickAutomationsOnce({ log: (line) => console.log(line) });
+    if (!results.length) console.log("No jobs due.");
     return;
   }
-  throw new Error("Usage: muster schedule add|list|remove|run-due");
+  throw new Error("Usage: muster schedule add|remind|list|remove|run-due");
+}
+
+const DAEMON_HELP = `muster daemon — run due reminders and routines
+
+Usage:
+  muster daemon                 # foreground loop; checks every 20 s, Ctrl+C or SIGTERM stops it
+  muster daemon --interval 30   # seconds between checks (minimum 1)
+  muster daemon --once          # one check, then exit (for cron/CI)
+
+Prints one line per run. Each due job runs at most once even if several daemons,
+an open chat, or \`muster schedule run-due\` tick at the same moment; a job missed
+while the machine slept runs once when the daemon next ticks. Terminal reminders go
+to an open \`muster chat\` when one is running, otherwise to this log.
+
+Keep it running on macOS (launchd) — ~/Library/LaunchAgents/dev.muster.daemon.plist:
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0"><dict>
+    <key>Label</key><string>dev.muster.daemon</string>
+    <key>ProgramArguments</key><array><string>/usr/local/bin/muster</string><string>daemon</string></array>
+    <key>WorkingDirectory</key><string>/path/to/your/project</string>
+    <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>/tmp/muster-daemon.log</string>
+  </dict></plist>
+  launchctl load ~/Library/LaunchAgents/dev.muster.daemon.plist
+
+On Linux (systemd user unit) — ~/.config/systemd/user/muster-daemon.service:
+  [Unit]
+  Description=Muster automations
+  [Service]
+  WorkingDirectory=/path/to/your/project
+  ExecStart=/usr/local/bin/muster daemon
+  Restart=on-failure
+  [Install]
+  WantedBy=default.target
+  systemctl --user enable --now muster-daemon`;
+
+/** One tick with the CLI's deliverers and prompt runner; logs one line per run. */
+async function tickAutomationsOnce(options: { log: (line: string) => void; only?: (job: ScheduleJob) => boolean }): Promise<Awaited<ReturnType<typeof runAutomationsTick>>> {
+  const routineOutput = new Map<string, string>();
+  const deliverers: AutomationDeliverers = {
+    // The run line already carries a reminder's message; a routine's answer is printed under it.
+    terminal: (notice) => { if (notice.kind !== "reminder") routineOutput.set(notice.jobId, notice.text); },
+    desktop: desktopNotifier(),
+  };
+  let config: AutomationConfig | undefined;
+  const runPrompt = async (job: ScheduleJob): Promise<AutomationRunOutcome> => {
+    config ??= await loadConfig();
+    if (job.flowId) return executeScheduledJob(job, { config, registry: builtinFlowRegistry() });
+    const outcome = await executeRun(config, { prompt: job.prompt, cwd: process.cwd(), surfaceId: `schedule:${job.id}` });
+    const completed = outcome.episode.outcome?.kind === "completed";
+    return { runId: outcome.plan.runId, status: completed ? "completed" : "failed", text: outcome.episode.responseText, detail: completed ? undefined : outcome.episode.outcome?.detail };
+  };
+  const now = new Date();
+  const results = await runAutomationsTick({ now, deliverers, runPrompt, only: options.only });
+  for (const result of results) {
+    options.log(formatAutomationRun(result, now));
+    const text = routineOutput.get(result.job.id);
+    if (text) for (const line of text.split(/\r?\n/)) options.log(`    ${line}`);
+  }
+  return results;
+}
+
+async function daemonCommand(commandArgs: string[]): Promise<void> {
+  if (commandArgs.includes("--help") || commandArgs.includes("-h")) {
+    console.log(DAEMON_HELP);
+    return;
+  }
+  const once = commandArgs.includes("--once");
+  const intervalSeconds = Math.max(1, Number(readFlag(commandArgs, "--interval") ?? 20) || 20);
+  const cwd = process.cwd();
+  const only = daemonJobFilter(cwd);
+  const log = (line: string) => console.log(line);
+  if (once) {
+    await tickAutomationsOnce({ log, only });
+    return;
+  }
+  let stopping = false;
+  let wake: (() => void) | undefined;
+  const stop = () => {
+    stopping = true;
+    wake?.();
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  log(`muster daemon: checking every ${intervalSeconds}s in ${cwd} (Ctrl+C to stop)`);
+  try {
+    while (!stopping) {
+      try {
+        await tickAutomationsOnce({ log, only });
+      } catch (error) {
+        log(`${new Date().toISOString()} tick failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (stopping) break;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, intervalSeconds * 1000);
+        wake = () => { clearTimeout(timer); resolve(); };
+      });
+      wake = undefined;
+    }
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    log("muster daemon stopped.");
+  }
 }
 
 async function evolveCommand(commandArgs: string[]): Promise<void> {
@@ -11901,8 +12052,10 @@ async function statusCommand(commandArgs: readonly string[] = []): Promise<void>
   const currentMinute = new Date(now);
   currentMinute.setSeconds(0, 0);
   const dueSchedules = schedules.filter((job) => {
-    if (job.disabled) return false;
-    if (!parseCron(job.cron).matches(now)) return false;
+    if (job.disabled || job.completedAt) return false;
+    const next = job.at ?? job.nextRunAt;
+    if (next && new Date(next) <= now) return true;
+    if (!job.cron || !parseCron(job.cron).matches(now, job.tz)) return false;
     return !(job.lastRunAt && new Date(job.lastRunAt) >= currentMinute);
   });
 

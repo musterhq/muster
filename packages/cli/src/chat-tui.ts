@@ -178,6 +178,8 @@ export interface RunMusterChatTuiOptions extends MusterAutocompleteOptions {
   /** Printed to stdout after teardown when the session exits via /exit. */
   readonly farewell?: string;
   readonly board?: BoardModeController;
+  /** Called once the screen is live; the returned function runs at teardown (e.g. the automations ticker). */
+  readonly onReady?: (sink: MusterChatSink) => (() => void) | void;
 }
 
 export interface MusterChatHarness {
@@ -1293,12 +1295,14 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   readonly onSteer?: (text: string) => boolean | Promise<boolean>;
   readonly initialLines?: readonly string[];
   readonly onDecisionKey?: (data: string, sink: MusterChatSink) => boolean;
+  readonly onReady?: (sink: MusterChatSink) => (() => void) | void;
   readonly width?: number;
   readonly rows?: number;
 }): MusterChatHarness {
   const tui = fakeHarnessTui(options.width ?? 120, options.rows ?? 40);
   const editor = createMusterChatEditor(tui);
   const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines, options.onSteer, options.rows ?? 40);
+  options.onReady?.(sink);
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
   editor.onSubmit = (text) => {
     void sink.submit(text);
@@ -1702,12 +1706,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       tui.requestRender(true);
     }
   };
+  const ready: { dispose?: () => void } = {};
   await new Promise<void>((resolve) => {
     screen.onStop = resolve;
     tui.start();
     process.stdin.on("data", rawEscapeHandler);
     tui.requestRender(true);
+    const dispose = options.onReady?.(screen);
+    if (typeof dispose === "function") ready.dispose = dispose;
   });
+  try { ready.dispose?.(); } catch { /* teardown hook must not block exit */ }
   process.stdin.off("data", rawEscapeHandler);
   boardMode?.dispose();
   tui.stop();

@@ -27,6 +27,8 @@ export const CHAT_COMMANDS: readonly ChatCommandDef[] = [
   { name: "access", usage: "/access [read-only|ask|auto-edit|full]", description: "how much the agent may do without asking", aliases: ["permissions", "approvals"] },
   { name: "rewind", usage: "/rewind [n]", description: "go back to before an earlier turn: files and conversation", aliases: ["back"] },
   { name: "undo", usage: "/undo", description: "put back the files the last turn changed", aliases: ["revert"] },
+  { name: "remind", usage: "/remind <when> <message>", description: "get a reminder here later (in 10m, in 2h, or a time)" },
+  { name: "schedule", usage: "/schedule [list|add|remove|run <id>]", description: "see and manage reminders and routines", aliases: ["automations"], bareBehavior: "picker", pickerInvocations: ["remove", "run"] },
   { name: "live-diff", usage: "/live-diff [on|off]", description: "show file changes while they happen", aliases: ["livediff", "diffs"] },
   { name: "diff", usage: "/diff", description: "open or close this turn's file changes" },
   { name: "tasks", usage: "/tasks [board | \"<goal>\" | why <taskId> | assign <taskId> <cardId>]", description: "open your task board or plan work across agents", bareBehavior: "picker", pickerInvocations: ["why", "assign"] },
