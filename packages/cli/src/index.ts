@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -2801,11 +2801,18 @@ function printChatCommandCatalog(options: { numbered?: boolean; all?: boolean } 
   const daily = commands.filter((command) => (CHAT_DAILY_COMMANDS as readonly string[]).includes(command.name) || command.plugin);
   const rest = commands.filter((command) => !(CHAT_DAILY_COMMANDS as readonly string[]).includes(command.name) && !command.plugin);
   const list = options.all || options.numbered ? commands : daily;
-  printChatPanel("Commands", list.map((command, index) => {
-    const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
-    const prefix = options.numbered ? `${color(`${String(index + 1).padStart(2)}.`, "accent")} ` : "";
-    return `${prefix}${color(command.usage.padEnd(20), "highlight")} ${command.description}${color(aliases, "dim")}`;
-  }));
+  if (options.numbered) {
+    printChatPanel("Commands", list.map((command, index) => {
+      const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
+      return `${color(`${String(index + 1).padStart(2)}.`, "accent")} ${color(command.usage.padEnd(20), "highlight")} ${command.description}${color(aliases, "dim")}`;
+    }));
+  } else {
+    // Two aligned columns; a long usage puts its description on the next row.
+    printChatPanel("Commands", alignHelpRows(list.map((command) => {
+      const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
+      return [command.usage, `${command.description}${color(aliases, "dim")}`] as const;
+    }), Number.POSITIVE_INFINITY));
+  }
   if (!options.all && !options.numbered && rest.length) {
     console.log(color(`… ${rest.length} more: ${rest.map((command) => `/${command.name}`).join(" ")} — /help all for details`, "dim"));
   }
@@ -2813,12 +2820,7 @@ function printChatCommandCatalog(options: { numbered?: boolean; all?: boolean } 
 }
 
 function printChatShortcuts(): void {
-  printChatPanel("Shortcuts", [
-    `${color("Tab".padEnd(18), "highlight")} complete slash commands, toolsets, and session names`,
-    `${color("@agent <task>".padEnd(18), "highlight")} route a turn with an agent id`,
-    `${color("\\ at line end".padEnd(18), "highlight")} continue multiline input`,
-    `${color("Ctrl+D".padEnd(18), "highlight")} toggle the current turn's full-file live view`,
-  ]);
+  printChatPanel("Shortcuts", alignHelpRows(CHAT_SHORTCUTS, chatPanelWidth() - 4));
 }
 
 function printChatControlView(
@@ -6251,8 +6253,12 @@ async function printChatAgents(options: { numbered?: boolean } = {}): Promise<vo
  * line with the body indented beneath it. Full-width frames are gone from the
  * chat surface; the composer is a bare `❯ ` prompt.
  */
+function chatPanelWidth(): number {
+  return Math.min(Math.max((process.stdout.columns || 100) - 4, 72), 140);
+}
+
 function printChatPanel(title: string, lines: readonly string[]): void {
-  const width = Math.min(Math.max((process.stdout.columns || 100) - 4, 72), 140);
+  const width = chatPanelWidth();
   console.log(formatToolLine(title, undefined, "success"));
   for (const line of lines) {
     for (const part of wrapPreserveLines(line || "", width - 4)) {

@@ -1468,6 +1468,41 @@ export class ApprovalQueue {
   }
 }
 
+/** Every key the chat answers to, for /shortcuts. */
+export const CHAT_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
+  ["Enter", "send; while a turn runs, steer it with the message"],
+  ["Ctrl+Q / Alt+Enter", "queue the message to run after the current turn"],
+  ["Alt+↑", "pull the last queued message back to edit"],
+  ["Esc", "stop the running turn (queued messages come back to edit)"],
+  ["Ctrl+C", "stop the turn or clear the draft; press twice to quit"],
+  ["Ctrl+O", "expand or collapse tool output"],
+  ["Ctrl+D", "toggle the current turn's full-file live view"],
+  ["PgUp / PgDn", "scroll the transcript"],
+  ["Tab", "complete slash commands, toolsets and session names"],
+  ["\\ at line end", "continue on a new line"],
+  ["@agent <task>", "route a turn to an agent"],
+];
+
+/**
+ * Help rows as two columns: every description starts in the same column. A
+ * label wider than the column keeps its own row and its description goes on
+ * the next row, in that column.
+ */
+export function alignHelpRows(rows: ReadonlyArray<readonly [string, string]>, width: number, maxLabel = 28): string[] {
+  const column = Math.min(maxLabel, Math.max(0, ...rows.map(([label]) => visibleWidth(label)).filter((size) => size <= maxLabel))) + 2;
+  const out: string[] = [];
+  for (const [label, description] of rows) {
+    const size = visibleWidth(label);
+    if (size + 2 > column) {
+      out.push(highlight(label));
+      out.push(`${" ".repeat(column)}${description}`);
+      continue;
+    }
+    out.push(`${highlight(label)}${" ".repeat(column - size)}${description}`);
+  }
+  return out.map((row) => truncateToWidth(row, Math.max(20, width), "…"));
+}
+
 /** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
 export function isQueueFollowUpKey(data: string): boolean {
   return data === "\x11" || data === "\x1b\r" || data === "\x1b\n";
