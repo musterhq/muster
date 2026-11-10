@@ -49,7 +49,7 @@ async function startTelegram(prefix: string, voice: VoiceConfig | undefined, ans
     ...(voice ? { voice: voice.stt?.provider === "whisper-cpp" ? { ...voice, stt: { ...voice.stt, model } } : voice } : {}),
   };
   const bot = createFakeTelegramBotApi({ token: TOKEN, files: { VOICE1: { path: "voice/file_1.oga", bytes: VOICE_BYTES } } });
-  const running = await startGatewayServer({ config, gateway, cwd, fetcher: bot.fetcher }, 0);
+  const running = await startGatewayServer({ config, gateway, cwd, fetcher: bot.fetcher, log: (line) => { if (process.env.VOICE_TEST_DEBUG) console.error(line); } }, 0);
   return {
     cwd,
     bot,

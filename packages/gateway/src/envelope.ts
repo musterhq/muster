@@ -10,6 +10,16 @@ export interface SurfaceAttachment {
   /** Exactly one of url or bytes (base64) should be present. */
   readonly url?: string;
   readonly bytes?: string;
+  /** Audio length when the platform reports it (voice notes); checked before download. */
+  readonly seconds?: number;
+  /** File size when the platform reports it; checked before download. */
+  readonly sizeBytes?: number;
+}
+
+/** Set by the shared voice path when the prompt came from speech. */
+export interface SurfaceVoiceMarker {
+  readonly seconds?: number;
+  readonly transcript: string;
 }
 
 export interface SurfaceMessage {
@@ -23,6 +33,8 @@ export interface SurfaceMessage {
   readonly pairingId?: string;
   readonly text: string;
   readonly attachments?: readonly SurfaceAttachment[];
+  /** Present when `text` is the transcript of a voice note (docs/spec/clauses/21-voice.md). */
+  readonly voice?: SurfaceVoiceMarker;
   readonly replyTo?: string;
   /**
    * Delivery mode for the reply: "off" (default) answers with one buffered
