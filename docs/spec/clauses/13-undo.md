@@ -40,4 +40,4 @@
 - **Test:** `packages/cli/test/live-diff-render.test.ts` › "an undone turn has no changes left for rewind, and a second undo says it was already undone"
 - **Environment:** pure helpers (`markTurnUndone`, `rewindTurnLabel`, `undoLastTurnRows`).
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 in a git scratch repo: `/undo` → `Undid 2 files`, `/undo` again → `Already undone: …`; the `/rewind` picker listed the turn as `· undone` and the rewind reported `0 files restored` with no "left alone" rows. Red→green: live-diff-render.test.ts.

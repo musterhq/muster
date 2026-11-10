@@ -30,4 +30,4 @@ When `muster chat` runs on the Claude Code runtime (including Claude models reac
 - **Test:** `packages/core/test/claude-stream.test.ts` › "claude file writes are left to the diff card; a failed write still shows"
 - **Environment:** fake `claude` printing stream-json, no network.
 - **Known gaps:** outside a git repo there is no live diff, so a successful write has no card there (same as Codex).
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, `/runtime claude-code`, "Create a file note.txt containing exactly: plum": one `⏺ Create(note.txt)` card, no `Tool(Write note.txt)` cell. Red→green: claude-stream.test.ts.

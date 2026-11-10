@@ -130,4 +130,4 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Test:** `packages/core/test/automations.test.ts` › "automation echoes and the table show local times, and the table fits the width"
 - **Environment:** pure formatters with `TZ=Asia/Kolkata`.
 - **Known gaps:** times are the machine's local time; a routine with its own `tz` still shows the machine's clock (its zone is named in WHEN).
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 (IST): `schedule remind "in 10m" …` → `at 2026-11-10 11:59`; `schedule list` in a 110-column tmux pane fits the width with WHAT cut by `…`. Red→green: automations.test.ts.

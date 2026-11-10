@@ -40,7 +40,7 @@ Rules in `.muster/config.json` → `hooks` run on turn and tool events. A rule i
 - **Test:** `packages/core/test/policy-hooks.test.ts` › "a block's reason reaches the model; a script's stdout is its reason; scripts see the bare command"
 - **Environment:** fake app-server that records approvals and `turn/steer` requests; temp script.
 - **Known gaps:** Codex's approval answer has no reason field, so the reason travels as a steer message on the same turn.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 with `/tmp/qa-tools/hooks/deny-curl.sh` (stdout reason): the model answered "Muster’s script policy blocked it with “nope: no curl here.”"; the script's stdin log shows `"title":"curl -s https://example.com -o /dev/null && echo ok"`. Red→green: policy-hooks.test.ts.
 
 ## MUS-SPEC-12-1E — A blocked command is one cell, and a blocked prompt comes back
 
@@ -50,4 +50,4 @@ Rules in `.muster/config.json` → `hooks` run on turn and tool events. A rule i
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a policy block replaces the command's cell; a blocked prompt goes back to the composer"
 - **Environment:** chat harness with the narration painter, NO_COLOR; `promptBackAfterHookBlock` with a recording sink.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: one cell `⏺ Blocked curl -s … ⎿ nope: no curl here · policy script`; "please deploy to prod now" came back into the composer after the block. Red→green: chat-tool-cards.test.ts.

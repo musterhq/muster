@@ -40,4 +40,4 @@
 - **Test:** `packages/cli/test/chat-composer.test.ts` › "rewound turns are greyed out in the transcript"
 - **Environment:** chat harness.
 - **Known gaps:** when the same prompt was sent more than once, the latest copy is the one marked.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: after `/rewind` of 2 turns, PgUp shows `↺ rewound — the turns below were undone` above the rewound prompt and the rows below in grey (`38;2;148;144;140`). Red→green: chat-composer.test.ts.

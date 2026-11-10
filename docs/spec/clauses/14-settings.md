@@ -100,7 +100,7 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "config set saves every key to the project unless --global is given, like the panel"
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** the status-bar repaint after the panel closes is proven in the live tmux run only.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: Access changed to full in `/settings` (project) → on close the bar shows `⚠ full access` at once. Red→green: settings.test.ts.
 
 ## MUS-SPEC-14-2D — `validate` warns about ignored keys and names JSON errors
 
@@ -110,4 +110,4 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Test:** `packages/cli/test/settings.test.ts` › "validate warns about keys a file ignores and names a JSON error with its line"
 - **Environment:** real CLI via `tsx`, temp workspace and `MUSTER_CONFIG_HOME`.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 on the real `~/.muster/config.json` (read-only): `! routing.maxCostUsdPerRun: is project-only and is ignored in the global file …`, exit 0 (before: `✗ …`, exit 1). Red→green: settings.test.ts.

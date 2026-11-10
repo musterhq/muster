@@ -70,4 +70,4 @@ MCP servers added with `muster mcp add-stdio|add-http` (stored in `config.tools.
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "mcp add-stdio, list and test work in a folder without .muster/"
 - **Environment:** real CLI via tsx, temp folders.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 in a fresh `git init` folder: `mcp add-stdio orders node …` → `mcp_server=orders`, `mcp list` and `mcp test orders` → `status=ready` (before: ENOENT, exit 1). Red→green: plugin-bundles.test.ts.

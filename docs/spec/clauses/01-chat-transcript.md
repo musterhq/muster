@@ -150,7 +150,7 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a command the provider reports as 0 ms shows the time Muster measured"
 - **Environment:** chat harness with the narration painter and an injected clock, NO_COLOR.
 - **Known gaps:** a running cell still shows only `running…` until it ends; Codex output deltas are not streamed into the cell (QA-12, second half).
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10 tmux 110 cols, built CLI: `⏺ Bash(ls -la)` / `⎿ exit 0 · 75ms`, `printf …` / `⎿ exit 0 · 50ms` (before: `⎿ exit 0`). Red→green: chat-tool-cards.test.ts.
 
 ## MUS-SPEC-01-2E — Commands read as the shell runs them, and use the terminal width
 
@@ -160,7 +160,7 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "command titles drop the wrapper's quoting and use the terminal width"
 - **Environment:** pure `unwrapShellCommand`; chat harness with a painter given a 200-column width; NO_COLOR.
 - **Known gaps:** a title is measured when the cell is painted; resizing later does not re-measure it.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: the cell reads `⏺ Bash(printf 'hello\n' > hello.txt)` (before: `'hello\\n'`), and the hook script received the same bare text. Red→green: chat-tool-cards.test.ts.
 
 ## MUS-SPEC-01-3B — A long result line is cut to the width with an ellipsis
 
@@ -170,4 +170,4 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a long tool result line is cut to the terminal width with an ellipsis"
 - **Environment:** pure renderer (`formatToolEndLines` → `renderTranscriptLine`), NO_COLOR.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, Codex turn running `python3 -c "print('abc '*60)"`: the output row is 110 columns ending `abc…`. Red→green: chat-tool-cards.test.ts.

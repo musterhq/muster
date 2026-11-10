@@ -30,4 +30,4 @@ Muster's embedded pi runtime gets coding tools that match the turn's sandbox, an
 - **Test:** `packages/core/test/pi-runtime-tools.test.ts` › "a missing pi key names the provider, its env var and the next step" and › "switching to pi warns up front when no pi provider has a key" (`/runtime pi` prints the same hint before the first turn when no pi model is available)
 - **Environment:** pure function.
 - **Known gaps:** the env var map covers pi's common providers; others get the generic hint.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, no provider keys in env: `/runtime pi` prints the key hint; `say pong` → `✖ pi has no API key for any provider: set one, e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY (muster pi models lists providers).` Red→green: pi-runtime-tools.test.ts.

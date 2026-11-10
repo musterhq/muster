@@ -96,4 +96,4 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "plugins inspect on a missing or empty folder says what it looked for"
 - **Environment:** real CLI via tsx, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: `plugins inspect /tmp/nonexistent` → `No such folder: /tmp/nonexistent`; an empty folder → `No plugin found in … looked for …`. Red→green: plugin-bundles.test.ts.

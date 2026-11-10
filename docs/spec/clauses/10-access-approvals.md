@@ -90,4 +90,4 @@
 - **Test:** `packages/cli/test/access-approvals.test.ts` › "while an approval waits, the cell and the spinner say so and the timer stops"
 - **Environment:** chat harness with the narration painter; `TurnTimer` with an injected clock.
 - **Known gaps:** an edit approval has no tool cell (file edits are shown as diff cards), so only the status row changes for it.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, `/access ask`, "touch approved.txt": the cell read `⎿ awaiting approval`, the row `✻ Waiting for approval · … · 3.5s` and still `3.5s` 5 s later; after `y` the turn finished. Red→green: access-approvals.test.ts.

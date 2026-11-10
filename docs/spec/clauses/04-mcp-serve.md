@@ -30,4 +30,4 @@
 - **Test:** `packages/cli/test/mcp-serve.test.ts` › "memory tools default to the user's scope when a client passes none"
 - **Environment:** real `muster mcp serve` process over stdio, temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10: `mcp serve` + `tools/call memory_search {query:"lunch"}` → `{"count": 0, …}` result, no scope error. Red→green: mcp-serve.test.ts.
