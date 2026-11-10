@@ -28,7 +28,7 @@ On the envelope, `SurfaceAttachment` gains optional `seconds` and `sizeBytes` (c
 
 - **Precondition:** no `voice` config. A PATH containing fake `whisper-cli`, `ffmpeg` and `say`, and a model file at a known path.
 - **Action:** `muster voice doctor` (also `--json`).
-- **Expected result:** it reports STT and TTS as `off`. It lists each local tool it found with its path, and the whisper model it found. It prints the exact config line that would turn local STT and TTS on. It makes no network call.
+- **Expected result:** a readable checklist (`Speech-to-text  off  …`, `✓ whisper-cli  <path>`), not `key=value` lines. It reports STT and TTS as `off`. It lists each local tool it found with its path, and the whisper model it found. It prints the exact config line that would turn local STT and TTS on. It makes no network call.
 - **Test:** `packages/cli/test/voice.test.ts` › "voice doctor reports speech off and lists the local tools it found"
 - **Environment:** fake binaries on PATH.
 - **Known gaps:** none.
@@ -146,6 +146,16 @@ On the envelope, `SurfaceAttachment` gains optional `seconds` and `sizeBytes` (c
 - **Known gaps:** WhatsApp and Discord join when they move onto the SDK (#171).
 - **Evidence:** green 2026-11-10 on `feat/voice`: `npx tsx --test --test-concurrency=1` — core `test/voice.test.ts` 5/5, CLI `test/voice.test.ts` 3/3, gateway `test/voice-notes.test.ts` 5/5.
 
+## MUS-SPEC-21-2F — A failed transcription keeps its details in the gateway log
+
+- **Precondition:** Telegram configured, STT on (whisper-cpp), and ffmpeg fails on the downloaded note.
+- **Action:** deliver a voice note.
+- **Expected result:** one reply: "I couldn't transcribe that voice note. Please try again; if it keeps failing, the gateway log has the details." The tool name, exit code, stderr and local paths go to the gateway log only. No turn starts.
+- **Test:** `packages/gateway/test/voice-notes.test.ts` › "a failed transcription answers plainly and keeps tool errors out of the chat"
+- **Environment:** as 21-2A, with the fake ffmpeg failing.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
 ## MUS-SPEC-21-3A — Every transcription and synthesis leaves a receipt
 
 - **Precondition:** any configured provider.
@@ -171,3 +181,13 @@ On the envelope, `SurfaceAttachment` gains optional `seconds` and `sizeBytes` (c
 - **Environment:** fake binaries.
 - **Known gaps:** push-to-talk dictation in the chat composer is the next slice (spec 02, a new case).
 - **Evidence:** green 2026-11-10 on `feat/voice`: `npx tsx --test --test-concurrency=1` — core `test/voice.test.ts` 5/5, CLI `test/voice.test.ts` 3/3, gateway `test/voice-notes.test.ts` 5/5. Live: `muster voice say "hello from muster" -o out.ogg` printed the path; ffprobe: `codec_name=opus`, `format_name=ogg`.
+
+## MUS-SPEC-21-4B — `voice say` speaks text that starts with a dash
+
+- **Precondition:** TTS configured (`say`).
+- **Action:** `muster voice say "-5 degrees outside" -o out.ogg`.
+- **Expected result:** `say` receives `-5 degrees outside` as the text (after `--`). Only `-o`/`--output`, `--voice` and their values are read as flags.
+- **Test:** `packages/cli/test/voice.test.ts` › "voice say speaks text that starts with a dash"
+- **Environment:** fake binaries.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

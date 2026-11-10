@@ -336,3 +336,19 @@ test("matrix audio events and email audio attachments become prompts through the
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-21-2F (docs/spec/clauses/21-voice.md#mus-spec-21-2f--a-failed-transcription-keeps-its-details-in-the-gateway-log)
+test("a failed transcription answers plainly and keeps tool errors out of the chat", async () => {
+  const harness = await startTelegram("muster-voice-tg-fail-", WHISPER);
+  process.env.FAKE_FFMPEG_FAIL = "1";
+  try {
+    await harness.post(voiceUpdate(9301, { file_id: "VOICE1", duration: 4, mime_type: "audio/ogg", file_size: VOICE_BYTES.length }));
+    const replies = texts(harness.bot);
+    assert.deepEqual(replies, ["I couldn't transcribe that voice note. Please try again; if it keeps failing, the gateway log has the details."]);
+    assert.doesNotMatch(replies[0]!, /ffmpeg|exit|Invalid data|\//);
+    assert.equal(harness.llm.prompts.length, 0, "no turn started");
+  } finally {
+    delete process.env.FAKE_FFMPEG_FAIL;
+    await harness.stop();
+  }
+});

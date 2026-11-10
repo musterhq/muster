@@ -59,11 +59,15 @@ test("voice doctor reports speech off and lists the local tools it found", async
 
     const text = await runCli(["voice", "doctor"], ws.cwd, env);
     assert.equal(text.code, 0, text.stderr);
-    assert.match(text.stdout, /^voice stt=off tts=off reply=off$/m);
-    assert.match(text.stdout, new RegExp(`^tool=whisper-cli path=${join(ws.bin, "whisper-cli")}$`, "m"));
-    assert.match(text.stdout, new RegExp(`^tool=ffmpeg path=${join(ws.bin, "ffmpeg")}$`, "m"));
-    assert.match(text.stdout, new RegExp(`^tool=say path=${join(ws.bin, "say")}$`, "m"));
-    assert.match(text.stdout, new RegExp(`^model=${model}$`, "m"));
+    // A readable checklist, not key=value lines.
+    assert.match(text.stdout, /^  Speech-to-text +off +voice notes get a setup hint instead of a turn$/m);
+    assert.match(text.stdout, /^  Text-to-speech +off +replies are text only$/m);
+    assert.match(text.stdout, /^  Spoken replies +off$/m);
+    assert.match(text.stdout, new RegExp(`^  ✓ whisper-cli +${join(ws.bin, "whisper-cli")}$`, "m"));
+    assert.match(text.stdout, new RegExp(`^  ✓ ffmpeg +${join(ws.bin, "ffmpeg")}$`, "m"));
+    assert.match(text.stdout, new RegExp(`^  ✓ say +${join(ws.bin, "say")}$`, "m"));
+    assert.match(text.stdout, new RegExp(`^  ✓ whisper model +${model}$`, "m"));
+    assert.doesNotMatch(text.stdout, /\b(?:stt|tts|tool|model)=/);
     const line = `"voice": {"stt": {"provider": "whisper-cpp", "model": "${model}"}, "tts": {"provider": "say"}}`;
     assert.ok(text.stdout.includes(line), text.stdout);
 
@@ -128,6 +132,22 @@ test("voice say writes ogg with -o and plays without it", async () => {
     const failed = await runCli(["voice", "say", "hi", "-o", join(ws.cwd, "y.ogg")], ws.cwd, { ...ws.env, FAKE_FFMPEG_FAIL: "1" });
     assert.notEqual(failed.code, 0);
     assert.match(failed.stderr, /ffmpeg failed \(exit 1\): ffmpeg: Invalid data/);
+  } finally {
+    await ws.done();
+  }
+});
+
+// Spec: MUS-SPEC-21-4B (docs/spec/clauses/21-voice.md#mus-spec-21-4b--voice-say-speaks-text-that-starts-with-a-dash)
+test("voice say speaks text that starts with a dash", async () => {
+  const ws = await workspace("muster-voice-dash-");
+  try {
+    await writeVoiceConfig(ws.cwd, { tts: { provider: "say" } });
+    const out = join(ws.cwd, "minus.ogg");
+    const written = await runCli(["voice", "say", "-5 degrees outside", "-o", out], ws.cwd, ws.env);
+    assert.equal(written.code, 0, written.stderr);
+    const say = (await readFakeVoiceCalls(ws.log)).find((call) => call.tool === "say");
+    assert.ok(say, "say ran");
+    assert.equal(say.argv[say.argv.length - 1], "-5 degrees outside");
   } finally {
     await ws.done();
   }
