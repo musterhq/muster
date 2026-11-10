@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
-import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
+import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
+import { readChatSessionRoute, sessionRouteToRestore, writeChatSessionRoute } from "./chat-session-route.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
   BACKEND_CARD_PROVIDERS,
@@ -43,6 +44,7 @@ import {
   readCodexComposerDefaults,
   readCodexModelProviders,
   rememberLiveCodexModels,
+  runtimeDisplayName,
   splitGatewayModel,
   type EffortValue,
   type GatewayModelChoice,
@@ -154,6 +156,7 @@ import {
   removeMcpOAuthToken,
   writeMcpOAuthToken,
   listPiModels,
+  piNoKeyWarning,
   listBuiltinPlugins,
   listBuiltinSkills,
   appendGoalLoopTurn,
@@ -1337,7 +1340,9 @@ interface ChatState {
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
   /** Every turn of this chat with its file changes and provider ids (`/rewind`). */
-  turnStack?: RecordedTurn[];
+  turnStack?: Array<RecordedTurn & { readonly undone?: boolean }>;
+  /** /undo already reverted the last turn's changes (a second /undo says so). */
+  lastTurnUndone?: boolean;
   /** Why the latest turn ran without the workspace observer (not a git repo, live diff off); `/undo` says so. */
   lastTurnUntracked?: string;
   /** Observer events of the last turn that changed files (`/undo`). */
@@ -1475,6 +1480,13 @@ async function chat(commandArgs: string[]): Promise<void> {
     resumeThreadId: readFlag(commandArgs, "--codex-thread"),
     importedFromCodex: Boolean(readFlag(commandArgs, "--codex-thread")),
   };
+  // Reopening a session starts on the runtime and model it last ran on, unless a flag says otherwise.
+  const remembered = sessionRouteToRestore(state, readChatSessionRoute(state.sessionName));
+  if (remembered) {
+    state.runtime = remembered.runtime;
+    state.provider = remembered.provider;
+    state.model = remembered.model;
+  }
   const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread", "--access"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff", "--describe"].includes(arg)).join(" ").trim();
   if (commandArgs.includes("--list") || commandArgs.includes("--sessions")) {
     printChatSessions(readNumberFlag(commandArgs, "--limit") ?? 15, commandArgs.includes("--all"));
@@ -1615,6 +1627,8 @@ async function openChatSettings(state: ChatState): Promise<void> {
   const sink = state.statusSink;
   void sink.openSettings({ cwd, onChange: (change) => applySettingToChat(state, change, sink) }).then(async () => {
     sink.setHeaderLines(await buildChatHeaderLines(state));
+    // The bar shows access, model and the like: a change applies now, so show it now.
+    await sink.refreshFooter?.();
   });
 }
 
@@ -1652,6 +1666,10 @@ function configCommand(commandArgs: readonly string[]): void {
         return;
       }
       for (const line of renderSettingsList(process.cwd())) console.log(line);
+      // A broken file is skipped by the list: say so instead of showing defaults silently.
+      for (const issue of validateSettingsFiles().filter((entry) => entry.key === "(file)")) {
+        console.error(color(`! skipped ${issue.file}: ${issue.message}`, "yellow"));
+      }
       return;
     }
     case "get": {
@@ -1665,14 +1683,16 @@ function configCommand(commandArgs: readonly string[]): void {
       const raw = positional.slice(1).join(" ");
       const setting = guard(() => requireSetting(key));
       if (!positional[1] && setting.type !== "string") fail(`Usage: muster config set ${key} <value>. Allowed: ${allowedSettingValues(setting)}.`);
-      const write = guard(() => setSetting(key, raw, { scope }));
+      // Same default as the /settings panel: this project, unless --global.
+      const write = guard(() => setSetting(key, raw, { scope: scope ?? (setting.scopes.includes("project") ? "project" : setting.scope) }));
       console.log(color(`Saved ${key} → ${formatSettingValue(setting, write.value)} · ${write.scope}`, "green"));
       return;
     }
     case "reset":
     case "unset": {
       const key = positional[0] ?? fail("Usage: muster config reset <key> [--global|--project]");
-      const write = guard(() => resetSettingValue(key, { scope }));
+      const resetScope = scope ?? (guard(() => requireSetting(key)).scopes.includes("project") ? "project" : undefined);
+      const write = guard(() => resetSettingValue(key, { ...(resetScope ? { scope: resetScope } : {}) }));
       const row = resolveSetting(key);
       console.log(color(`Reset ${key} in ${write.scope} → ${formatSettingValue(row.setting, row.value)} (${row.source})`, "green"));
       return;
@@ -1690,8 +1710,12 @@ function configCommand(commandArgs: readonly string[]): void {
         console.log(color(`Settings valid · project ${paths.project} · global ${paths.global}`, "green"));
         return;
       }
-      for (const issue of issues) console.log(`${color("✗", "red")} ${issue.key}: ${issue.message} (${issue.file})`);
-      process.exit(1);
+      for (const issue of issues) {
+        const warning = issue.severity === "warning";
+        console.log(`${warning ? color("!", "yellow") : color("✗", "red")} ${issue.key === "(file)" ? issue.file : issue.key}: ${issue.message}${issue.key === "(file)" ? "" : ` (${issue.file})`}`);
+      }
+      if (issues.some((issue) => issue.severity !== "warning")) process.exit(1);
+      return;
     }
     default:
       fail(`Unknown config command ${sub}. Use: muster config list [--json] | get <key> | set <key> <value> | reset <key> | path | validate`);
@@ -2006,11 +2030,8 @@ function replaceReadlineLine(rl: Interface, value: string): void {
 
 async function printChatHeader(state: ChatState): Promise<void> {
   const width = Math.min(Math.max((process.stdout.columns || 120) - 2, 100), 240);
-  const inner = width - 4;
-  const gutter = 3;
-  const leftWidth = Math.max(24, Math.min(34, Math.floor(inner * 0.2)));
-  const midWidth = Math.max(42, Math.floor((inner - leftWidth - gutter * 2) * 0.48));
-  const rightWidth = inner - leftWidth - midWidth - gutter * 2;
+  const layout = fullHeaderLayout(width);
+  const { leftWidth, midWidth, rightWidth } = layout;
   const cwd = truncate(chatWorkspaceCwd(state).replace(process.env.HOME ?? "", "~"), leftWidth - 2);
   const sessionCounts = chatSessionsByDirectory();
   const config = await loadConfig().catch(() => undefined);
@@ -2045,7 +2066,8 @@ async function printChatHeader(state: ChatState): Promise<void> {
     " ",
     color(model, "accent"),
     color(cwd, "dim"),
-    color(truncate(`Session: ${state.sessionName} (${sessionCounts.here.length} here · ${sessionCounts.all.length} total)`, leftWidth), "dim"),
+    color(`Session: ${state.sessionName}`, "dim"),
+    color(`${sessionCounts.here.length} here · ${sessionCounts.all.length} total`, "dim"),
     color(truncate(`Scope: ${formatChatScopes(scopes)}`, leftWidth), "dim"),
   ];
   const rightLines = [
@@ -2061,19 +2083,8 @@ async function printChatHeader(state: ChatState): Promise<void> {
     `${color("plugins:", "accent")} ${pluginCount ? `${pluginCount} configured` : "none configured"}`,
     `${color("mcp:", "accent")} ${mcpNames.length ? truncate(mcpNames.join(", "), rightWidth - 5) : "no servers"}`,
   ];
-  const rows = Math.max(leftLines.length, middleLines.length, rightLines.length);
-  console.log(color(`╭${"─".repeat(width - 2)}╮`, "accent"));
-  console.log(panelTitle(width, `Muster Agent · ${new Date().toISOString().slice(0, 10)}`));
-  for (let index = 0; index < rows; index += 1) {
-    const left = visiblePadEnd(leftLines[index] ?? "", leftWidth);
-    const middle = visiblePadEnd(middleLines[index] ?? "", midWidth);
-    const right = visiblePadEnd(rightLines[index] ?? "", rightWidth);
-    console.log(color("│ ", "accent") + left + " ".repeat(gutter) + middle + " ".repeat(gutter) + right + color(" │", "accent"));
-  }
-  const footer = `${model} · ${providerId} · ${runtimeId} · speed ${state.speedMode ?? "fast"} · scopes ${formatChatScopes(scopes)} · ${formatCompactNumber(8)} tool groups · ${formatCompactNumber(skills.length)} skills · ${formatCompactNumber(pluginCount)} plugins · ${formatCompactNumber(mcpNames.length)} mcp · /help`;
-  console.log(color("├" + "─".repeat(width - 2) + "┤", "accent"));
-  console.log(color("│ ", "accent") + visiblePadEnd(color(footer, "accent"), width - 4) + color(" │", "accent"));
-  console.log(color(`╰${"─".repeat(width - 2)}╯`, "accent"));
+  const footer = `${model} · ${providerId} · ${runtimeDisplayName(runtimeId)} · speed ${state.speedMode ?? "fast"} · scopes ${formatChatScopes(scopes)} · ${formatCompactNumber(8)} tool groups · ${formatCompactNumber(skills.length)} skills · ${formatCompactNumber(pluginCount)} plugins · ${formatCompactNumber(mcpNames.length)} mcp · /help`;
+  for (const row of renderFullHeaderPanel({ layout, title: `Muster Agent · ${new Date().toISOString().slice(0, 10)}`, left: leftLines, middle: middleLines, right: rightLines, footer })) console.log(row);
   console.log("");
 }
 
@@ -2248,7 +2259,7 @@ async function buildCompactChatHeaderLines(state: ChatState): Promise<string[]> 
     scopes: formatChatScopes(activeChatScopes(state)),
     model: formatModelStatus(state.model ?? firstRuntimeModel(runtime) ?? provider?.defaultModel, state.effortOverride ?? state.configuredEffort),
     provider: providerId,
-    runtime: runtimeId,
+    runtime: runtimeDisplayName(runtimeId),
     speed: state.speedMode ?? "fast",
   });
 }
@@ -2335,13 +2346,6 @@ function formatSkillLines(names: readonly string[], width: number): string[] {
 
 function formatSkillList(names: readonly string[], width: number): string {
   return truncate(names.join(", "), Math.max(12, width));
-}
-
-function panelTitle(width: number, title: string): string {
-  const text = ` ${title} `;
-  const left = Math.max(1, Math.floor((width - 2 - stripAnsi(text).length) / 2));
-  const right = Math.max(1, width - 2 - left - stripAnsi(text).length);
-  return color("│", "accent") + color("─".repeat(left), "accent") + color(text, "accent") + color("─".repeat(right), "accent") + color("│", "accent");
 }
 
 function visiblePadEnd(value: string, width: number): string {
@@ -2807,11 +2811,18 @@ function printChatCommandCatalog(options: { numbered?: boolean; all?: boolean } 
   const daily = commands.filter((command) => (CHAT_DAILY_COMMANDS as readonly string[]).includes(command.name) || command.plugin);
   const rest = commands.filter((command) => !(CHAT_DAILY_COMMANDS as readonly string[]).includes(command.name) && !command.plugin);
   const list = options.all || options.numbered ? commands : daily;
-  printChatPanel("Commands", list.map((command, index) => {
-    const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
-    const prefix = options.numbered ? `${color(`${String(index + 1).padStart(2)}.`, "accent")} ` : "";
-    return `${prefix}${color(command.usage.padEnd(20), "highlight")} ${command.description}${color(aliases, "dim")}`;
-  }));
+  if (options.numbered) {
+    printChatPanel("Commands", list.map((command, index) => {
+      const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
+      return `${color(`${String(index + 1).padStart(2)}.`, "accent")} ${color(command.usage.padEnd(20), "highlight")} ${command.description}${color(aliases, "dim")}`;
+    }));
+  } else {
+    // Two aligned columns; a long usage puts its description on the next row.
+    printChatPanel("Commands", alignHelpRows(list.map((command) => {
+      const aliases = command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : "";
+      return [command.usage, `${command.description}${color(aliases, "dim")}`] as const;
+    }), Number.POSITIVE_INFINITY));
+  }
   if (!options.all && !options.numbered && rest.length) {
     console.log(color(`… ${rest.length} more: ${rest.map((command) => `/${command.name}`).join(" ")} — /help all for details`, "dim"));
   }
@@ -2819,12 +2830,7 @@ function printChatCommandCatalog(options: { numbered?: boolean; all?: boolean } 
 }
 
 function printChatShortcuts(): void {
-  printChatPanel("Shortcuts", [
-    `${color("Tab".padEnd(18), "highlight")} complete slash commands, toolsets, and session names`,
-    `${color("@agent <task>".padEnd(18), "highlight")} route a turn with an agent id`,
-    `${color("\\ at line end".padEnd(18), "highlight")} continue multiline input`,
-    `${color("Ctrl+D".padEnd(18), "highlight")} toggle the current turn's full-file live view`,
-  ]);
+  printChatPanel("Shortcuts", alignHelpRows(CHAT_SHORTCUTS, chatPanelWidth() - 4));
 }
 
 function printChatControlView(
@@ -3179,6 +3185,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         emit: (line) => emitChatLine(state, line),
         reasoningMode: state.reasoningMode ?? "compact",
         block: (id, render) => state.statusSink?.upsertBlock(id, render),
+        width: () => process.stdout.columns || 100,
       })
     : undefined;
   let diffSummaryOpen = false;
@@ -3213,8 +3220,10 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // session handle for the conversation and every later turn resumes from that.
   const resumeThreadId = state.resumeThreadId;
   state.resumeThreadId = undefined;
+  // Stopped while an approval card waits: deciding is the user's time, not the agent's.
+  const turnTimer = new TurnTimer();
   const stopWorking = state.statusSink
-    ? startTuiWorkingStatus(state.statusSink, { ...(await chatStatusInfo(state)), agentId })
+    ? startTuiWorkingStatus(state.statusSink, { ...(await chatStatusInfo(state)), agentId }, turnTimer)
     : startWorkingStatus(agentId);
   // Defect #3: the parent model's narration streams into the transcript while
   // the turn runs. onDelta/onReasoningDelta already arrive in-process; the
@@ -3232,14 +3241,26 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       extraMcpServers: chatSelfMcpServers(loadedConfig, workspaceCwd),
       accessMode: state.accessMode ?? "auto-edit",
       // Ask mode: provider approval requests become cards in the transcript.
-      onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
+      onApprovalRequest: async (request) => {
+        if (!state.statusSink) return "decline";
+        turnTimer.pause();
+        painter?.approval(request, "waiting");
+        try {
+          return await state.statusSink.requestApproval(request);
+        } finally {
+          turnTimer.resume();
+          painter?.approval(request, "answered");
+        }
+      },
       onPolicyBlock: (request, block) => {
-        if (state.statusSink) state.statusSink.upsertBlock(`policy:${request.id}`, () => renderPolicyBlockCard(request, block));
+        if (painter) painter.blocked(request, block);
         else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
       },
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
       onToolEvent: painter ? (event) => painter.tool(event) : undefined,
+      // Diff cards stand in for file-edit cells only while live diff runs.
+      fileEditCards: liveDiff.active,
       prompt: agentId ? `Agent route: ${agentId}\n\n${prompt}` : prompt,
       turnContext: state.pendingContinuityContext,
       // The managed-runtime plan branch is the ONLY one that honors an explicit
@@ -3267,6 +3288,10 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       timeoutMs: options.timeoutMs,
       ...(resumeThreadId ? { sessionId: resumeThreadId, resume: true } : {}),
     });
+  } catch (error) {
+    // A turn.start block: the prompt never ran, so hand it back to edit.
+    promptBackAfterHookBlock(error, text, state.statusSink);
+    throw error;
   } finally {
     painter?.finish({ interrupted: lastChatInterruptAt >= turnStartedAt });
     stopWorking();
@@ -3274,6 +3299,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   }
   // /undo works on the most recent turn that changed files; /rewind on any turn.
   if (turnPatches.length) state.lastTurnPatches = turnPatches;
+  state.lastTurnUndone = false;
   state.lastTurnUntracked = liveDiff.active ? undefined : liveDiff.inactiveReason;
   state.turnStack = [...(state.turnStack ?? []), {
     prompt,
@@ -3283,6 +3309,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
   }].slice(-50);
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
+  writeChatSessionRoute(state.sessionName, { runtime: state.runtime, provider: state.provider, model: state.model });
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
   if (outcome.context) state.lastContext = outcome.context;
@@ -3867,11 +3894,10 @@ async function boardCommand(commandArgs: string[]): Promise<void> {
  * of its own: it paints at the left edge of the one status line, whose elapsed
  * segment counts THIS turn while the turn runs.
  */
-function startTuiWorkingStatus(sink: MusterChatSink, info: Parameters<typeof formatStatusLine>[0]): () => void {
+function startTuiWorkingStatus(sink: MusterChatSink, info: Parameters<typeof formatStatusLine>[0], turnTimer = new TurnTimer()): () => void {
   let frame = 0;
-  const startedAt = Date.now();
   const render = (): void => {
-    sink.setStatus(formatStatusLine({ ...info, verb: workingVerbForFrame(frame), frame, elapsedMs: Date.now() - startedAt }));
+    sink.setStatus(formatTurnStatusLine(info, turnTimer, frame));
     frame += 1;
   };
   render();
@@ -4295,7 +4321,7 @@ async function printChatStatus(state: ChatState): Promise<void> {
     const fallbacks = config.routing.fallbacks ?? [];
     printChatPanel("Status", [
       `${color("conversation".padEnd(12), "accent")} ${state.sessionName}`,
-      `${color("runtime".padEnd(12), "accent")} ${runtime}`,
+      `${color("runtime".padEnd(12), "accent")} ${runtimeDisplayName(runtime)}`,
       `${color("provider".padEnd(12), "accent")} ${provider?.id ?? providerId ?? "-"}`,
       `${color("model".padEnd(12), "accent")} ${model ?? "-"}`,
       `${color("speed".padEnd(12), "accent")} ${state.speedMode ?? "fast"}${(state.speedMode ?? "fast") === "fast" ? " (warm native, light context)" : " (full memory + skills)"}`,
@@ -4422,7 +4448,12 @@ async function switchChatModel(args: string, state: ChatState): Promise<void> {
 async function openComposerPicker(state: ChatState): Promise<void> {
   await initializeChatComposerState(state);
   const backends = await detectBackends();
-  if (backends.codex === "authenticated") await loadLiveCodexModels();
+  if (backends.codex === "authenticated") {
+    await loadLiveCodexModels();
+    // Codex's own model names are known now: rebuild the header so it names
+    // the model the way the status bar does.
+    await refreshChatTuiHeader(state);
+  }
   const pickerState = {
     catalog: buildComposerCatalog({ codex: backends.codex === "authenticated", claude: backends.claude === "installed" }),
     activeModel: state.model ?? DEFAULT_CODEX_MODEL,
@@ -4565,6 +4596,8 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
     await refreshChatTuiHeader(state);
     const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
     console.log(color(`runtime=pi provider=pi-default model=${state.model} provider_handles_cleared=${cleared}`, "green"));
+    const piWarning = piNoKeyWarning(await listPiModels().catch(() => [{ available: true }]));
+    if (piWarning) console.log(color(piWarning, "yellow"));
     openNextPicker(state, "/provider");
     return;
   }
@@ -5413,7 +5446,7 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
     console.log(color("Nothing to rewind yet: no turns in this chat.", "dim"));
     return;
   }
-  const label = (turn: RecordedTurn) => `${turn.prompt.replace(/\s+/g, " ").slice(0, 70)}${turn.patches.length ? ` · ${new Set(turn.patches.map((patch) => patch.path)).size} file(s)` : ""}`;
+  const label = (turn: RecordedTurn & { readonly undone?: boolean }) => rewindTurnLabel(turn);
   let back = Number.parseInt(args.trim(), 10);
   if (!Number.isFinite(back)) {
     const options = stack.map((turn, index) => ({ value: String(stack.length - index), label: `${stack.length - index}  ${label(turn)}` })).reverse().slice(0, 15);
@@ -5442,14 +5475,22 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
   if (result.conversation === "fresh") await clearConversationSessionHandles(conversationKey);
   console.log(`${color("↺", "green")} Rewound to before “${result.prompt.replace(/\s+/g, " ").slice(0, 60)}” · ${result.files.restored.length} ${result.files.restored.length === 1 ? "file" : "files"} restored · ${result.conversation === "reverted" ? "conversation rolled back" : "next turn starts a fresh thread"}${forgotten ? ` · ${forgotten} turn ${forgotten === 1 ? "memory" : "memories"} forgotten` : ""}`);
   for (const file of result.files.skipped) console.log(`  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`);
+  // The rewound turns stay readable but grey, under a marker row.
+  state.statusSink?.markRewound(result.prompt);
+  state.lastTurnUndone = false;
   // The rewound prompt goes back into the composer for editing.
   state.statusSink?.openPicker(result.prompt);
 }
 
 async function undoLastChatTurn(state: ChatState): Promise<void> {
   const patches = state.lastTurnPatches;
-  const rows = await undoLastTurnRows({ patches, ...(state.lastTurnUntracked ? { untrackedReason: state.lastTurnUntracked } : {}) });
-  if (patches?.length) state.lastTurnPatches = undefined;
+  const rows = await undoLastTurnRows({ patches, alreadyUndone: state.lastTurnUndone === true, ...(state.lastTurnUntracked ? { untrackedReason: state.lastTurnUntracked } : {}) });
+  if (patches?.length) {
+    state.lastTurnPatches = undefined;
+    state.lastTurnUndone = true;
+    // /rewind reads the same record: the undone turn has nothing left to restore.
+    if (state.turnStack) state.turnStack = markTurnUndone(state.turnStack, patches);
+  }
   for (const row of rows) console.log(row);
 }
 
@@ -5506,12 +5547,12 @@ async function chatCommandCurrentValues(state: ChatState): Promise<Record<string
   const effort = effortDisplayLabel(state.effortOverride ?? state.configuredEffort ?? "medium");
   const claude = activeChatProvider(state) === "claude";
   return {
-    ...(model ? { model: claude ? model : `${model} · ${effort}` } : {}),
+    ...(model ? { model: formatModelStatus(model, state.effortOverride ?? state.configuredEffort ?? "medium") } : {}),
     "live-diff": liveDiffEnabled(state) ? "on" : "off",
     access: state.accessMode ?? "auto-edit",
     reasoning: `${claude ? "extended thinking" : effort} · summaries ${state.reasoningMode === "full" ? "full" : "brief"}`,
     speed: state.speedMode ?? "fast",
-    runtime: runtimeId,
+    runtime: runtimeDisplayName(runtimeId),
     ...(providerId ? { provider: providerId } : {}),
   };
 }
@@ -6232,11 +6273,17 @@ async function printChatAgents(options: { numbered?: boolean } = {}): Promise<vo
  * line with the body indented beneath it. Full-width frames are gone from the
  * chat surface; the composer is a bare `❯ ` prompt.
  */
+function chatPanelWidth(): number {
+  return Math.min(Math.max((process.stdout.columns || 100) - 4, 72), 140);
+}
+
 function printChatPanel(title: string, lines: readonly string[]): void {
-  const width = Math.min(Math.max((process.stdout.columns || 100) - 4, 72), 140);
+  const width = chatPanelWidth();
   console.log(formatToolLine(title, undefined, "success"));
   for (const line of lines) {
-    for (const part of wrapPreserveLines(line || "", width - 4)) {
+    // A row that fits keeps its own spacing (aligned columns); only longer rows are re-wrapped.
+    const parts = line && !line.includes("\n") && stripAnsi(line).length <= width - 8 ? [line] : wrapPreserveLines(line || "", width - 4);
+    for (const part of parts) {
       console.log(part ? `  ${part}` : "");
     }
   }
@@ -7773,6 +7820,10 @@ async function pluginsCommand(args: string[]): Promise<void> {
       await printPluginBundleInspection(isGitPluginSource(path) ? path : resolve(path));
       return;
     }
+    if (!existsSync(resolve(path))) throw new Error(`No such folder: ${resolve(path)}`);
+    if (!existsSync(join(resolve(path), "manifest.json"))) {
+      throw new Error(`No plugin found in ${resolve(path)}: looked for .claude-plugin/plugin.json, .codex-plugin/plugin.json and plugin.json (or a capability pack's manifest.json).`);
+    }
     await capability(["inspect", path]);
     return;
   }
@@ -8781,9 +8832,12 @@ async function mcpCommand(args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
   if (action === "serve") {
     // stdout is the protocol channel: nothing else may print to it.
-    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION }));
+    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION, defaultScopes: defaultChatScopes().map(formatMemoryScope) }));
     return;
   }
+  // Like chat and config set: a folder without .muster/ gets its config
+  // instead of a raw ENOENT on .muster/config.json.
+  await ensureDefaultConfig();
   if (action === "oauth") {
     await mcpOauthCommand([name, ...rest].filter((item): item is string => Boolean(item)));
     return;
@@ -11742,7 +11796,7 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     return;
   }
   if (action === "list") {
-    for (const line of formatAutomationsTable(await listSchedules())) console.log(line);
+    for (const line of formatAutomationsTable(await listSchedules(), process.stdout.columns || Number.POSITIVE_INFINITY)) console.log(line);
     return;
   }
   if (action === "remove" && rest[0]) {

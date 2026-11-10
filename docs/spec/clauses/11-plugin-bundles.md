@@ -87,3 +87,13 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Environment:** the real CLI as a child process, temp workspace.
 - **Known gaps:** skill files referenced from SKILL.md (scripts, references) are not served; the model reads them from the path given.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-11-1I — Inspect on a missing or empty folder says what it looked for
+
+- **Precondition:** a workspace; no folder `nope`; an empty folder `empty`.
+- **Action:** `muster plugins inspect <cwd>/nope`, then `muster plugins inspect <cwd>/empty`.
+- **Expected result:** both fail without a raw `ENOENT`. The first says `No such folder: …/nope`; the second says `No plugin found in …/empty` and names the files it looked for (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `plugin.json`, or a capability pack's `manifest.json`).
+- **Test:** `packages/cli/test/plugin-bundles.test.ts` › "plugins inspect on a missing or empty folder says what it looked for"
+- **Environment:** real CLI via tsx, temp workspace.
+- **Known gaps:** none.
+- **Evidence:** live, 2026-11-10: `plugins inspect /tmp/nonexistent` → `No such folder: /tmp/nonexistent`; an empty folder → `No plugin found in … looked for …`. Red→green: plugin-bundles.test.ts.

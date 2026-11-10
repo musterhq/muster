@@ -665,7 +665,9 @@ async function scheduleManage(args: ScheduleManageArgs, ctx: ToolContext): Promi
         cwd: ctx.cwd,
         enforceActiveCap: true,
       });
-      return { ok: true, data: describeAutomation(job) };
+      // People read local time; the model also gets the exact instant.
+      const exact = job.at ?? job.nextRunAt;
+      return { ok: true, data: `${describeAutomation(job)}${exact ? ` Exact time (UTC): ${exact}.` : ""}` };
     }
     if (args.action === "list") {
       return { ok: true, data: formatAutomationsTable(await listAutomations(ctx.cwd)).join("\n") };

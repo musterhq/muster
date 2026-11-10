@@ -21,7 +21,7 @@ import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { createCoalescer } from "@musterhq/core";
+import { createCoalescer, unwrapShellCommand } from "@musterhq/core";
 import type { AgentToolEvent, ApprovalDecision, ApprovalRequest, BoardView, MessageRow } from "@musterhq/core";
 import { effortDisplayLabel, modelDisplayLabel, modelProvider, type ComposerPickerSelection, type ComposerPickerState, type EffortValue } from "./model-catalog.js";
 import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capabilities-overlay.js";
@@ -116,6 +116,8 @@ export interface MusterChatSink {
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void;
   /** Ctrl+O: expand or collapse every block's output. */
   toggleExpanded(): void;
+  /** /rewind: grey out the transcript from the rewound prompt on, under a marker row. */
+  markRewound(prompt: string): void;
   /** The status bar under the composer (one pre-styled row; empty hides it). */
   setFooter(line: string): void;
   /**
@@ -142,6 +144,8 @@ export interface MusterChatSink {
   openBoard(force?: boolean): Promise<boolean>;
   /** Replace chat with the full-screen settings panel; resolves when it closes. */
   openSettings(options: OpenSettingsOptions): Promise<void>;
+  /** Rebuild the status bar now (after a change it shows, such as access). */
+  refreshFooter?: (width?: number) => Promise<void>;
 }
 
 export interface OpenSettingsOptions {
@@ -531,7 +535,8 @@ export function formatStatusLine(info: StatusLineInfo): string {
   if (info.inputTokens !== undefined || info.outputTokens !== undefined) {
     segments.push(`${compactCount(info.inputTokens ?? 0)} in / ${compactCount(info.outputTokens ?? 0)} out`);
   }
-  if (info.costUsd !== undefined && Number.isFinite(info.costUsd)) segments.push(`$${info.costUsd.toFixed(4)}`);
+  // A subscription turn costs nothing per call: `$0.0000` reads as a broken meter.
+  if (info.costUsd !== undefined && Number.isFinite(info.costUsd) && info.costUsd > 0) segments.push(`$${info.costUsd.toFixed(4)}`);
   if (info.elapsedMs !== undefined && Number.isFinite(info.elapsedMs)) segments.push(formatDuration(Math.max(0, info.elapsedMs)));
   for (const extra of info.extra ?? []) segments.push(extra);
   const body = segments.join(" · ");
@@ -567,6 +572,46 @@ export function paintWorkingRow(row: string, tick: number): string {
   const match = /^([✻|/\\-])\s+(.*)$/.exec(plain);
   if (!match) return row;
   return `${accent(match[1]!)} ${shimmerText(match[2]!, tick)}`;
+}
+
+/** The status row's verb while an approval card waits for the user. */
+export const APPROVAL_WAIT_VERB = "Waiting for approval";
+
+/** A turn's elapsed time that can stop while the user decides on an approval. */
+export class TurnTimer {
+  private readonly startedAt: number;
+  private pausedAt: number | undefined;
+  private pausedTotal = 0;
+
+  constructor(private readonly now: () => number = Date.now) {
+    this.startedAt = now();
+  }
+
+  get paused(): boolean {
+    return this.pausedAt !== undefined;
+  }
+
+  pause(): void {
+    if (this.pausedAt === undefined) this.pausedAt = this.now();
+  }
+
+  resume(): void {
+    if (this.pausedAt === undefined) return;
+    this.pausedTotal += this.now() - this.pausedAt;
+    this.pausedAt = undefined;
+  }
+
+  elapsedMs(): number {
+    return Math.max(0, (this.pausedAt ?? this.now()) - this.startedAt - this.pausedTotal);
+  }
+}
+
+/** The running turn's status row: the rotating verb and live timer, or `Waiting for approval` with the timer held. */
+export function formatTurnStatusLine(info: StatusLineInfo, timer: TurnTimer, frame: number): string {
+  // Token and cost counts here would be the session's or the last turn's, not
+  // this turn's (known only when it ends, on the summary row): leave them out.
+  const { inputTokens: _input, outputTokens: _output, costUsd: _cost, ...turnInfo } = info;
+  return formatStatusLine({ ...turnInfo, verb: timer.paused ? APPROVAL_WAIT_VERB : workingVerbForFrame(frame), frame, elapsedMs: timer.elapsedMs() });
 }
 
 /** The status row's live verb — rotates every ~4s of spinner frames. */
@@ -668,6 +713,8 @@ export interface NarrationPainterOptions {
   readonly bullets?: boolean;
   /** "compact" (default) collapses each reasoning summary to a single row. */
   readonly reasoningMode?: ReasoningMode;
+  /** Terminal columns; a tool title may use the row (default: 96 characters). */
+  readonly width?: () => number;
   /** When set, tool cells are mutable blocks: painted running, then replaced in place when they finish. */
   readonly block?: (id: string, render: (expanded: boolean) => string[]) => void;
 }
@@ -677,6 +724,10 @@ export interface NarrationPainter {
   delta(text: string): void;
   /** Paint a tool start/end cell in order: pending narration is flushed above it. */
   tool(event: AgentToolEvent): void;
+  /** A policy hook declined this request: its cell (if any) becomes the red Blocked card; one cell, not two. */
+  blocked(request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }): void;
+  /** An approval request for an open cell: `awaiting approval` while the card waits, `running…` once answered. */
+  approval(request: ApprovalRequest, state: "waiting" | "answered"): void;
   /** Paint everything buffered now (before an out-of-band card such as a diff). */
   flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
@@ -745,21 +796,52 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     const label = interrupted ? "interrupted" : "no result (the turn ended)";
     for (const [id, event] of openCells) {
       const name = toolCellName(event);
-      const title = toolCellTitle(event);
+      const title = titleOf(event);
       options.block(`tool:${id}`, () => ["", ...[formatToolLine(name, title, "failure"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
     }
     openCells.clear();
   };
-  const paintTool = (event: AgentToolEvent): void => {
+  const clock = options.now ?? Date.now;
+  // The headline row is `⏺ Bash(` + title + `)` on a band: leave room for both.
+  const titleOf = (event: AgentToolEvent): string => toolCellTitle(event, options.width ? Math.max(40, options.width() - 12) : undefined);
+  /** When each tool started, so a cell can show a time the provider did not report (Codex sends 0 ms). */
+  const startedAt = new Map<string, number>();
+  const timed = (event: AgentToolEvent): AgentToolEvent => {
+    const started = startedAt.get(event.id);
+    if (event.phase === "start") {
+      startedAt.set(event.id, clock());
+      return event;
+    }
+    startedAt.delete(event.id);
+    if ((event.durationMs ?? 0) > 0 || started === undefined) return event;
+    return { ...event, durationMs: Math.max(0, clock() - started) };
+  };
+  const paintOpenCell = (event: AgentToolEvent, label: string): void => {
+    options.block?.(`tool:${event.id}`, () => ["", ...[formatToolLine(toolCellName(event), titleOf(event), "pending"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
+  };
+  /** The open cell an approval request is about: same item id, else the newest command with the same text. */
+  const cellFor = (request: ApprovalRequest): AgentToolEvent | undefined => {
+    const byId = openCells.get(request.id);
+    if (byId) return byId;
+    if (request.kind !== "command") return undefined;
+    const wanted = unwrapShellCommand(request.title);
+    const open = [...openCells.values()].filter((event) => event.kind === "command");
+    return open.reverse().find((event) => unwrapShellCommand(event.title) === wanted) ?? open[0];
+  };
+  /** Cells a policy block took over: the provider's later `failed` end must not repaint them. */
+  const blockedCells = new Set<string>();
+  const paintTool = (raw: AgentToolEvent): void => {
+    if (raw.phase === "end" && blockedCells.delete(raw.id)) return;
+    const event = timed(raw);
     flushAll();
     blockOpen = false;
     if (options.block && bullets) {
       const name = toolCellName(event);
-      const title = toolCellTitle(event);
+      const title = titleOf(event);
       // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
         openCells.set(event.id, event);
-        options.block(`tool:${event.id}`, () => ["", ...[formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`].map((row) => cardRow(row))]);
+        paintOpenCell(event, "running…");
       } else {
         openCells.delete(event.id);
         const tone: CardTone = event.failed ? "failure" : "tool";
@@ -771,16 +853,16 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       return;
     }
     if (!bullets) {
-      if (event.phase === "start") options.emit(`$ ${toolCellTitle(event)}`);
+      if (event.phase === "start") options.emit(`$ ${titleOf(event)}`);
       return;
     }
     if (event.phase === "start") {
-      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), "pending"));
+      options.emit(formatToolLine(toolCellName(event), titleOf(event), "pending"));
       headlineToolId = event.id;
       return;
     }
     if (headlineToolId !== event.id) {
-      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), event.failed ? "failure" : "success"));
+      options.emit(formatToolLine(toolCellName(event), titleOf(event), event.failed ? "failure" : "success"));
     }
     for (const line of formatToolEndLines(event)) options.emit(line);
     headlineToolId = undefined;
@@ -789,6 +871,23 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   return {
     tool(event) {
       paintTool(event);
+    },
+    blocked(request, block) {
+      flushAll();
+      blockOpen = false;
+      const cell = cellFor(request);
+      const id = cell ? `tool:${cell.id}` : `policy:${request.id}`;
+      if (cell) {
+        openCells.delete(cell.id);
+        blockedCells.add(cell.id);
+      }
+      if (options.block && bullets) options.block(id, () => renderPolicyBlockCard(request, block));
+      else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
+    },
+    approval(request, state) {
+      if (!options.block || !bullets) return;
+      const cell = cellFor(request);
+      if (cell) paintOpenCell(cell, state === "waiting" ? "awaiting approval" : "running…");
     },
     flush() {
       flushAll();
@@ -835,14 +934,8 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   };
 }
 
-/** `/bin/zsh -lc 'pytest -q'` → `pytest -q`: the wrapper is noise, the command is the fact. */
-export function unwrapShellCommand(command: string): string {
-  const trimmed = command.trim();
-  const quoted = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
-  if (quoted) return quoted[2]!.trim();
-  const bare = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(\S+)$/);
-  return (bare?.[1] ?? trimmed).trim();
-}
+/** `/bin/zsh -lc 'pytest -q'` → `pytest -q` (shared with core's policy hooks). */
+export { unwrapShellCommand };
 
 function toolCellName(event: AgentToolEvent): string {
   switch (event.kind) {
@@ -868,10 +961,13 @@ export const CARD_BAND_RGB = "32;33;37";
 export const CARD_FAILURE_BAND_RGB = "58;30;34";
 
 export type CardTone = "tool" | "failure";
-const CARD_MARK = /^\u0000band:(tool|failure)\u0000/;
+const CARD_MARK = /^\u0000band:(tool|failure)(:clip)?\u0000/;
+/** A card row that is cut to the width with `…` instead of wrapping (collapsed tool output). */
+const CLIP_MARK = "\u0000clip\u0000";
 
 /** Mark a transcript row as part of a card; the screen paints it as a full-width band. */
 export function cardRow(text: string, tone: CardTone = "tool"): string {
+  if (text.startsWith(CLIP_MARK)) return `\u0000band:${tone}:clip\u0000${text.slice(CLIP_MARK.length)}`;
   return `\u0000band:${tone}\u0000${text}`;
 }
 
@@ -888,7 +984,9 @@ export function renderTranscriptLine(line: string, frameWidth: number, padTo: nu
   const mark = line.match(CARD_MARK);
   if (!mark) return wrapLine(line, frameWidth);
   const rgb = mark[1] === "failure" ? CARD_FAILURE_BAND_RGB : CARD_BAND_RGB;
-  return wrapLine(line.slice(mark[0].length), frameWidth).map((row) => bandRow(row, padTo, rgb));
+  const body = line.slice(mark[0].length);
+  if (mark[2]) return [bandRow(truncateToWidth(body, Math.max(10, frameWidth - 2), "…"), padTo, rgb)];
+  return wrapLine(body, frameWidth).map((row) => bandRow(row, padTo, rgb));
 }
 
 /** Rows shown for one tool's output when Ctrl+O has expanded it; beyond this a count is shown. */
@@ -913,7 +1011,10 @@ export function formatToolEndLines(
   // The hint promises a key only where the key exists (block mode).
   const hint = view.expandable ? " (ctrl+o to expand)" : "";
   if (hidden > 0) lines.push(`    ${dim(`… +${hidden} lines${view.expanded ? "" : hint}`)}`);
-  for (const row of output.slice(hidden)) lines.push(`    ${dim(stripAnsi(row).slice(0, 200))}`);
+  // Collapsed, each output row is one screen row, cut with `…` (a long path
+  // line used to run past the edge); Ctrl+O shows it whole, wrapped.
+  const clip = view.expandable && !view.expanded ? CLIP_MARK : "";
+  for (const row of output.slice(hidden)) lines.push(`${clip}    ${dim(stripAnsi(row).slice(0, view.expanded ? 2000 : 200))}`);
   if (view.expanded && view.expandable && output.length > maxLines) lines.push(`    ${dim("ctrl+o to collapse")}`);
   return lines;
 }
@@ -947,6 +1048,53 @@ export interface CompactHeaderInfo {
   readonly runtime: string;
   readonly speed: string;
   readonly backends?: string;
+}
+
+export interface FullHeaderLayout {
+  readonly width: number;
+  readonly leftWidth: number;
+  readonly midWidth: number;
+  readonly rightWidth: number;
+  readonly gutter: number;
+}
+
+/** Column widths of the full (`/header full`) panel for a box `width` columns wide. */
+export function fullHeaderLayout(width: number): FullHeaderLayout {
+  const inner = width - 4;
+  const gutter = 3;
+  const leftWidth = Math.max(24, Math.min(34, Math.floor(inner * 0.2)));
+  const midWidth = Math.max(42, Math.floor((inner - leftWidth - gutter * 2) * 0.48));
+  const rightWidth = inner - leftWidth - midWidth - gutter * 2;
+  return { width, leftWidth, midWidth, rightWidth, gutter };
+}
+
+/**
+ * The full header panel: title in the top border, three columns, a summary
+ * row. Every row is exactly `layout.width` wide; anything longer is cut with
+ * `…` inside the border, never past it.
+ */
+export function renderFullHeaderPanel(input: {
+  readonly layout: FullHeaderLayout;
+  readonly title: string;
+  readonly left: readonly string[];
+  readonly middle: readonly string[];
+  readonly right: readonly string[];
+  readonly footer: string;
+}): string[] {
+  const { width, leftWidth, midWidth, rightWidth, gutter } = input.layout;
+  const cell = (value: string, cellWidth: number): string => padAnsi(truncateToWidth(value, cellWidth, "…"), cellWidth);
+  const title = ` ${input.title} `;
+  const titleLeft = Math.max(1, Math.floor((width - 2 - visibleWidth(title)) / 2));
+  const titleRight = Math.max(1, width - 2 - titleLeft - visibleWidth(title));
+  const rows = [accent(`╭${"─".repeat(titleLeft)}${title}${"─".repeat(titleRight)}╮`)];
+  const count = Math.max(input.left.length, input.middle.length, input.right.length);
+  for (let index = 0; index < count; index += 1) {
+    rows.push(`${accent("│ ")}${cell(input.left[index] ?? "", leftWidth)}${" ".repeat(gutter)}${cell(input.middle[index] ?? "", midWidth)}${" ".repeat(gutter)}${cell(input.right[index] ?? "", rightWidth)}${accent(" │")}`);
+  }
+  rows.push(accent(`├${"─".repeat(width - 2)}┤`));
+  rows.push(`${accent("│ ")}${cell(accent(input.footer), width - 4)}${accent(" │")}`);
+  rows.push(accent(`╰${"─".repeat(width - 2)}╯`));
+  return rows;
 }
 
 /**
@@ -1069,6 +1217,33 @@ export class TranscriptStore {
     block.render = render;
   }
 
+  /**
+   * Grey out a rewound stretch: from the latest user row that sent `prompt`
+   * to the end, every row is repainted dim and a marker row goes above it.
+   * Blocks in that stretch stop being live (a later Ctrl+O must not bring
+   * the colour back). False when the prompt's row is not in the transcript.
+   */
+  markRewound(prompt: string, marker: string): boolean {
+    const first = (prompt.split(/\r?\n/)[0] ?? "").trim();
+    let at = -1;
+    for (let index = this.lines.length - 1; index >= 0; index -= 1) {
+      const line = this.lines[index]!;
+      if (isUserTranscriptLine(line) && stripAnsi(line).slice(USER_PREFIX.length).trim() === first) {
+        at = index;
+        break;
+      }
+    }
+    if (at < 0) return false;
+    for (const [id, block] of this.blocks) if (block.start >= at) this.blocks.delete(id);
+    for (let index = at; index < this.lines.length; index += 1) {
+      const plain = stripAnsi(stripCardMark(this.lines[index]!));
+      this.lines[index] = plain.trim() ? dim(plain) : plain;
+    }
+    this.lines.splice(at, 0, marker);
+    this.dirtyFrom = Math.min(this.dirtyFrom, at);
+    return true;
+  }
+
   toggleExpanded(): void {
     this.expanded = !this.expanded;
     const ordered = [...this.blocks.values()].sort((a, b) => a.start - b.start);
@@ -1171,6 +1346,30 @@ export function formatStatusBar(info: StatusBarInfo, width: number): string {
   return truncateToWidth(row, width, "…");
 }
 
+/**
+ * The status bar, built for one width. The bar is rebuilt after each turn and
+ * whenever the frame is painted at a different width (a resize), so segments
+ * drop out whole instead of the old row being cut mid-segment.
+ */
+export class FooterSlot {
+  line = "";
+  private width = -1;
+
+  constructor(private readonly source: (width: number) => string | Promise<string>) {}
+
+  staleFor(width: number): boolean {
+    return width !== this.width;
+  }
+
+  async refresh(width: number): Promise<boolean> {
+    this.width = width;
+    const line = await this.source(width);
+    if (line === this.line) return false;
+    this.line = line;
+    return true;
+  }
+}
+
 const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
   accept: "approved once",
   acceptForSession: "approved for this session",
@@ -1220,6 +1419,16 @@ export function renderPolicyBlockCard(request: ApprovalRequest, block: { readonl
   return ["", ...rows.map((row) => cardRow(row, "failure"))];
 }
 
+export const REWOUND_MARKER = "↺ rewound — the turns below were undone";
+
+/** A `turn.start` hook refused the prompt: put it back in the composer to edit. True when it did. */
+export function promptBackAfterHookBlock(error: unknown, prompt: string, sink: Pick<MusterChatSink, "openPicker"> | undefined): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!sink || !/^Run blocked by hook\b/.test(message)) return false;
+  sink.openPicker(prompt);
+  return true;
+}
+
 /** A key while an approval card waits → its decision, or undefined to hold the key. */
 export function approvalDecisionForKey(data: string): ApprovalDecision | undefined {
   if (data === "y" || data === "Y") return "accept";
@@ -1257,6 +1466,41 @@ export class ApprovalQueue {
     head.resolve(decision);
     return true;
   }
+}
+
+/** Every key the chat answers to, for /shortcuts. */
+export const CHAT_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
+  ["Enter", "send; while a turn runs, steer it with the message"],
+  ["Ctrl+Q / Alt+Enter", "queue the message to run after the current turn"],
+  ["Alt+↑", "pull the last queued message back to edit"],
+  ["Esc", "stop the running turn (queued messages come back to edit)"],
+  ["Ctrl+C", "stop the turn or clear the draft; press twice to quit"],
+  ["Ctrl+O", "expand or collapse tool output"],
+  ["Ctrl+D", "toggle the current turn's full-file live view"],
+  ["PgUp / PgDn", "scroll the transcript"],
+  ["Tab", "complete slash commands, toolsets and session names"],
+  ["\\ at line end", "continue on a new line"],
+  ["@agent <task>", "route a turn to an agent"],
+];
+
+/**
+ * Help rows as two columns: every description starts in the same column. A
+ * label wider than the column keeps its own row and its description goes on
+ * the next row, in that column.
+ */
+export function alignHelpRows(rows: ReadonlyArray<readonly [string, string]>, width: number, maxLabel = 28): string[] {
+  const column = Math.min(maxLabel, Math.max(0, ...rows.map(([label]) => visibleWidth(label)).filter((size) => size <= maxLabel))) + 2;
+  const out: string[] = [];
+  for (const [label, description] of rows) {
+    const size = visibleWidth(label);
+    if (size + 2 > column) {
+      out.push(highlight(label));
+      out.push(`${" ".repeat(column)}${description}`);
+      continue;
+    }
+    out.push(`${highlight(label)}${" ".repeat(column - size)}${description}`);
+  }
+  return out.map((row) => truncateToWidth(row, Math.max(20, width), "…"));
 }
 
 /** Ctrl+Q and Alt+Enter queue a follow-up instead of steering. */
@@ -1754,13 +1998,16 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   });
   await screen.refreshStatusLine();
   if (options.footerLine) {
-    screen.refreshFooter = async () => {
+    const slot = new FooterSlot(options.footerLine);
+    screen.refreshFooter = async (width = Math.max(40, Math.min(terminal.columns || 120, 240))) => {
       try {
-        screen.setFooter(await options.footerLine!(Math.max(40, Math.min(terminal.columns || 120, 240))));
+        await slot.refresh(width);
+        screen.setFooter(slot.line);
       } catch {
         /* the bar is chrome; a probe failure never breaks the chat */
       }
     };
+    screen.footerStaleFor = (width) => slot.staleFor(width);
     void screen.refreshFooter();
   }
   const rawEscapeHandler = (chunk: Buffer | string): void => {
@@ -1904,6 +2151,38 @@ class BoardModeHost {
   private stopTimer(): void { if (this.timer) clearInterval(this.timer); this.timer = undefined; }
 }
 
+/**
+ * Where a composer picker opens: flush-left, directly above the input box,
+ * across EVERY column. One column short let the row behind it show a stray
+ * `─` at the right edge.
+ */
+export function composerOverlayOptions(columns: number) {
+  return {
+    anchor: "bottom-left" as const,
+    offsetY: -3,
+    width: Math.max(72, columns),
+    maxHeight: 22,
+    margin: { left: 0, right: 0 },
+  };
+}
+
+/** A picker under a dim rule, so it never reads as part of the transcript above it. */
+export class RuledOverlay implements Component {
+  constructor(private readonly inner: Component) {}
+
+  render(width: number): string[] {
+    return [dim("─".repeat(Math.max(0, width))), ...this.inner.render(width)];
+  }
+
+  handleInput(data: string): void {
+    this.inner.handleInput?.(data);
+  }
+
+  invalidate(): void {
+    this.inner.invalidate();
+  }
+}
+
 class MusterChatScreen implements Component, MusterChatSink {
   private readonly store = new TranscriptStore();
   private get lines(): string[] {
@@ -1979,6 +2258,10 @@ class MusterChatScreen implements Component, MusterChatSink {
     this.tui.requestRender(true);
   }
 
+  markRewound(prompt: string): void {
+    if (this.store.markRewound(prompt, dim(REWOUND_MARKER))) this.tui.requestRender(true);
+  }
+
   readonly approvals = new ApprovalQueue((id, render) => this.upsertBlock(id, render));
 
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
@@ -1989,7 +2272,9 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   private footer = "";
   /** Recomputes the bar; set by runMusterChatTui when a footer source exists. */
-  refreshFooter?: () => Promise<void>;
+  refreshFooter?: (width?: number) => Promise<void>;
+  /** True when the bar was built for another width (the window was resized). */
+  footerStaleFor?: (width: number) => boolean;
 
   setFooter(line: string): void {
     if (line === this.footer) return;
@@ -2043,15 +2328,9 @@ class MusterChatScreen implements Component, MusterChatSink {
       );
       // The Codex app's placement: flush-left, DIRECTLY above the input box —
       // never centered in the void, never painting over the composer's frame.
-      handle = this.tui.showOverlay(list, {
-        anchor: "bottom-left",
-        offsetY: -3,
-        // Full width: overlay rows must be OPAQUE across the terminal so the
-        // transcript can never bleed through beside them (owner-reported).
-        width: Math.max(72, this.tui.terminal.columns - 1),
-        maxHeight: 22,
-        margin: { left: 0, right: 1 },
-      });
+      // Full width: overlay rows must be OPAQUE across the terminal so the
+      // transcript can never bleed through beside them (owner-reported).
+      handle = this.tui.showOverlay(new RuledOverlay(list), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }
@@ -2115,14 +2394,8 @@ class MusterChatScreen implements Component, MusterChatSink {
       }, () => finish());
       // The Codex app's placement: flush-left, DIRECTLY above the input box —
       // never centered in the void, never painting over the composer's frame.
-      handle = this.tui.showOverlay(settings, {
-        anchor: "bottom-left",
-        offsetY: -3,
-        // Full width for opacity — the transcript must never bleed through.
-        width: Math.max(72, this.tui.terminal.columns - 1),
-        maxHeight: 22,
-        margin: { left: 0, right: 1 },
-      });
+      // Full width for opacity — the transcript must never bleed through.
+      handle = this.tui.showOverlay(new RuledOverlay(settings), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }
@@ -2293,6 +2566,7 @@ class MusterChatScreen implements Component, MusterChatSink {
 
   render(width: number): string[] {
     const frameWidth = Math.max(40, Math.min(width, 240));
+    if (this.footerStaleFor?.(frameWidth)) void this.refreshFooter?.(frameWidth);
     const composer = [
       ...renderQueuedBand(this.followUps.queued, frameWidth),
       ...renderMusterComposer(this.editor, frameWidth),
@@ -2475,6 +2749,10 @@ class HarnessSink implements MusterChatSink {
 
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
     this.store.upsert(id, render);
+  }
+
+  markRewound(prompt: string): void {
+    this.store.markRewound(prompt, dim(REWOUND_MARKER));
   }
 
   toggleExpanded(): void {
@@ -3086,7 +3364,7 @@ function sliceAnsiRange(value: string, start: number, end: number): string {
  * column.
  */
 function hangingIndent(clean: string, cleanWidth: number): string {
-  const match = clean.match(/^( *)(?:([●⏺⎿>✻]) )?/u);
+  const match = clean.match(/^( *)(?:([●⏺⎿>✻▸]) )?/u);
   const leading = match?.[1]?.length ?? 0;
   const glyph = match?.[2] ? 2 : 0;
   return " ".repeat(Math.max(0, Math.min(leading + glyph, cleanWidth - 10)));

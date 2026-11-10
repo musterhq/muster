@@ -141,3 +141,33 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** fake app-server replaying the live event order.
 - **Known gaps:** the gateway's malformed `response.completed` (missing `cached_tokens`) is the upstream cause and is not fixed here; every such turn costs a second model call.
 - **Evidence:** live, 2026-11-10 — app-server stdout tee in `/tmp/qafix-dup-log` showed `error{willRetry:true}` between two identical agentMessage items.
+
+## MUS-SPEC-01-2D — A command the provider did not time still shows its time
+
+- **Precondition:** chat TUI on Codex, which reports `durationMs: 0` for most quick commands.
+- **Action:** a command starts, ends 1.234 s later with `durationMs: 0`; a second command ends with `durationMs: 19900`.
+- **Expected result:** the first cell reads `⎿ exit 0 · 1.2s` (Muster measured start→end); the second `⎿ exit 0 · 19.9s` (the provider's own time wins when it is non-zero).
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a command the provider reports as 0 ms shows the time Muster measured"
+- **Environment:** chat harness with the narration painter and an injected clock, NO_COLOR.
+- **Known gaps:** a running cell still shows only `running…` until it ends; Codex output deltas are not streamed into the cell (QA-12, second half).
+- **Evidence:** live, 2026-11-10 tmux 110 cols, built CLI: `⏺ Bash(ls -la)` / `⎿ exit 0 · 75ms`, `printf …` / `⎿ exit 0 · 50ms` (before: `⎿ exit 0`). Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-2E — Commands read as the shell runs them, and use the terminal width
+
+- **Precondition:** Codex reports commands wrapped in a login shell and quoted for it: `/bin/zsh -lc "printf 'hello\\n' > hello.txt"`.
+- **Action:** paint the command's cell (and its approval card) at 200 columns.
+- **Expected result:** the title reads `printf 'hello\n' > hello.txt` — the wrapper's own escaping (`\\`, `\"`, `'\''`) is undone, so the text matches what the shell ran; a 168-character command is shown whole at 200 columns (the 96-character cap applies only when the width is unknown).
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "command titles drop the wrapper's quoting and use the terminal width"
+- **Environment:** pure `unwrapShellCommand`; chat harness with a painter given a 200-column width; NO_COLOR.
+- **Known gaps:** a title is measured when the cell is painted; resizing later does not re-measure it.
+- **Evidence:** live, 2026-11-10: the cell reads `⏺ Bash(printf 'hello\n' > hello.txt)` (before: `'hello\\n'`), and the hook script received the same bare text. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-3B — A long result line is cut to the width with an ellipsis
+
+- **Precondition:** a tool cell whose output is one 128-character line ("File created successfully at: … no need to Read it back)").
+- **Action:** render the cell at 80 columns, collapsed and then expanded (Ctrl+O).
+- **Expected result:** collapsed, the output takes one row, cut to the width and ending in `…`; no row is wider than the terminal. Expanded, the full line is shown, wrapped.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a long tool result line is cut to the terminal width with an ellipsis"
+- **Environment:** pure renderer (`formatToolEndLines` → `renderTranscriptLine`), NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** live, 2026-11-10, Codex turn running `python3 -c "print('abc '*60)"`: the output row is 110 columns ending `abc…`. Red→green: chat-tool-cards.test.ts.

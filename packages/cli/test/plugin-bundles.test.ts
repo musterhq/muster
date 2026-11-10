@@ -364,3 +364,43 @@ test("denied, high-risk and path-escaping bundles are refused", { timeout: 180_0
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-11-1I (docs/spec/clauses/11-plugin-bundles.md#mus-spec-11-1i--inspect-on-a-missing-or-empty-folder-says-what-it-looked-for)
+test("plugins inspect on a missing or empty folder says what it looked for", { timeout: 60_000 }, async () => {
+  const cwd = await workspace();
+  try {
+    const missing = await cli(cwd, ["plugins", "inspect", join(cwd, "nope")]);
+    assert.notEqual(missing.code, 0);
+    assert.doesNotMatch(missing.stderr + missing.stdout, /ENOENT|manifest\.json'/);
+    assert.match(missing.stderr + missing.stdout, /No such folder: .*nope/);
+    await mkdir(join(cwd, "empty"));
+    const empty = await cli(cwd, ["plugins", "inspect", join(cwd, "empty")]);
+    assert.notEqual(empty.code, 0);
+    assert.doesNotMatch(empty.stderr + empty.stdout, /ENOENT/);
+    assert.match(empty.stderr + empty.stdout, /No plugin found in .*empty.*\.claude-plugin\/plugin\.json.*\.codex-plugin\/plugin\.json.*plugin\.json/s);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-03-2C (docs/spec/clauses/03-mcp-runtime.md#mus-spec-03-2c--mcp-commands-work-in-a-folder-without-muster)
+test("mcp add-stdio, list and test work in a folder without .muster/", { timeout: 90_000 }, async () => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "muster-mcp-fresh-")));
+  try {
+    const added = await cli(cwd, ["mcp", "add-stdio", "orders", "node", "server.mjs"]);
+    assert.equal(added.code, 0, added.stderr);
+    assert.doesNotMatch(added.stderr, /ENOENT/);
+    const config = JSON.parse(await readFile(join(cwd, ".muster", "config.json"), "utf8"));
+    assert.equal(config.tools.mcp.servers.orders.transport.command, "node");
+    const fresh = await realpath(await mkdtemp(join(tmpdir(), "muster-mcp-list-")));
+    try {
+      const listed = await cli(fresh, ["mcp", "list"]);
+      assert.equal(listed.code, 0, listed.stderr);
+      assert.doesNotMatch(listed.stderr + listed.stdout, /ENOENT/);
+    } finally {
+      await rm(fresh, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

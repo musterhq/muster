@@ -38,6 +38,8 @@ export interface ClaudeCodeRunInput {
    */
   readonly onDelta?: (text: string) => void;
   readonly onToolEvent?: (event: AgentToolEvent) => void;
+  /** The caller shows file changes as diff cards (live diff is running): successful edit tools get no cell of their own. */
+  readonly fileEditCards?: boolean;
 }
 
 export interface ClaudeCodeUsage {
@@ -147,6 +149,9 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+/** Claude tools whose effect is a file change the workspace observer already shows as a diff card. */
+const CLAUDE_FILE_EDIT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
 /** `Read calc.py`, `Edit src/a.ts`, `Grep TODO`, `WebFetch https://…`. */
 function claudeToolTitle(name: string, input: Record<string, unknown>): string {
   const path = typeof input.file_path === "string" ? baseName(input.file_path) : typeof input.path === "string" ? input.path : undefined;
@@ -160,14 +165,14 @@ function claudeToolTitle(name: string, input: Record<string, unknown>): string {
  * kept as the answer so the turn still completes.
  */
 class ClaudeStreamParser {
-  private readonly tools = new Map<string, { kind: AgentToolEvent["kind"]; title: string }>();
+  private readonly tools = new Map<string, { kind: AgentToolEvent["kind"]; title: string; fileEdit: boolean }>();
   private plain: string[] = [];
   private assistantText: string[] = [];
   private result: { text: string; isError: boolean; usage?: ClaudeCodeUsage } | undefined;
   private streamedText = false;
   private paragraphBreak = false;
 
-  constructor(private readonly input: Pick<ClaudeCodeRunInput, "onDelta" | "onToolEvent">) {}
+  constructor(private readonly input: Pick<ClaudeCodeRunInput, "onDelta" | "onToolEvent" | "fileEditCards">) {}
 
   line(raw: string): void {
     const trimmed = raw.trim();
@@ -209,8 +214,11 @@ class ClaudeStreamParser {
             const args = (block.input && typeof block.input === "object" ? block.input : {}) as Record<string, unknown>;
             const kind: AgentToolEvent["kind"] = name === "Bash" ? "command" : name.startsWith("mcp__") ? "mcp" : name === "WebSearch" ? "web" : "tool";
             const title = kind === "command" && typeof args.command === "string" ? args.command : claudeToolTitle(name, args);
-            this.tools.set(block.id, { kind, title });
-            this.emitTool({ phase: "start", id: block.id, kind, title });
+            const fileEdit = this.input.fileEditCards === true && CLAUDE_FILE_EDIT_TOOLS.has(name);
+            this.tools.set(block.id, { kind, title, fileEdit });
+            // With live diff, a file edit is shown by the observer's diff card
+            // (as on Codex); its cell appears only if the edit fails.
+            if (!fileEdit) this.emitTool({ phase: "start", id: block.id, kind, title });
           }
         }
         return;
@@ -223,6 +231,11 @@ class ClaudeStreamParser {
           if (!tool) continue;
           const output = blockText(block.content);
           const failed = block.is_error === true;
+          if (tool.fileEdit) {
+            this.tools.delete(block.tool_use_id);
+            if (!failed) continue;
+            this.emitTool({ phase: "start", id: block.tool_use_id, kind: tool.kind, title: tool.title });
+          }
           const exitCode = tool.kind === "command" ? (failed ? Number(output.match(/exit code (\d+)/i)?.[1] ?? 1) : 0) : undefined;
           this.emitTool({
             phase: "end",

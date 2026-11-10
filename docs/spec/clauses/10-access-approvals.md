@@ -81,3 +81,13 @@
 - **Environment:** fake app-server that refuses to resume a thread while another live process holds its writer lock.
 - **Known gaps:** a warm process that is busy with a turn is left alone; the new turn waits behind the chat's own turn order.
 - **Evidence:** live repro before the fix, 2026-11-10: `/tmp/qafix-tr`, session qafix-acc1 — `✖ Command failed (exit 1): codex … failed to initialize thread persistenc` right after `/access read-only`.
+
+## MUS-SPEC-10-1H — While an approval waits, the turn reads as waiting, not working
+
+- **Precondition:** chat in `ask` mode; a command's cell shows `⎿ running…` and the provider asks to approve it.
+- **Action:** the approval card is shown; later the user answers it.
+- **Expected result:** while the card waits, the command's cell reads `⎿ awaiting approval` and the status row reads `Waiting for approval` with the turn timer stopped (time spent deciding is not counted as the agent working); after the answer the cell is `running…` again until the command ends, and the timer resumes from where it stopped.
+- **Test:** `packages/cli/test/access-approvals.test.ts` › "while an approval waits, the cell and the spinner say so and the timer stops"
+- **Environment:** chat harness with the narration painter; `TurnTimer` with an injected clock.
+- **Known gaps:** an edit approval has no tool cell (file edits are shown as diff cards), so only the status row changes for it.
+- **Evidence:** live, 2026-11-10, `/access ask`, "touch approved.txt": the cell read `⎿ awaiting approval`, the row `✻ Waiting for approval · … · 3.5s` and still `3.5s` 5 s later; after `y` the turn finished. Red→green: access-approvals.test.ts.

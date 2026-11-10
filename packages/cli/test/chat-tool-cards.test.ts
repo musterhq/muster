@@ -7,14 +7,14 @@ function plain(lines: readonly string[]): string[] {
 }
 
 /** A chat whose single turn hands the test a painter wired to the sink, exactly like runChatTurn. */
-async function chatWithPainter() {
+async function chatWithPainter(extra: Partial<Parameters<typeof createNarrationPainter>[0]> = {}) {
   let release!: () => void;
   let painter!: NarrationPainter;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => { ready = resolve; });
   const chat = createMusterChatHarness({
     onSubmit: (_text: string, sink: MusterChatSink) => new Promise<boolean>((resolve) => {
-      painter = createNarrationPainter({ emit: (line) => sink.appendLine(line), block: (id, render) => sink.upsertBlock(id, render) });
+      painter = createNarrationPainter({ emit: (line) => sink.appendLine(line), block: (id, render) => sink.upsertBlock(id, render), ...extra });
       release = () => resolve(true);
       ready();
     }),
@@ -121,4 +121,71 @@ test("a cell still running when the turn ends is closed as interrupted", () => w
   const make = text.findIndex((row) => row.includes("Bash(make)"));
   assert.equal(text[make + 1], "  ⎿ no result (the turn ended)");
   await finish();
+}));
+
+// Spec: MUS-SPEC-01-2D (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-2d--a-command-the-provider-did-not-time-still-shows-its-time)
+test("a command the provider reports as 0 ms shows the time Muster measured", () => withNoColor(async () => {
+  let clock = 10_000;
+  const { chat, painter, finish } = await chatWithPainter({ now: () => clock });
+  painter().tool({ phase: "start", id: "t1", kind: "command", title: "ls" });
+  clock += 1_234;
+  painter().tool({ phase: "end", id: "t1", kind: "command", title: "ls", exitCode: 0, durationMs: 0, output: "a.txt" });
+  painter().tool({ phase: "start", id: "t2", kind: "command", title: "pytest -q" });
+  clock += 50;
+  painter().tool({ phase: "end", id: "t2", kind: "command", title: "pytest -q", exitCode: 0, durationMs: 19_900 });
+  const text = plain(chat.transcript());
+  const ls = text.findIndex((row) => row.includes("Bash(ls)"));
+  assert.equal(text[ls + 1], "  ⎿ exit 0 · 1.2s", "measured start→end");
+  const pytest = text.findIndex((row) => row.includes("Bash(pytest -q)"));
+  assert.equal(text[pytest + 1], "  ⎿ exit 0 · 19.9s", "a provider time wins when it has one");
+  await finish();
+}));
+
+// Spec: MUS-SPEC-01-2E (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-2e--commands-read-as-the-shell-runs-them-and-use-the-terminal-width)
+test("command titles drop the wrapper's quoting and use the terminal width", () => withNoColor(async () => {
+  const { unwrapShellCommand } = await import("../src/chat-tui.js");
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc "printf 'hello\\n' > hello.txt"`), String.raw`printf 'hello\n' > hello.txt`);
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc "python3 -c 'p=Path(\"data.csv\")'"`), `python3 -c 'p=Path("data.csv")'`);
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc 'echo '\''hi'\'''`), `echo 'hi'`);
+  const long = `grep -rn ${"needle".repeat(25)} src`;
+  const { chat, painter, finish } = await chatWithPainter({ width: () => 200 });
+  painter().tool({ phase: "start", id: "w1", kind: "command", title: `/bin/zsh -lc '${long}'` });
+  const text = plain(chat.transcript());
+  assert.ok(text.includes(`⏺ Bash(${long})`), "a 168-character command fits a 200-column terminal");
+  await finish();
+}));
+
+// Spec: MUS-SPEC-01-3B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-3b--a-long-result-line-is-cut-to-the-width-with-an-ellipsis)
+test("a long tool result line is cut to the terminal width with an ellipsis", () => withNoColor(async () => {
+  const { renderTranscriptLine, cardRow, formatToolEndLines } = await import("../src/chat-tui.js");
+  const output = "File created successfully at: /private/tmp/qafix-claude/note.txt (file state is current in your context — no need to Read it back)";
+  const event = { phase: "end" as const, id: "r1", kind: "tool" as const, title: "Read notes", output };
+  const collapsed = plain(formatToolEndLines(event, 6, { expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80)));
+  assert.equal(collapsed.length, 2, "head row plus ONE output row");
+  assert.ok(collapsed.every((row) => row.length <= 80), collapsed.join("\n"));
+  assert.match(collapsed[1]!, /File created successfully at: .*…\s*$/);
+  const expanded = formatToolEndLines(event, 6, { expanded: true, expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80));
+  assert.ok(expanded.join(" ").replace(/\s+/g, " ").includes("no need to Read it back"), "ctrl+o shows the whole line, wrapped");
+}));
+
+// Spec: MUS-SPEC-12-1E (docs/spec/clauses/12-policy-hooks.md#mus-spec-12-1e--a-blocked-command-is-one-cell-and-a-blocked-prompt-comes-back)
+test("a policy block replaces the command's cell; a blocked prompt goes back to the composer", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  const title = "/bin/zsh -lc 'curl -s https://example.com'";
+  painter().tool({ phase: "start", id: "b1", kind: "command", title });
+  painter().blocked({ id: "b1", kind: "command", title }, { hookId: "script", reason: "nope: no curl here" });
+  painter().tool({ phase: "end", id: "b1", kind: "command", title, failed: true });
+  const text = plain(chat.transcript());
+  assert.equal(text.filter((row) => row.includes("curl -s https://example.com")).length, 1, text.join("\n"));
+  const at = text.findIndex((row) => row.includes("Blocked curl -s https://example.com"));
+  assert.ok(at >= 0, text.join("\n"));
+  assert.equal(text[at + 1], "  ⎿ nope: no curl here · policy script");
+  await finish();
+
+  const { promptBackAfterHookBlock } = await import("../src/chat-tui.js");
+  const opened: string[] = [];
+  const sink = { openPicker: (value: string) => opened.push(value) };
+  assert.equal(promptBackAfterHookBlock(new Error("Run blocked by hook no-prod: prod deploys go through the release flow"), "deploy to prod", sink), true);
+  assert.equal(promptBackAfterHookBlock(new Error("Command failed (exit 1)"), "other", sink), false);
+  assert.deepEqual(opened, ["deploy to prod"]);
 }));

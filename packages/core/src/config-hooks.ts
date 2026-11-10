@@ -54,7 +54,8 @@ function runCommandHook(rule: HookRule, payload: unknown, cwd: string): Promise<
     child.on("error", (error) => { clearTimeout(timer); fail(error.message); });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code === 2) return resolve({ action: "block", reason: stderr.trim() || "blocked" });
+      // The reason is stderr; a script that explains itself on stdout is heard too.
+      if (code === 2) return resolve({ action: "block", reason: stderr.trim() || stdout.trim() || "blocked" });
       if (code !== 0) return fail(`hook ${rule.id ?? "command"} exited ${code}`);
       const text = stdout.trim();
       if (!text) return resolve({ action: "pass" });

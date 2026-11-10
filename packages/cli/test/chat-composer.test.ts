@@ -160,3 +160,70 @@ test("ctrl+c interrupts a running turn and only a second press quits", { timeout
   drafting.input("\x03");
   assert.equal(drafting.exited(), true);
 });
+
+// Spec: MUS-SPEC-02-2B (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2b--pickers-cover-the-full-width-under-a-rule)
+test("composer pickers cover every column and open under a rule", async () => {
+  const { composerOverlayOptions, RuledOverlay } = await import("../src/chat-tui.js");
+  const options = composerOverlayOptions(110);
+  assert.equal(options.width, 110, "no uncovered last column for the row behind to show through");
+  assert.deepEqual(options.margin, { left: 0, right: 0 });
+  let typed = "";
+  const inner = { render: (width: number) => [`item ${width}`], handleInput: (data: string) => { typed += data; }, invalidate: () => {} };
+  const ruled = new RuledOverlay(inner);
+  const rows = ruled.render(110).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.equal(rows[0], "─".repeat(110));
+  assert.equal(rows[1], "item 110");
+  ruled.handleInput?.("j");
+  assert.equal(typed, "j", "keys reach the picker");
+});
+
+// Spec: MUS-SPEC-17-2A (docs/spec/clauses/17-rewind.md#mus-spec-17-2a--rewound-turns-are-greyed-out-in-the-transcript)
+test("rewound turns are greyed out in the transcript", async () => {
+  let sinkRef!: MusterChatSink;
+  const chat = createMusterChatHarness({ onSubmit: async (text, sink) => { sinkRef = sink; sink.appendLine(`● answer to ${text}`); return true; } });
+  for (const prompt of ["first", "second", "third"]) {
+    chat.type(prompt);
+    await chat.submit();
+  }
+  const before = chat.transcript().length;
+  sinkRef.markRewound("second");
+  const rows = chat.transcript();
+  assert.equal(rows.length, before + 1, "one marker row is added");
+  const at = rows.findIndex((row) => row.replace(/\x1b\[[0-9;]*m/g, "").includes("rewound"));
+  assert.ok(at >= 0 && rows[at + 1]!.replace(/\x1b\[[0-9;]*m/g, "").startsWith("> second"), rows.join("\n"));
+  const muted = "\x1b[38;2;148;144;140m";
+  assert.ok(rows.slice(at + 1).filter((row) => row.trim()).every((row) => row.startsWith(muted) && !row.slice(muted.length).includes("\x1b[38;2;2")), "every rewound row is grey");
+  assert.ok(!rows.find((row) => row.includes("answer to first"))!.startsWith(muted), "earlier turns keep their look");
+});
+
+// Spec: MUS-SPEC-02-2C (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2c--shortcuts-lists-every-key-and-help-columns-line-up)
+test("/shortcuts lists every chat key and help rows line up", async () => {
+  const { CHAT_SHORTCUTS, alignHelpRows } = await import("../src/chat-tui.js");
+  const keys = CHAT_SHORTCUTS.map(([key]) => key).join(" | ");
+  for (const key of ["Enter", "Ctrl+Q", "Alt+Enter", "Alt+↑", "Esc", "Ctrl+C", "Ctrl+O", "Ctrl+D", "PgUp", "PgDn", "Tab"]) {
+    assert.ok(keys.includes(key), `${key} is listed: ${keys}`);
+  }
+  const rows = alignHelpRows([
+    ["/model [name]", "choose the model"],
+    ["/reasoning [auto|low|medium|high|compact|full]", "choose thinking effort"],
+    ["/exit", "leave chat"],
+  ], 100).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  const columns = rows.filter((row) => /\S\s{2,}\S/.test(row)).map((row) => row.search(/(?<=\S\s{2,})\S/));
+  assert.equal(columns.length, 2, rows.join("\n"));
+  assert.ok(columns.every((column) => column === columns[0] && column > 0), rows.join("\n"));
+  const long = rows.findIndex((row) => row.startsWith("/reasoning"));
+  assert.ok(rows[long + 1]!.trim() === "choose thinking effort" && rows[long + 1]!.indexOf("choose") === columns[0], "a usage wider than the column puts its text on the next row, aligned");
+});
+
+// Spec: MUS-SPEC-02-2C (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2c--shortcuts-lists-every-key-and-help-columns-line-up)
+test("muster chat --shortcuts prints the keys in aligned columns", { timeout: 60_000 }, async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { resolve } = await import("node:path");
+  const cli = resolve(import.meta.dirname, "..", "src", "index.ts");
+  const { stdout } = await promisify(execFile)("tsx", [cli, "chat", "--shortcuts"], { env: { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1" } });
+  const rows = stdout.split("\n").filter((row) => /^ {2}\S/.test(row));
+  assert.ok(rows.length >= 10, stdout);
+  const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
+  assert.ok(starts.every((start) => start > 0 && start === starts[0]), `descriptions start in one column:\n${stdout}`);
+});

@@ -570,3 +570,18 @@ test("undo in a folder that is not a git repository says it needs git, never tha
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-13-1D (docs/spec/clauses/13-undo.md#mus-spec-13-1d--undo-and-rewind-share-one-record-of-a-turns-changes)
+test("an undone turn has no changes left for rewind, and a second undo says it was already undone", async () => {
+  const { markTurnUndone, rewindTurnLabel, undoLastTurnRows } = await import("../src/live-diff.js");
+  const patches = [{ path: "calc.py" }, { path: "notes2.txt" }] as unknown as WorkspacePatchEvent[];
+  const stack = [{ prompt: "first", patches: [] as WorkspacePatchEvent[] }, { prompt: "edit two files", patches }];
+  assert.equal(rewindTurnLabel(stack[1]!), "edit two files · 2 file(s)");
+  const next = markTurnUndone(stack, patches);
+  assert.deepEqual(next[1]!.patches, [], "rewind will not try to restore files undo already restored");
+  assert.equal(rewindTurnLabel(next[1]!), "edit two files · undone");
+  assert.equal(next[0], stack[0], "other turns are untouched");
+  const again = (await undoLastTurnRows({ alreadyUndone: true })).join("\n");
+  assert.match(again, /already undone/i);
+  assert.doesNotMatch(again, /changed no files/);
+});

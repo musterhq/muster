@@ -71,3 +71,23 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** chat harness, fake runtime.
 - **Known gaps:** the 2 s window uses the wall clock; it is not tested past expiry.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-2B — Pickers cover the full width, under a rule
+
+- **Precondition:** a 110-column chat; `/model` (or `/rewind`) opens a picker above the composer.
+- **Action:** compute the picker's placement and render it.
+- **Expected result:** the picker is 110 columns wide with no right margin, so no cell of the row behind it (a stray `─` at column 110) shows through; its first row is a dim full-width rule that separates it from the transcript; keys still reach the list.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "composer pickers cover every column and open under a rule"
+- **Environment:** pure placement function and wrapper component.
+- **Known gaps:** none.
+- **Evidence:** live, 2026-11-10: `/model` and `/rewind` pickers open under a full-width rule; no row of the picker has a stray `─` at column 110. Red→green: chat-composer.test.ts.
+
+## MUS-SPEC-02-2C — `/shortcuts` lists every key, and help columns line up
+
+- **Precondition:** chat.
+- **Action:** `/shortcuts`; `/help`.
+- **Expected result:** `/shortcuts` lists every chat key: Enter (send, or steer a running turn), Ctrl+Q / Alt+Enter (queue), Alt+↑ (edit queued), Esc (stop the turn), Ctrl+C (interrupt, twice to quit), Ctrl+O (expand output), Ctrl+D (live file view), PgUp/PgDn (scroll), Tab (complete), `\` at line end, `@agent`. In `/help` and `/shortcuts` every description starts in the same column; a usage wider than that column puts its description on the next row, in the same column.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "/shortcuts lists every chat key and help rows line up" and › "muster chat --shortcuts prints the keys in aligned columns" (the panel printer used to collapse the padding to one space)
+- **Environment:** pure list and row formatter.
+- **Known gaps:** none.
+- **Evidence:** live, 2026-11-10: `/shortcuts` lists 11 keys and `/help` descriptions start in one column. The CLI test went red on the panel printer collapsing padding, then green.

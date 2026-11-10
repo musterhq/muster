@@ -69,6 +69,24 @@ export function codexApprovalRequest(method: string, params: Record<string, unkn
   return undefined;
 }
 
+/**
+ * `/bin/zsh -lc 'pytest -q'` → `pytest -q`: what the shell ran, with the
+ * wrapper's own quoting undone (inside "…" a backslash escapes \ " $ and `;
+ * inside '…' a quote is written '\'').
+ */
+export function unwrapShellCommand(command: string): string {
+  const trimmed = command.trim();
+  const quoted = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
+  if (quoted) {
+    const body = quoted[1] === '"'
+      ? quoted[2]!.replace(/\\(["\\$`])/g, "$1")
+      : quoted[2]!.replace(/'\\''/g, "'");
+    return body.trim();
+  }
+  const bare = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(\S+)$/);
+  return (bare?.[1] ?? trimmed).trim();
+}
+
 const GIT_SAFE_SUBCOMMANDS = new Set(["add", "commit", "stash", "checkout", "switch", "branch", "restore", "reset", "mv", "rm", "tag", "merge", "rebase", "cherry-pick", "revert", "status", "diff", "log", "show", "init", "worktree", "apply", "am", "notes", "fetch", "pull"]);
 
 /**

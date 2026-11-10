@@ -276,3 +276,44 @@ test("muster settings without a TTY prints the list and a hint", { timeout: 120_
     await ws.cleanup();
   }
 });
+
+// Spec: MUS-SPEC-14-2C (docs/spec/clauses/14-settings.md#mus-spec-14-2c--every-key-saves-to-the-project-unless---global-is-given)
+test("config set saves every key to the project unless --global is given, like the panel", { timeout: 180_000 }, async () => {
+  const ws = await workspace();
+  try {
+    await muster(ws, ["init"]);
+    const live = await muster(ws, ["config", "set", "chat.liveDiff", "false"]);
+    assert.equal(live.code, 0, live.stderr);
+    assert.match(live.stdout, /Saved chat\.liveDiff → off · project|Saved chat\.liveDiff → false · project/);
+    assert.equal(readJson(ws.project).chat.liveDiff, false);
+    assert.equal(existsSync(ws.global) ? readJson(ws.global).chat?.liveDiff : undefined, undefined, "the global file is untouched");
+    const global = await muster(ws, ["config", "set", "appearance.header", "full", "--global"]);
+    assert.match(global.stdout, /· global/);
+    const { findSetting } = await import("@musterhq/core");
+    assert.doesNotMatch(findSetting("chat.speed")!.description, /How much context/, "Speed is described as speed");
+    assert.match(findSetting("chat.speed")!.description, /fast/i);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+// Spec: MUS-SPEC-14-2D (docs/spec/clauses/14-settings.md#mus-spec-14-2d--validate-warns-about-ignored-keys-and-names-json-errors)
+test("validate warns about keys a file ignores and names a JSON error with its line", { timeout: 180_000 }, async () => {
+  const ws = await workspace();
+  try {
+    await muster(ws, ["init"]);
+    writeFileSync(ws.global, JSON.stringify({ version: 1, routing: { maxCostUsdPerRun: 1 } }, null, 2));
+    const ignored = await muster(ws, ["config", "validate"]);
+    assert.equal(ignored.code, 0, `a key Muster itself once wrote is a warning, not a failure:\n${ignored.stdout}${ignored.stderr}`);
+    assert.match(ignored.stdout, /routing\.maxCostUsdPerRun.*ignored/);
+    assert.doesNotMatch(ignored.stdout, /✗/);
+    writeFileSync(ws.project, '{\n  "version": 1,\n  "chat": { "access": "ask" }\n  "oops": true\n}\n');
+    const broken = await muster(ws, ["config", "validate"]);
+    assert.notEqual(broken.code, 0);
+    assert.match(broken.stdout + broken.stderr, /not valid JSON.*line 4/);
+    const list = await muster(ws, ["config", "list"]);
+    assert.match(list.stdout + list.stderr, /skipped .*config\.json.*not valid JSON/, "list says the file was skipped instead of ignoring it silently");
+  } finally {
+    await ws.cleanup();
+  }
+});

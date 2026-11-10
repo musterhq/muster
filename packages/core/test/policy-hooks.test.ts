@@ -30,6 +30,7 @@ rl.on("line", (line) => {
   if (m.method === "initialize") send({ id: m.id, result: { userAgent: "fake" } });
   else if (m.method === "thread/start" || m.method === "thread/resume") send({ id: m.id, result: { thread: { id: "t" } } });
   else if (m.method === "turn/start") { note({ turn: m.params }); send({ id: m.id, result: { turn: { id: "turn-1", status: "inProgress" } } }); ask(); }
+  else if (m.method === "turn/steer") { note({ steer: m.params.input?.[0]?.text }); send({ id: m.id, result: {} }); }
   else if (typeof m.id === "number" && m.id >= 900) { note({ command: commands[m.id - 900], answer: m.result }); next += 1; ask(); }
 });
 function finish() {
@@ -114,6 +115,29 @@ test("a turn.start rule blocks the prompt before the provider starts", { timeout
     const config = withHooks({ "turn.start": [{ id: "no-prod", match: "deploy to prod", action: "block", reason: "prod deploys go through the release flow" }] });
     await assert.rejects(() => runWith(dir, fake, config, "please deploy to prod now", []), /blocked by hook no-prod: prod deploys go through the release flow/);
     assert.equal((await entries(log)).filter((entry) => entry.launch).length, 0, "the provider never started");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-12-1D (docs/spec/clauses/12-policy-hooks.md#mus-spec-12-1d--the-model-learns-why-a-command-was-blocked)
+test("a block's reason reaches the model; a script's stdout is its reason; scripts see the bare command", { timeout: 60_000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-hooks-d-"));
+  try {
+    const { fake, log } = await fakeCodex(dir, ["/bin/zsh -lc 'curl -s https://example.com'", "/bin/zsh -lc 'echo safe'"]);
+    const seen = join(dir, "seen.jsonl");
+    const script = join(dir, "policy.sh");
+    await writeFile(script, `#!/bin/sh\npayload=$(cat)\nprintf '%s\\n' "$payload" >> "${seen}"\ncase "$payload" in *curl*) echo "nope: no curl here"; exit 2;; esac\nexit 0\n`, "utf8");
+    await chmod(script, 0o755);
+    const blocks: Array<{ title: string; reason?: string; hookId?: string }> = [];
+    await runWith(dir, fake, withHooks({ "tool.before": [{ id: "script", command: script }, { id: "anchored", match: "^echo safe$", action: "block", reason: "no echo" }] }), "do it", blocks);
+    assert.deepEqual(blocks.map((block) => [block.hookId, block.reason]), [["script", "nope: no curl here"], ["anchored", "no echo"]]);
+    const first = JSON.parse((await readFile(seen, "utf8")).trim().split("\n")[0]!);
+    assert.equal(first.title, "curl -s https://example.com", "the hook sees the command, not the shell wrapper");
+    const steers = (await entries(log)).filter((entry) => entry.steer).map((entry) => entry.steer as string);
+    assert.equal(steers.length, 2, "each block is explained to the model");
+    assert.match(steers[0]!, /curl -s https:\/\/example\.com/);
+    assert.match(steers[0]!, /nope: no curl here/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

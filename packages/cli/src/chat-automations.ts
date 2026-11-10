@@ -123,7 +123,7 @@ export async function handleAutomationCommand(
     }
     const [action = "list", ...restParts] = args.trim().split(/\s+/).filter(Boolean);
     const rest = args.trim().slice(action.length).trim();
-    if (action === "list") return formatAutomationsTable(await listAutomations(cwd));
+    if (action === "list") return formatAutomationsTable(await listAutomations(cwd), process.stdout.columns ? process.stdout.columns - 2 : Number.POSITIVE_INFINITY);
     if (action === "add") {
       const parsed = splitWhen(rest);
       if ((!parsed.when && !parsed.cron) || !parsed.text) return [SCHEDULE_USAGE];

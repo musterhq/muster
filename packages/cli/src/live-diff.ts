@@ -402,16 +402,34 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
 const WARN_RGB = "229;192;123";
 
 /**
+ * After /undo, the turn that owned `patches` keeps no changes for /rewind to
+ * restore (they are already restored) and says so in the rewind picker.
+ */
+export function markTurnUndone<T extends { readonly patches: readonly WorkspacePatchEvent[]; readonly undone?: boolean }>(stack: readonly T[], patches: readonly WorkspacePatchEvent[]): T[] {
+  return stack.map((turn) => (turn.patches === patches ? { ...turn, patches: [], undone: true } : turn));
+}
+
+/** A turn in the /rewind picker: its prompt, and how many files it changed (or that /undo already reverted it). */
+export function rewindTurnLabel(turn: { readonly prompt: string; readonly patches: readonly WorkspacePatchEvent[]; readonly undone?: boolean }): string {
+  const prompt = turn.prompt.replace(/\s+/g, " ").slice(0, 70);
+  if (turn.undone) return `${prompt} · undone`;
+  return `${prompt}${turn.patches.length ? ` · ${new Set(turn.patches.map((patch) => patch.path)).size} file(s)` : ""}`;
+}
+
+/**
  * The rows `/undo` prints. `patches` are the observer events of the most recent
  * turn that changed files; `untrackedReason` is set when the latest turn ran
  * without the observer, so an empty patch list cannot be read as "no changes".
  */
 export async function undoLastTurnRows(
-  input: { readonly patches?: readonly WorkspacePatchEvent[]; readonly untrackedReason?: string },
+  input: { readonly patches?: readonly WorkspacePatchEvent[]; readonly untrackedReason?: string; readonly alreadyUndone?: boolean },
   options: { readonly color?: boolean } = {},
 ): Promise<string[]> {
   const paint = colorEnabled(options.color);
   const patches = input.patches;
+  if (!patches?.length && input.alreadyUndone) {
+    return [tint("Already undone: the last turn's file changes were reverted by /undo. Use /rewind to go back further.", MUTED_RGB, paint)];
+  }
   if (!patches?.length) {
     if (input.untrackedReason === LIVE_DIFF_OFF_REASON) {
       return [tint("Can't undo: undo needs live diff on to record a turn's file changes, and it was off for the last turn. Turn it on with /live-diff on (ctrl+d).", WARN_RGB, paint)];

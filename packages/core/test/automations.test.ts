@@ -167,3 +167,30 @@ test("schedule_manage caps message length and active jobs", async () => {
   assert.match(over.ok ? "" : over.error, new RegExp(`${MAX_ACTIVE_AUTOMATIONS} active`));
   assert.equal((await listAutomations(cwd)).length, MAX_ACTIVE_AUTOMATIONS);
 });
+
+// Spec: MUS-SPEC-16-5B (docs/spec/clauses/16-automations.md#mus-spec-16-5b--automation-times-read-in-local-time-and-the-table-fits)
+test("automation echoes and the table show local times, and the table fits the width", async () => {
+  const { describeAutomation, formatAutomationsTable } = await import("../src/index.js");
+  const previous = process.env.TZ;
+  process.env.TZ = "Asia/Kolkata";
+  try {
+    const reminder = { id: "rem_1", kind: "reminder" as const, cron: "", prompt: "drink water", createdAt: "2026-11-10T04:40:00.000Z", at: "2026-11-10T04:47:10.054Z", deliver: "terminal" };
+    const echo = describeAutomation(reminder);
+    assert.match(echo, /at 2026-11-10 10:17/, echo);
+    assert.doesNotMatch(echo, /T04:47|\.054Z/);
+    const done = { ...reminder, id: "rem_2", completedAt: "2026-11-10T04:47:12.000Z", lastRunAt: "2026-11-10T04:47:11.000Z", lastStatus: "completed" as const };
+    const routine = { id: "job_1", kind: "run" as const, cron: "0 9 * * 1-5", prompt: `summarise yesterday's merged pull requests and post the digest ${"with details ".repeat(6)}`, createdAt: "2026-11-09T00:00:00.000Z", nextRunAt: "2026-11-11T03:30:00.000Z" };
+    const rows = formatAutomationsTable([done, routine], 110);
+    for (const row of rows) assert.ok(row.length <= 110, `fits 110 columns: ${row}`);
+    const header = rows[0]!;
+    const cell = (row: string, title: string) => row.slice(header.indexOf(title)).split(/\s{2,}/)[0];
+    const doneRow = rows.find((row) => row.startsWith("rem_2"))!;
+    assert.notEqual(cell(doneRow, "ENABLED"), "done", "ENABLED says yes/no/-, not done");
+    assert.equal(cell(doneRow, "NEXT RUN"), "done");
+    assert.match(rows.find((row) => row.startsWith("job_1"))!, /2026-11-11 09:00/, "next run in local time");
+    assert.doesNotMatch(rows.join("\n"), /\d{2}:\d{2}:\d{2}Z|T\d{2}:/);
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+});

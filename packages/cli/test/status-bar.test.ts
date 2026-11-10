@@ -46,3 +46,56 @@ test("the footer renders below the composer", async () => {
   assert.equal(rows.at(-1)!.trim(), "gpt-6.1-terra · High │ ~/repo");
   assert.ok(rows.findIndex((row) => row.startsWith("❯")) < rows.length - 1, "composer above the bar");
 });
+
+// Spec: MUS-SPEC-09-1D (docs/spec/clauses/09-status-bar.md#mus-spec-09-1d--the-working-row-shows-this-turn-not-the-session)
+test("the working row shows this turn's time, not session totals or a zero cost", async () => {
+  const { formatTurnStatusLine, formatStatusLine, TurnTimer } = await import("../src/chat-tui.js");
+  let now = 0;
+  const timer = new TurnTimer(() => now);
+  now = 10_800;
+  const row = formatTurnStatusLine({ model: "gpt-6.1-terra · High", session: "qa-1", inputTokens: 91_800, outputTokens: 387, costUsd: 0 }, timer, 40).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.doesNotMatch(row, /in \/|out|\$/, row);
+  assert.match(row, /10\.8s/);
+  const idle = formatStatusLine({ model: "gpt", session: "s", inputTokens: 1000, outputTokens: 5, costUsd: 0 }).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.doesNotMatch(idle, /\$0\.0000/, "a subscription turn has no cost to show");
+  assert.match(formatStatusLine({ model: "gpt", session: "s", costUsd: 0.0123 }).replace(/\x1b\[[0-9;]*m/g, ""), /\$0\.0123/);
+});
+
+// Spec: MUS-SPEC-09-1E (docs/spec/clauses/09-status-bar.md#mus-spec-09-1e--after-a-resize-the-bar-is-rebuilt-for-the-new-width)
+test("after a resize the bar is rebuilt for the new width and the summary row keeps its indent", async () => {
+  const { FooterSlot, renderTranscriptLine } = await import("../src/chat-tui.js");
+  const info = { model: "gpt-6.1-terra", effort: "High", cwd: "/private/tmp/qa-nogit", context: { usedTokens: 14_000, windowTokens: 200_000 }, sessionTokens: 144_000, sessionCostUsd: 0 };
+  const slot = new FooterSlot((width) => formatStatusBar(info, width));
+  await slot.refresh(110);
+  assert.match(plain(slot.line), /144\.0k tok/);
+  assert.equal(slot.staleFor(110), false);
+  assert.equal(slot.staleFor(60), true, "a new width asks for a new bar");
+  await slot.refresh(60);
+  const narrow = plain(slot.line);
+  assert.ok(narrow.length <= 60, narrow);
+  assert.doesNotMatch(narrow, /144\.$|tok…/, "segments drop whole, never cut mid-segment");
+  const summary = renderTranscriptLine("▸ gpt-6.1-terra · 139.5k in · 118.0k cached · 185 out · $0.0123 · 11.1s", 60, 60).map(plain);
+  assert.ok(summary.length > 1);
+  assert.ok(summary.slice(1).every((row) => row.startsWith("  ")), summary.join("\n"));
+});
+
+// Spec: MUS-SPEC-09-2A (docs/spec/clauses/09-status-bar.md#mus-spec-09-2a--the-full-header-stays-inside-its-box)
+test("the full header panel keeps every row inside its box", async () => {
+  const { fullHeaderLayout, renderFullHeaderPanel } = await import("../src/chat-tui.js");
+  const layout = fullHeaderLayout(108);
+  const rows = renderFullHeaderPanel({
+    layout,
+    title: "Muster Agent · 2026-11-10",
+    left: ["MUSTER", "agent harness", " ", "gpt-6.1-terra", "/private/tmp/qa-set", "Session: qa-8b", "0 here · 3 total"],
+    middle: ["Available Tools", "workspace: read, edit, shell, git"],
+    right: ["Commands", "/help commands and shortcuts"],
+    footer: "gpt-6.1-terra · codex · native · speed fast · scopes user:dhairya · 8 tool groups · 0 skills · 0 plugins · 0 mcp · /help",
+  }).map(plain);
+  for (const row of rows) assert.equal(row.length, 108, `row fits the box: ${row}`);
+  assert.match(rows[0]!, /^╭─+ Muster Agent · 2026-11-10 ─+╮$/, "the title sits in the top border");
+  assert.ok(!rows.some((row) => row.startsWith("│─")), "no second border inside the box");
+  const footer = rows.at(-2)!;
+  assert.ok(footer.endsWith(" │"), footer);
+  assert.match(footer, /…/);
+  assert.ok(rows.some((row) => row.includes("Session: qa-8b ")) && rows.some((row) => row.includes("0 here · 3 total")), "session and counts each on a row, uncut");
+});

@@ -24,6 +24,8 @@ export interface MusterMcpServerOptions {
   readonly version: string;
   readonly tools?: readonly string[];
   readonly registry?: ToolRegistryV2;
+  /** Scopes a memory tool uses when the client passes none (the user's own, as in chat). */
+  readonly defaultScopes?: readonly string[];
 }
 
 type JsonRpcMessage = { readonly jsonrpc?: string; readonly id?: string | number | null; readonly method?: string; readonly params?: Record<string, unknown> };
@@ -69,7 +71,9 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
         case "tools/call": {
           const name = typeof message.params?.name === "string" ? message.params.name : "";
           if (!allowed.has(name)) return fail(id, -32602, `Unknown tool: ${name}`);
-          const args = (message.params?.arguments && typeof message.params.arguments === "object" ? message.params.arguments : {}) as Record<string, unknown>;
+          let args = (message.params?.arguments && typeof message.params.arguments === "object" ? message.params.arguments : {}) as Record<string, unknown>;
+          const noScopes = !Array.isArray(args.scopes) || args.scopes.length === 0;
+          if (name.startsWith("memory_") && noScopes && options.defaultScopes?.length) args = { ...args, scopes: [...options.defaultScopes] };
           const result = await registry.execute(name, args, ctx);
           return reply(id, result.ok
             ? { content: [{ type: "text", text: typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2) }] }

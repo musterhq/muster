@@ -89,3 +89,24 @@ test("read-only pi turns cannot write", { timeout: 60_000 }, async () => {
     await workspace.dispose();
   }
 });
+
+// Spec: MUS-SPEC-05-1C (docs/spec/clauses/05-pi-runtime-tools.md#mus-spec-05-1c--a-missing-pi-key-names-the-provider-and-the-next-step)
+test("a missing pi key names the provider, its env var and the next step", async () => {
+  const { explainPiError } = await import("../src/pi.js");
+  const none = explainPiError("No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  /x/providers.md");
+  assert.match(none, /ANTHROPIC_API_KEY/);
+  assert.match(none, /OPENAI_API_KEY/);
+  assert.match(none, /muster pi models/);
+  assert.doesNotMatch(none, /Use \/login/, "pi's own /login is not a Muster command");
+  const anthropic = explainPiError("No API key found for anthropic.\n\nUse /login …");
+  assert.match(anthropic, /anthropic/);
+  assert.match(anthropic, /ANTHROPIC_API_KEY/);
+  assert.equal(explainPiError("rate limited"), "rate limited");
+});
+
+// Spec: MUS-SPEC-05-1C (docs/spec/clauses/05-pi-runtime-tools.md#mus-spec-05-1c--a-missing-pi-key-names-the-provider-and-the-next-step)
+test("switching to pi warns up front when no pi provider has a key", async () => {
+  const { piNoKeyWarning } = await import("../src/pi.js");
+  assert.match(piNoKeyWarning([{ available: false }, { available: false }]) ?? "", /no API key.*ANTHROPIC_API_KEY/);
+  assert.equal(piNoKeyWarning([{ available: false }, { available: true }]), undefined);
+});

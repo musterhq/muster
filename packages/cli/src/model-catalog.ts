@@ -91,7 +91,8 @@ export function buildComposerCatalog(auth: { readonly codex: boolean; readonly c
 
 export function modelProvider(model: string | undefined): ModelProvider | undefined {
   if (!model) return undefined;
-  if (CLAUDE_MODELS.some((item) => item.value === model) || model.startsWith("claude-")) return "claude";
+  // Claude Code also takes its short names (`sonnet`, the /runtime claude-code default).
+  if (CLAUDE_MODELS.some((item) => item.value === model) || model.startsWith("claude-") || /^(?:sonnet|opus|haiku|fable)$/i.test(model)) return "claude";
   if (CODEX_MODELS.some((item) => item.value === model) || liveCodexModels.some((item) => item.value === model) || model.startsWith("gpt-")) return "codex";
   return undefined;
 }
@@ -128,6 +129,12 @@ export function modelDisplayLabel(model: string | undefined): string {
   const gateway = model.match(/^([A-Za-z0-9_-]+):(.+\/.+)$/);
   if (gateway) return `${gateway[1]} · ${gateway[2]}`;
   return [...liveCodexModels, ...CODEX_MODELS, ...CLAUDE_MODELS].find((item) => item.value === model)?.label ?? model;
+}
+
+/** The runtime as the user knows it: the default `native` runtime is Codex's app-server, so it is `codex`. */
+export function runtimeDisplayName(runtimeId: string | undefined): string {
+  if (!runtimeId || runtimeId === "native") return "codex";
+  return runtimeId;
 }
 
 export function effortDisplayLabel(value: EffortValue | undefined): string {
