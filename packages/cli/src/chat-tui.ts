@@ -750,7 +750,21 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     }
     openCells.clear();
   };
-  const paintTool = (event: AgentToolEvent): void => {
+  const clock = options.now ?? Date.now;
+  /** When each tool started, so a cell can show a time the provider did not report (Codex sends 0 ms). */
+  const startedAt = new Map<string, number>();
+  const timed = (event: AgentToolEvent): AgentToolEvent => {
+    const started = startedAt.get(event.id);
+    if (event.phase === "start") {
+      startedAt.set(event.id, clock());
+      return event;
+    }
+    startedAt.delete(event.id);
+    if ((event.durationMs ?? 0) > 0 || started === undefined) return event;
+    return { ...event, durationMs: Math.max(0, clock() - started) };
+  };
+  const paintTool = (raw: AgentToolEvent): void => {
+    const event = timed(raw);
     flushAll();
     blockOpen = false;
     if (options.block && bullets) {
