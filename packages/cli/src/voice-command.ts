@@ -10,7 +10,7 @@ import {
   transcribe,
   voiceDoctor,
 } from "@musterhq/core";
-import type { MusterConfig, SynthesisFormat, VoiceConfig } from "@musterhq/core";
+import type { MusterConfig, SynthesisFormat, VoiceConfig, VoiceDoctorReport } from "@musterhq/core";
 
 /**
  * `muster voice doctor | transcribe <file> | say <text> [-o file]`
@@ -49,6 +49,43 @@ function positionals(args: readonly string[], valueFlags: readonly string[]): st
   return out;
 }
 
+/** The words to speak: everything except -o/--output, --voice and their values (so "-5 degrees" is text). */
+function sayText(args: readonly string[]): string {
+  const words: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-o" || arg === "--output" || arg === "--voice") { index += 1; continue; }
+    if (arg === "--") { words.push(...args.slice(index + 1)); break; }
+    words.push(arg);
+  }
+  return words.join(" ");
+}
+
+const STATUS_MARK: Record<string, string> = { ok: "on", off: "off", fail: "needs setup" };
+
+/** `muster voice doctor` as a readable checklist. */
+export function formatVoiceDoctor(report: VoiceDoctorReport, configFile: string): string[] {
+  const rows: string[] = ["Voice"];
+  const label = (text: string) => text.padEnd(16);
+  for (const [name, check] of [["Speech-to-text", report.stt], ["Text-to-speech", report.tts]] as const) {
+    const state = check.status === "off" ? "off" : `${check.provider} · ${STATUS_MARK[check.status]}`;
+    rows.push(`  ${label(name)}${state.padEnd(Math.max(6, state.length + 2))}${check.detail}`.trimEnd());
+  }
+  rows.push(`  ${label("Spoken replies")}${report.reply}`);
+  rows.push("", "On this machine");
+  const width = Math.max(13, ...report.tools.map((tool) => tool.name.length)) + 2;
+  for (const tool of report.tools) {
+    rows.push(tool.path ? `  ✓ ${tool.name.padEnd(width)}${tool.path}` : `  ✗ ${tool.name.padEnd(width)}missing: ${tool.purpose}`);
+  }
+  if (report.models.length) for (const model of report.models) rows.push(`  ✓ ${"whisper model".padEnd(width)}${model}`);
+  else rows.push(`  ✗ ${"whisper model".padEnd(width)}none found`);
+  if (report.suggestedLine) {
+    rows.push("", `Turn on local speech: add this at the top level of ${configFile}`, `  ${report.suggestedLine}`);
+  }
+  for (const hint of report.hints) rows.push("", `  → ${hint}`);
+  return rows;
+}
+
 function formatForOutput(path: string): SynthesisFormat {
   if (/\.(ogg|oga|opus)$/i.test(path)) return "ogg-opus";
   if (/\.wav$/i.test(path)) return "wav";
@@ -77,19 +114,7 @@ export async function voiceCommand(args: readonly string[], cwd = process.cwd())
     if (rest.includes("--json")) {
       console.log(JSON.stringify(report, null, 2));
     } else {
-      console.log(`voice stt=${report.stt.provider} tts=${report.tts.provider} reply=${report.reply}`);
-      for (const [name, check] of [["stt", report.stt], ["tts", report.tts]] as const) {
-        console.log(`check=${name} status=${check.status} detail=${check.detail}`);
-      }
-      for (const tool of report.tools) console.log(tool.path ? `tool=${tool.name} path=${tool.path}` : `tool=${tool.name} missing (${tool.purpose})`);
-      for (const model of report.models) console.log(`model=${model}`);
-      if (!report.models.length) console.log("model=none found");
-      if (report.suggestedLine) {
-        console.log("");
-        console.log(`Turn on local speech: put this in ${configPath(cwd)} (top level):`);
-        console.log(report.suggestedLine);
-      }
-      for (const hint of report.hints) console.log(`hint: ${hint}`);
+      for (const line of formatVoiceDoctor(report, configPath(cwd))) console.log(line);
     }
     if (report.stt.status === "fail" || report.tts.status === "fail") process.exitCode = 1;
     return;
@@ -104,7 +129,7 @@ export async function voiceCommand(args: readonly string[], cwd = process.cwd())
   if (sub === "say") {
     const output = flagValue(rest, "-o", "--output");
     const voiceName = flagValue(rest, "--voice");
-    const text = positionals(rest, ["-o", "--output", "--voice"]).join(" ");
+    const text = sayText(rest);
     if (!text.trim()) throw new Error(VOICE_USAGE);
     const effective: VoiceConfig | undefined = voiceName && voice?.tts ? { ...voice, tts: { ...voice.tts, voice: voiceName } } : voice;
     if (output) {

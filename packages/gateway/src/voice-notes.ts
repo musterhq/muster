@@ -118,7 +118,8 @@ export async function prepareVoiceInbound(message: SurfaceMessage, deps: VoiceIn
         if (error instanceof VoiceLimitError) return { kind: "refuse", text: error.message };
         const detail = error instanceof Error ? error.message : String(error);
         deps.log?.(`voice: transcription failed: ${detail}`);
-        return { kind: "refuse", text: `I couldn't transcribe that voice note (${detail.slice(0, 200)}).` };
+        // Tool names, exit codes and local paths stay in the log, not the chat.
+        return { kind: "refuse", text: "I couldn't transcribe that voice note. Please try again; if it keeps failing, the gateway log has the details." };
       }
     }
   } finally {
