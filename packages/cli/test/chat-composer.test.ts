@@ -195,3 +195,22 @@ test("rewound turns are greyed out in the transcript", async () => {
   assert.ok(rows.slice(at + 1).filter((row) => row.trim()).every((row) => row.startsWith(muted) && !row.slice(muted.length).includes("\x1b[38;2;2")), "every rewound row is grey");
   assert.ok(!rows.find((row) => row.includes("answer to first"))!.startsWith(muted), "earlier turns keep their look");
 });
+
+// Spec: MUS-SPEC-02-2C (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2c--shortcuts-lists-every-key-and-help-columns-line-up)
+test("/shortcuts lists every chat key and help rows line up", async () => {
+  const { CHAT_SHORTCUTS, alignHelpRows } = await import("../src/chat-tui.js");
+  const keys = CHAT_SHORTCUTS.map(([key]) => key).join(" | ");
+  for (const key of ["Enter", "Ctrl+Q", "Alt+Enter", "Alt+↑", "Esc", "Ctrl+C", "Ctrl+O", "Ctrl+D", "PgUp", "PgDn", "Tab"]) {
+    assert.ok(keys.includes(key), `${key} is listed: ${keys}`);
+  }
+  const rows = alignHelpRows([
+    ["/model [name]", "choose the model"],
+    ["/reasoning [auto|low|medium|high|compact|full]", "choose thinking effort"],
+    ["/exit", "leave chat"],
+  ], 100).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  const columns = rows.filter((row) => /\S\s{2,}\S/.test(row)).map((row) => row.search(/(?<=\S\s{2,})\S/));
+  assert.equal(columns.length, 2, rows.join("\n"));
+  assert.ok(columns.every((column) => column === columns[0] && column > 0), rows.join("\n"));
+  const long = rows.findIndex((row) => row.startsWith("/reasoning"));
+  assert.ok(rows[long + 1]!.trim() === "choose thinking effort" && rows[long + 1]!.indexOf("choose") === columns[0], "a usage wider than the column puts its text on the next row, aligned");
+});

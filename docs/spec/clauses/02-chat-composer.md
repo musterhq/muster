@@ -81,3 +81,13 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** pure placement function and wrapper component.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-2C — `/shortcuts` lists every key, and help columns line up
+
+- **Precondition:** chat.
+- **Action:** `/shortcuts`; `/help`.
+- **Expected result:** `/shortcuts` lists every chat key: Enter (send, or steer a running turn), Ctrl+Q / Alt+Enter (queue), Alt+↑ (edit queued), Esc (stop the turn), Ctrl+C (interrupt, twice to quit), Ctrl+O (expand output), Ctrl+D (live file view), PgUp/PgDn (scroll), Tab (complete), `\` at line end, `@agent`. In `/help` and `/shortcuts` every description starts in the same column; a usage wider than that column puts its description on the next row, in the same column.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "/shortcuts lists every chat key and help rows line up"
+- **Environment:** pure list and row formatter.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
