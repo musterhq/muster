@@ -1,6 +1,6 @@
 import { printBanner, renderBanner } from "./banner.js";
 import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatTokenPair, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
-import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
+import { markTurnUndone, recordableTurn, rewindPickerOptions, rewindPromptPreview, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { readChatSessionRoute, sessionRouteToRestore, writeChatSessionRoute } from "./chat-session-route.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -3294,13 +3294,15 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   if (turnPatches.length) state.lastTurnPatches = turnPatches;
   state.lastTurnUndone = false;
   state.lastTurnUntracked = liveDiff.active ? undefined : liveDiff.inactiveReason;
-  state.turnStack = [...(state.turnStack ?? []), {
-    prompt,
-    runId: outcome.plan.runId,
-    patches: turnPatches,
-    ...(outcome.providerTurnId ? { providerTurnId: outcome.providerTurnId } : {}),
-    ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
-  }].slice(-50);
+  if (recordableTurn({ failed: outcome.episode.outcome?.kind === "failed", patches: turnPatches })) {
+    state.turnStack = [...(state.turnStack ?? []), {
+      prompt,
+      runId: outcome.plan.runId,
+      patches: turnPatches,
+      ...(outcome.providerTurnId ? { providerTurnId: outcome.providerTurnId } : {}),
+      ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
+    }].slice(-50);
+  }
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
   writeChatSessionRoute(state.sessionName, { runtime: state.runtime, provider: state.provider, model: state.model });
   state.pendingContinuityContext = undefined;
@@ -5442,10 +5444,9 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
     console.log(color("Nothing to rewind yet: no turns in this chat.", "dim"));
     return;
   }
-  const label = (turn: RecordedTurn & { readonly undone?: boolean }) => rewindTurnLabel(turn);
   let back = Number.parseInt(args.trim(), 10);
   if (!Number.isFinite(back)) {
-    const options = stack.map((turn, index) => ({ value: String(stack.length - index), label: `${stack.length - index}  ${label(turn)}` })).reverse().slice(0, 15);
+    const options = rewindPickerOptions(stack);
     if (!state.statusSink) {
       printChatPanel("Rewind to before…", [...options.map((option) => option.label), color("Use /rewind <n> (1 = the last turn).", "dim")]);
       return;
@@ -5469,7 +5470,7 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
   state.turnStack = stack.slice(0, result.remainingTurns);
   state.lastTurnPatches = undefined;
   if (result.conversation === "fresh") await clearConversationSessionHandles(conversationKey);
-  console.log(`${color("↺", "green")} Rewound to before “${result.prompt.replace(/\s+/g, " ").slice(0, 60)}” · ${result.files.restored.length} ${result.files.restored.length === 1 ? "file" : "files"} restored · ${result.conversation === "reverted" ? "conversation rolled back" : "next turn starts a fresh thread"}${forgotten ? ` · ${forgotten} turn ${forgotten === 1 ? "memory" : "memories"} forgotten` : ""}`);
+  console.log(`${color("↺", "green")} Rewound to before “${rewindPromptPreview(result.prompt)}” · ${result.files.restored.length} ${result.files.restored.length === 1 ? "file" : "files"} restored · ${result.conversation === "reverted" ? "conversation rolled back" : "next turn starts a fresh thread"}${forgotten ? ` · ${forgotten} turn ${forgotten === 1 ? "memory" : "memories"} forgotten` : ""}`);
   for (const file of result.files.skipped) console.log(`  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`);
   // The rewound turns stay readable but grey, under a marker row.
   state.statusSink?.markRewound(result.prompt);

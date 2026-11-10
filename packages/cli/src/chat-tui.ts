@@ -2188,10 +2188,16 @@ export function composerOverlayOptions(columns: number) {
 
 /** A picker under a dim rule, so it never reads as part of the transcript above it. */
 export class RuledOverlay implements Component {
-  constructor(private readonly inner: Component) {}
+  constructor(private readonly inner: Component, private readonly frame: { readonly title?: string; readonly hint?: string } = {}) {}
 
   render(width: number): string[] {
-    return [dim("─".repeat(Math.max(0, width))), ...this.inner.render(width)];
+    const cap = Math.max(1, width);
+    return [
+      dim("─".repeat(Math.max(0, width))),
+      ...(this.frame.title ? [truncateToWidth(highlight(this.frame.title), cap, "…")] : []),
+      ...this.inner.render(width),
+      ...(this.frame.hint ? [truncateToWidth(dim(this.frame.hint), cap, "…")] : []),
+    ];
   }
 
   handleInput(data: string): void {
@@ -2324,7 +2330,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     this.tui.requestRender(true);
   }
 
-  selectFromList(_title: string, options: readonly PickerOption[]): Promise<string | undefined> {
+  selectFromList(title: string, options: readonly PickerOption[]): Promise<string | undefined> {
     return new Promise((resolve) => {
       let settled = false;
       let handle: ReturnType<TUI["showOverlay"]> | undefined;
@@ -2350,7 +2356,7 @@ class MusterChatScreen implements Component, MusterChatSink {
       // never centered in the void, never painting over the composer's frame.
       // Full width: overlay rows must be OPAQUE across the terminal so the
       // transcript can never bleed through beside them (owner-reported).
-      handle = this.tui.showOverlay(new RuledOverlay(list), composerOverlayOptions(this.tui.terminal.columns));
+      handle = this.tui.showOverlay(new RuledOverlay(list, { title, hint: "↑↓ choose · enter select · esc cancel" }), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }

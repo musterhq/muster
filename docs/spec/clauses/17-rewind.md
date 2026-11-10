@@ -50,7 +50,7 @@
 - **Test:** `packages/cli/test/chat-composer.test.ts` › "the rewind picker is titled, aligned and leaves out failed turns"
 - **Environment:** pure `rewindPickerOptions` / `recordableTurn` (`live-diff.ts`) and `RuledOverlay`, NO_COLOR.
 - **Known gaps:** the picker shows the 15 most recent turns.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, tmux 110 cols, built CLI, `/tmp/polish-rw` (git), two Codex turns, `/rewind`: rule, `Rewind to before which turn?`, `→ 1  Append the line three to a.txt. · 1 file(s)`, `  2  Create b.txt …`, `↑↓ choose · enter select · esc cancel` (before: no title, no hint, `10  …` misaligned, S/20-rewind). Alignment at 10+ and failed-turn exclusion proven by the test only (no failed turn was provoked live). Capture: `screens/polish/qa32-after-rewind-picker.ansi`. Red→green: chat-composer.test.ts.
 
 ## MUS-SPEC-17-3B — The rewind result names the prompt without cutting a word
 
@@ -60,4 +60,4 @@
 - **Test:** `packages/cli/test/chat-composer.test.ts` › "the rewind result quotes the prompt and cuts only at a word"
 - **Environment:** pure `rewindPromptPreview` (`live-diff.ts`).
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, same chat, picked turn 2: `↺ Rewound to before “Create b.txt containing two. Remember the second codeword…” · 2 files restored · conversation rolled back · 2 turn memories forgotten` (before: `…the second codeword is”`, S/22-rewind-n). Capture: `screens/polish/qa32-after-rewind-result.ansi`. Red→green: chat-composer.test.ts.

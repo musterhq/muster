@@ -410,6 +410,39 @@ export function markTurnUndone<T extends { readonly patches: readonly WorkspaceP
 }
 
 /** A turn in the /rewind picker: its prompt, and how many files it changed (or that /undo already reverted it). */
+/**
+ * A turn goes on the rewind stack unless it failed without changing a file:
+ * there is nothing to put back, and listing it would offer a turn that never ran.
+ */
+export function recordableTurn(turn: { readonly failed: boolean; readonly patches: readonly unknown[] }): boolean {
+  return !turn.failed || turn.patches.length > 0;
+}
+
+/** The `/rewind` picker rows, most recent first, numbers right-aligned so every prompt starts in one column. */
+export function rewindPickerOptions(
+  stack: readonly { readonly prompt: string; readonly patches: readonly WorkspacePatchEvent[] | readonly unknown[]; readonly undone?: boolean }[],
+  limit = 15,
+): Array<{ value: string; label: string }> {
+  const shown = stack.map((turn, index) => ({ turn, back: stack.length - index })).reverse().slice(0, limit);
+  const width = String(Math.max(1, ...shown.map((row) => row.back))).length;
+  return shown.map(({ turn, back }) => ({
+    value: String(back),
+    label: `${String(back).padStart(width)}  ${rewindTurnLabel(turn as { prompt: string; patches: readonly WorkspacePatchEvent[]; undone?: boolean })}`,
+  }));
+}
+
+/** A prompt quoted in one line: whole when it fits, else cut at the last word with `…`. */
+export function rewindPromptPreview(prompt: string, max = 60): string {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  let cut = text.slice(0, max - 1);
+  if (text[max - 1] !== " ") {
+    const space = cut.lastIndexOf(" ");
+    if (space > max / 2) cut = cut.slice(0, space);
+  }
+  return `${cut.trimEnd()}…`;
+}
+
 export function rewindTurnLabel(turn: { readonly prompt: string; readonly patches: readonly WorkspacePatchEvent[]; readonly undone?: boolean }): string {
   const prompt = turn.prompt.replace(/\s+/g, " ").slice(0, 70);
   if (turn.undone) return `${prompt} · undone`;
