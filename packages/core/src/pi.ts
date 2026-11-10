@@ -332,6 +332,12 @@ export function explainPiError(message: string): string {
   return "pi has no model it can use: no API key is set for any pi provider. Set one, for example ANTHROPIC_API_KEY or OPENAI_API_KEY, then run muster pi models to see which providers are available.";
 }
 
+/** Shown on `/runtime pi` when no pi model has credentials, so the first turn does not fail unexplained. */
+export function piNoKeyWarning(models: ReadonlyArray<{ readonly available: boolean }>): string | undefined {
+  if (models.some((model) => model.available)) return undefined;
+  return "pi has no API key for any provider yet: set one, for example ANTHROPIC_API_KEY or OPENAI_API_KEY (muster pi models lists providers).";
+}
+
 export async function listPiModels(input: PiModelListInput = {}): Promise<PiModelInfo[]> {
   const pi = await import("@earendil-works/pi-coding-agent");
   const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));

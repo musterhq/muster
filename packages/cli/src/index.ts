@@ -154,6 +154,7 @@ import {
   removeMcpOAuthToken,
   writeMcpOAuthToken,
   listPiModels,
+  piNoKeyWarning,
   listBuiltinPlugins,
   listBuiltinSkills,
   appendGoalLoopTurn,
@@ -4578,6 +4579,8 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
     await refreshChatTuiHeader(state);
     const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
     console.log(color(`runtime=pi provider=pi-default model=${state.model} provider_handles_cleared=${cleared}`, "green"));
+    const piWarning = piNoKeyWarning(await listPiModels().catch(() => [{ available: true }]));
+    if (piWarning) console.log(color(piWarning, "yellow"));
     openNextPicker(state, "/provider");
     return;
   }
