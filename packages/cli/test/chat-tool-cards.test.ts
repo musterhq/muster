@@ -140,3 +140,17 @@ test("a command the provider reports as 0 ms shows the time Muster measured", ()
   assert.equal(text[pytest + 1], "  ⎿ exit 0 · 19.9s", "a provider time wins when it has one");
   await finish();
 }));
+
+// Spec: MUS-SPEC-01-2E (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-2e--commands-read-as-the-shell-runs-them-and-use-the-terminal-width)
+test("command titles drop the wrapper's quoting and use the terminal width", () => withNoColor(async () => {
+  const { unwrapShellCommand } = await import("../src/chat-tui.js");
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc "printf 'hello\\n' > hello.txt"`), String.raw`printf 'hello\n' > hello.txt`);
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc "python3 -c 'p=Path(\"data.csv\")'"`), `python3 -c 'p=Path("data.csv")'`);
+  assert.equal(unwrapShellCommand(String.raw`/bin/zsh -lc 'echo '\''hi'\'''`), `echo 'hi'`);
+  const long = `grep -rn ${"needle".repeat(25)} src`;
+  const { chat, painter, finish } = await chatWithPainter({ width: () => 200 });
+  painter().tool({ phase: "start", id: "w1", kind: "command", title: `/bin/zsh -lc '${long}'` });
+  const text = plain(chat.transcript());
+  assert.ok(text.includes(`⏺ Bash(${long})`), "a 168-character command fits a 200-column terminal");
+  await finish();
+}));
