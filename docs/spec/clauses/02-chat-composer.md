@@ -71,3 +71,13 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** chat harness, fake runtime.
 - **Known gaps:** the 2 s window uses the wall clock; it is not tested past expiry.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-2B — Pickers cover the full width, under a rule
+
+- **Precondition:** a 110-column chat; `/model` (or `/rewind`) opens a picker above the composer.
+- **Action:** compute the picker's placement and render it.
+- **Expected result:** the picker is 110 columns wide with no right margin, so no cell of the row behind it (a stray `─` at column 110) shows through; its first row is a dim full-width rule that separates it from the transcript; keys still reach the list.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "composer pickers cover every column and open under a rule"
+- **Environment:** pure placement function and wrapper component.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

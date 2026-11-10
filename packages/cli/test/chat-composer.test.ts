@@ -160,3 +160,19 @@ test("ctrl+c interrupts a running turn and only a second press quits", { timeout
   drafting.input("\x03");
   assert.equal(drafting.exited(), true);
 });
+
+// Spec: MUS-SPEC-02-2B (docs/spec/clauses/02-chat-composer.md#mus-spec-02-2b--pickers-cover-the-full-width-under-a-rule)
+test("composer pickers cover every column and open under a rule", async () => {
+  const { composerOverlayOptions, RuledOverlay } = await import("../src/chat-tui.js");
+  const options = composerOverlayOptions(110);
+  assert.equal(options.width, 110, "no uncovered last column for the row behind to show through");
+  assert.deepEqual(options.margin, { left: 0, right: 0 });
+  let typed = "";
+  const inner = { render: (width: number) => [`item ${width}`], handleInput: (data: string) => { typed += data; }, invalidate: () => {} };
+  const ruled = new RuledOverlay(inner);
+  const rows = ruled.render(110).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.equal(rows[0], "─".repeat(110));
+  assert.equal(rows[1], "item 110");
+  ruled.handleInput?.("j");
+  assert.equal(typed, "j", "keys reach the picker");
+});
