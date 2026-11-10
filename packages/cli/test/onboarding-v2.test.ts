@@ -373,3 +373,85 @@ process.exit(1);
     server.close();
   }
 });
+
+// Spec: MUS-SPEC-08-3D (docs/spec/clauses/08-onboarding.md#mus-spec-08-3d--a-codex-model-provider-is-verified-with-a-model-it-serves)
+test("a Codex model provider is verified with a model it serves, and a rejected default model gets a model fix", { timeout: 60_000 }, async () => {
+  const { verifyRoute, verifyTargetFor } = await import("../src/onboarding-verify.js");
+  const codexHome = await mkdtemp(join(tmpdir(), "muster-onb-gw-"));
+  await writeFile(join(codexHome, "config.toml"), [
+    'model = "gpt-6.1-terra"',
+    "",
+    "[profiles.gw]",
+    'model_provider = "gw2"',
+    'model = "auto/gpt"',
+    "",
+    "[model_providers.hybrow]",
+    'name = "Gateway"',
+    'base_url = "https://router.example/v1"',
+    "",
+    "[model_providers.gw2]",
+    'base_url = "https://gw2.example/v1"',
+    "",
+    "[model_providers.bare]",
+    'base_url = "https://bare.example/v1"',
+    "",
+  ].join("\n"));
+  const log = join(codexHome, "argv.log");
+  const fake = join(codexHome, "codex");
+  await writeFile(fake, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+const m = args.indexOf("-m");
+const model = m >= 0 ? args[m + 1] : "gpt-6.1-terra";
+if (!["cc/claude-sonnet-5-5", "auto/gpt"].includes(model)) {
+  const message = "[400]: The '" + model + "' model is not supported when using Codex with a ChatGPT account.";
+  console.log(JSON.stringify({ type: "error", message }));
+  console.log(JSON.stringify({ type: "turn.failed", error: { message } }));
+  process.exit(1);
+}
+const o = args.indexOf("-o") >= 0 ? args.indexOf("-o") : args.indexOf("--output-last-message");
+if (o >= 0) fs.writeFileSync(args[o + 1], "OK");
+console.log(JSON.stringify({ type: "thread.started", thread_id: "t" }));
+console.log(JSON.stringify({ type: "item.completed", item: { id: "i", type: "agent_message", text: "OK" } }));
+console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));
+`, "utf8");
+  await chmod(fake, 0o755);
+  const detected = await detectProviders({
+    env: { CODEX_HOME: codexHome, ANTHROPIC_BASE_URL: "https://router.example", ANTHROPIC_AUTH_TOKEN: "x-token-123456", ANTHROPIC_MODEL: "cc/claude-sonnet-5-5" },
+    home: "/home/u",
+    run: async (command) => (command === "codex" ? "codex-cli 0.200.0" : undefined),
+    exists: () => true,
+    fetch: async () => { throw new Error("offline"); },
+  });
+  assert.equal(detected["codex-provider:hybrow"]?.model, "cc/claude-sonnet-5-5", "a model from an env route on the same gateway host");
+  assert.equal(detected["codex-provider:gw2"]?.model, "auto/gpt", "a model from a Codex profile for that provider");
+  assert.equal(detected["codex-provider:bare"]?.model, undefined);
+
+  const previous = process.env.MUSTER_CODEX_COMMAND;
+  process.env.MUSTER_CODEX_COMMAND = fake;
+  try {
+    for (const id of ["hybrow", "gw2"]) {
+      const target = verifyTargetFor(`codex-provider:${id}`, id, detected[`codex-provider:${id}`])!;
+      const outcome = await verifyRoute(target);
+      assert.equal(outcome.ok, true, `${id}: ${JSON.stringify(outcome)}`);
+    }
+    const lines = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    assert.ok(lines.some((args) => args.join(" ").includes('model_provider="hybrow"') && args.includes("cc/claude-sonnet-5-5")), JSON.stringify(lines));
+    const bare = await verifyRoute(verifyTargetFor("codex-provider:bare", "bare", detected["codex-provider:bare"])!);
+    assert.equal(bare.ok, false);
+    assert.match(bare.ok ? "" : bare.error, /gpt-6\.1-terra.*not served by bare|not served by bare.*gpt-6\.1-terra/);
+  } finally {
+    if (previous === undefined) delete process.env.MUSTER_CODEX_COMMAND;
+    else process.env.MUSTER_CODEX_COMMAND = previous;
+  }
+
+  const state = onboardingStateForSelections({});
+  state.detected = detected;
+  state.selected.provider = new Set(["codex-provider:bare"]);
+  state.verify = { running: false, order: ["codex-provider:bare"], targets: {}, results: { "codex-provider:bare": { ok: false, error: "Codex's default model gpt-6.1-terra is not served by bare" } } };
+  state.stepIndex = 99;
+  const finish = renderOnboarding(state, 160, false);
+  assert.doesNotMatch(finish, /check \[model_providers\.bare\]/);
+  assert.match(finish, /muster chat --model bare:<model>/);
+});
