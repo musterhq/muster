@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { synthesize, transcribe } from "../src/voice.js";
+import { listVoiceReceipts, synthesize, transcribe, voiceLedgerPath } from "../src/voice.js";
 import type { VoiceConfig } from "../src/voice.js";
 import { installFakeVoiceTools, readFakeVoiceCalls } from "./fakes/voice-tools.js";
 
@@ -219,5 +219,61 @@ test("openai voice providers use the env key, write audio, and never print the k
   } finally {
     await server.close();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-21-3A (docs/spec/clauses/21-voice.md#mus-spec-21-3a--every-transcription-and-synthesis-leaves-a-receipt)
+test("voice operations write receipts without audio, keys or full transcripts", async () => {
+  const ws = await workspace("muster-voice-receipts-");
+  const server = await startFakeOpenAIAudio();
+  const KEY = "sk-receipt-secret";
+  try {
+    const model = join(ws.cwd, "ggml-tiny.en.bin");
+    await writeFile(model, "model");
+    const input = join(ws.cwd, "clip.ogg");
+    await writeFile(input, "OggS AUDIO-PAYLOAD-MARKER");
+    const transcript = `start ${"word ".repeat(80)}tail-marker`;
+    const local: VoiceConfig = { stt: { provider: "whisper-cpp", model }, tts: { provider: "say" } };
+    await transcribe(input, { voice: local, cwd: ws.cwd, env: { ...ws.env, FAKE_TRANSCRIPT: transcript }, surfaceId: "telegram:bot" });
+    const spoken = await synthesize("say this reply aloud", { voice: local, cwd: ws.cwd, env: ws.env, format: "ogg-opus" });
+    await spoken.cleanup();
+    const cloud: VoiceConfig = {
+      stt: { provider: "openai", baseUrl: server.url, apiKeyEnv: "VOICE_KEY" },
+      tts: { provider: "openai", baseUrl: server.url, apiKeyEnv: "VOICE_KEY" },
+    };
+    const cloudEnv = { ...ws.env, VOICE_KEY: KEY };
+    await transcribe(input, { voice: cloud, cwd: ws.cwd, env: cloudEnv });
+    const cloudSpoken = await synthesize("cloud reply", { voice: cloud, cwd: ws.cwd, env: cloudEnv });
+    await cloudSpoken.cleanup();
+
+    const receipts = await listVoiceReceipts(ws.cwd);
+    assert.deepEqual(receipts.map((receipt) => [receipt.kind, receipt.provider, receipt.local]), [
+      ["voice.stt", "whisper-cpp", true],
+      ["voice.tts", "say", true],
+      ["voice.stt", "openai", false],
+      ["voice.tts", "openai", false],
+    ]);
+    const [stt, tts, cloudStt, cloudTts] = receipts;
+    assert.equal(stt.audioSeconds, 2);
+    assert.equal(stt.surfaceId, "telegram:bot");
+    assert.equal(stt.costUsd, 0);
+    assert.equal(tts.characters, "say this reply aloud".length);
+    assert.equal(tts.costUsd, 0);
+    assert.ok(typeof stt.durationMs === "number" && stt.durationMs >= 0);
+    assert.ok((stt.transcriptPreview ?? "").length <= 200);
+    assert.ok(stt.transcriptPreview?.startsWith("start word"));
+    assert.ok(cloudStt.costUsd > 0, "cloud speech has an estimated cost");
+    assert.ok(cloudTts.costUsd > 0);
+    assert.equal(cloudTts.characters, "cloud reply".length);
+
+    const raw = await readFile(voiceLedgerPath(ws.cwd), "utf8");
+    assert.ok(!raw.includes("tail-marker"), "no full transcript");
+    assert.ok(!raw.includes("AUDIO-PAYLOAD-MARKER"), "no audio");
+    assert.ok(!raw.includes("OggS"), "no audio");
+    assert.ok(!raw.includes(KEY), "no key");
+    assert.ok(!raw.includes("say this reply aloud"), "no spoken text");
+  } finally {
+    await server.close();
+    await ws.done();
   }
 });
