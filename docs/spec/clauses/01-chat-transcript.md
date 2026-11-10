@@ -121,3 +121,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure renderer.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-2C — A turn that ends with a cell still open closes the cell
+
+- **Precondition:** chat; a turn started `sleep 30; echo finished` and its cell shows `⎿ running…`.
+- **Action:** press Esc (the turn is interrupted before the command ends). Separately: a turn ends (failure, lost event) without a tool end for an open cell.
+- **Expected result:** the same cell (no second cell) updates in place to `⎿ interrupted`, or `⎿ no result (the turn ended)` when the turn ended on its own; no cell says `running…` after its turn is over.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a cell still running when the turn ends is closed as interrupted"
+- **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it.
+- **Known gaps:** whether the provider stops the child process on interrupt is the runtime's job, not the painter's.
+- **Evidence:** UNVERIFIED
