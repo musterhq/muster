@@ -141,3 +141,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** fake app-server replaying the live event order.
 - **Known gaps:** the gateway's malformed `response.completed` (missing `cached_tokens`) is the upstream cause and is not fixed here; every such turn costs a second model call.
 - **Evidence:** live, 2026-11-10 — app-server stdout tee in `/tmp/qafix-dup-log` showed `error{willRetry:true}` between two identical agentMessage items.
+
+## MUS-SPEC-01-2D — A command the provider did not time still shows its time
+
+- **Precondition:** chat TUI on Codex, which reports `durationMs: 0` for most quick commands.
+- **Action:** a command starts, ends 1.234 s later with `durationMs: 0`; a second command ends with `durationMs: 19900`.
+- **Expected result:** the first cell reads `⎿ exit 0 · 1.2s` (Muster measured start→end); the second `⎿ exit 0 · 19.9s` (the provider's own time wins when it is non-zero).
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a command the provider reports as 0 ms shows the time Muster measured"
+- **Environment:** chat harness with the narration painter and an injected clock, NO_COLOR.
+- **Known gaps:** a running cell still shows only `running…` until it ends; Codex output deltas are not streamed into the cell (QA-12, second half).
+- **Evidence:** UNVERIFIED

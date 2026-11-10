@@ -7,14 +7,14 @@ function plain(lines: readonly string[]): string[] {
 }
 
 /** A chat whose single turn hands the test a painter wired to the sink, exactly like runChatTurn. */
-async function chatWithPainter() {
+async function chatWithPainter(extra: Partial<Parameters<typeof createNarrationPainter>[0]> = {}) {
   let release!: () => void;
   let painter!: NarrationPainter;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => { ready = resolve; });
   const chat = createMusterChatHarness({
     onSubmit: (_text: string, sink: MusterChatSink) => new Promise<boolean>((resolve) => {
-      painter = createNarrationPainter({ emit: (line) => sink.appendLine(line), block: (id, render) => sink.upsertBlock(id, render) });
+      painter = createNarrationPainter({ emit: (line) => sink.appendLine(line), block: (id, render) => sink.upsertBlock(id, render), ...extra });
       release = () => resolve(true);
       ready();
     }),
@@ -120,5 +120,23 @@ test("a cell still running when the turn ends is closed as interrupted", () => w
   text = plain(chat.transcript());
   const make = text.findIndex((row) => row.includes("Bash(make)"));
   assert.equal(text[make + 1], "  ⎿ no result (the turn ended)");
+  await finish();
+}));
+
+// Spec: MUS-SPEC-01-2D (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-2d--a-command-the-provider-did-not-time-still-shows-its-time)
+test("a command the provider reports as 0 ms shows the time Muster measured", () => withNoColor(async () => {
+  let clock = 10_000;
+  const { chat, painter, finish } = await chatWithPainter({ now: () => clock });
+  painter().tool({ phase: "start", id: "t1", kind: "command", title: "ls" });
+  clock += 1_234;
+  painter().tool({ phase: "end", id: "t1", kind: "command", title: "ls", exitCode: 0, durationMs: 0, output: "a.txt" });
+  painter().tool({ phase: "start", id: "t2", kind: "command", title: "pytest -q" });
+  clock += 50;
+  painter().tool({ phase: "end", id: "t2", kind: "command", title: "pytest -q", exitCode: 0, durationMs: 19_900 });
+  const text = plain(chat.transcript());
+  const ls = text.findIndex((row) => row.includes("Bash(ls)"));
+  assert.equal(text[ls + 1], "  ⎿ exit 0 · 1.2s", "measured start→end");
+  const pytest = text.findIndex((row) => row.includes("Bash(pytest -q)"));
+  assert.equal(text[pytest + 1], "  ⎿ exit 0 · 19.9s", "a provider time wins when it has one");
   await finish();
 }));
