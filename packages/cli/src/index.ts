@@ -8795,6 +8795,9 @@ async function mcpCommand(args: string[]): Promise<void> {
     await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION }));
     return;
   }
+  // Like chat and config set: a folder without .muster/ gets its config
+  // instead of a raw ENOENT on .muster/config.json.
+  await ensureDefaultConfig();
   if (action === "oauth") {
     await mcpOauthCommand([name, ...rest].filter((item): item is string => Boolean(item)));
     return;
