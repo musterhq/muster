@@ -578,7 +578,8 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
       ...(mcpFile ? { mcpConfig: mcpFile.path } : {}),
       ...(options.onDelta ? { onDelta: options.onDelta } : {}),
       ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
-      ...(claudePermissionModeForAccess(options.accessMode) ? { permissionMode: claudePermissionModeForAccess(options.accessMode) } : {}),
+      // No explicit mode means the chat default, auto-edit (spec 10-1E).
+      permissionMode: claudePermissionModeForAccess(options.accessMode ?? "auto-edit"),
     });
   } finally {
     await mcpFile?.dispose().catch(() => {});
