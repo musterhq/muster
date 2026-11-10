@@ -327,15 +327,16 @@ export function explainPiError(message: string): string {
   const provider = (match[1] ?? match[2])?.replace(/\.+$/, "");
   if (provider) {
     const env = PI_PROVIDER_KEY_ENV[provider];
-    return `No API key for pi provider ${provider}: ${env ? `set ${env}` : "set its API key in the environment"}, or pick another provider with /model <provider>/<model> (muster pi models lists them).`;
+    return `No API key for pi provider ${provider}: ${env ? `set ${env}` : "set its API key"}, or pick another (muster pi models lists them).`;
   }
-  return "pi has no model it can use: no API key is set for any pi provider. Set one, for example ANTHROPIC_API_KEY or OPENAI_API_KEY, then run muster pi models to see which providers are available.";
+  // Kept under the 160-character cause line the chat's failure card shows.
+  return "pi has no API key for any provider: set one, e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY (muster pi models lists providers).";
 }
 
 /** Shown on `/runtime pi` when no pi model has credentials, so the first turn does not fail unexplained. */
 export function piNoKeyWarning(models: ReadonlyArray<{ readonly available: boolean }>): string | undefined {
   if (models.some((model) => model.available)) return undefined;
-  return "pi has no API key for any provider yet: set one, for example ANTHROPIC_API_KEY or OPENAI_API_KEY (muster pi models lists providers).";
+  return "pi has no API key for any provider yet: set one, e.g. ANTHROPIC_API_KEY or OPENAI_API_KEY (muster pi models lists providers).";
 }
 
 export async function listPiModels(input: PiModelListInput = {}): Promise<PiModelInfo[]> {
