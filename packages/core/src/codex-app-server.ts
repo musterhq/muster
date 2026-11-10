@@ -557,6 +557,10 @@ async function acquireSession(input: {
   }
   if (cached) invalidateCachedSession(key, cached);
   if (keepAlive) closeSupersededSessions(scopeKey, key);
+  // A thread has one writer. When this turn resumes a thread that an idle warm
+  // process opened under other settings (an /access or sandbox change), that
+  // process must let go before a new one can resume it.
+  if (input.input.threadId) await releaseThreadWriters(input.input.threadId, key);
 
   const existing = keepAlive ? SESSION_CREATIONS.get(key) : undefined;
   if (existing) {
@@ -748,6 +752,19 @@ function scheduleIdleClose(session: CachedSession): void {
   session.idleTimer.unref?.();
 }
 
+async function releaseThreadWriters(threadId: string, protectedKey: string): Promise<void> {
+  const holders: CachedSession[] = [];
+  for (const [key, session] of SESSION_CACHE) {
+    if (key === protectedKey || session.threadId !== threadId || session.pendingRuns > 0) continue;
+    if (session.idleTimer) clearTimeout(session.idleTimer);
+    SESSION_CACHE.delete(key);
+    holders.push(session);
+  }
+  if (!holders.length) return;
+  recordGatewayWarmThreadCount();
+  await Promise.all(holders.map((session) => session.client.closeAndWait()));
+}
+
 function closeSupersededSessions(scopeKey: string, protectedKey: string): void {
   for (const [key, session] of SESSION_CACHE) {
     if (key !== protectedKey && session.scopeKey === scopeKey) invalidateCachedSession(key, session);
@@ -840,6 +857,17 @@ class CodexAppServerClient {
 
   isAlive(): boolean {
     return !this.closed && this.child.exitCode === null && !this.child.killed;
+  }
+
+  /** Close and wait (bounded) for the process to exit, so the thread's writer lock is released. */
+  async closeAndWait(timeoutMs = 5_000): Promise<void> {
+    const exited = this.child.exitCode !== null || this.child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => this.child.once("exit", () => resolve()));
+    this.close();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([exited, new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); })]);
+    if (timer) clearTimeout(timer);
   }
 
   close(): void {
