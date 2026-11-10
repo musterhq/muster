@@ -309,9 +309,9 @@ test("a reasoning summary opens a NEW block below it and collapses to one row", 
   painter.finish();
 
   const lines = plain(painted);
-  const reasoningAt = lines.findIndex((line) => line.startsWith("✻ "));
+  const reasoningAt = lines.findIndex((line) => line.startsWith("∴ "));
   assert.ok(reasoningAt > 0, "the summary lands between the two blocks");
-  assert.equal(lines[reasoningAt], "✻ Checking whether the spool lease is renewed. Then confirming the fencing token.");
+  assert.equal(lines[reasoningAt], "∴ Checking whether the spool lease is renewed. Then confirming the fencing token.");
   assert.match(lines[reasoningAt + 1] ?? "", /^● Second answer paragraph\./, "the message it explains starts a fresh bullet below it");
 });
 
@@ -319,7 +319,7 @@ test("/reasoning full paints every summary line; compact truncates with an ellip
   const full: string[] = [];
   createNarrationPainter({ emit: (line) => full.push(line), reasoningMode: "full", minChars: 4, maxChars: 400 })
     .reasoning("line one of the summary\nline two of the summary\n");
-  assert.deepEqual(plain(full).slice(0, 2), ["✻ line one of the summary", "✻ line two of the summary"]);
+  assert.deepEqual(plain(full).slice(0, 2), ["∴ line one of the summary", "∴ line two of the summary"]);
 
   const compact: string[] = [];
   const painter = createNarrationPainter({ emit: (line) => compact.push(line), minChars: 4, maxChars: 4000 });

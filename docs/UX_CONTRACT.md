@@ -114,8 +114,9 @@ are the regression floor only.
 Color carries MEANING, never decoration. The reference is Claude Code's own
 rendering; every muster surface applies the same semantic layer:
 
-1. THINKING IS A LAYER: reasoning text renders violet-tinted italic with a ✻
-   marker — distinguishable from the answer at a glance, before reading.
+1. THINKING IS A LAYER: reasoning text renders violet-tinted italic with a ∴
+   marker — distinguishable from the answer at a glance, before reading (the
+   live spinner owns ✻, so a summary never reads as a stale status row).
 2. INLINE SEMANTICS IN PROSE (owner-corrected 2026-08-29, FINAL): prose is
    NEAR-MONOCHROME like the reference, with ONE sanctioned inline color:
    `code spans` — the important words — render in Claude Code's soft

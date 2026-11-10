@@ -749,6 +749,13 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   let lastDelta = "";
   /** True while a `●` block is open, so the next delta continues it. */
   let blockOpen = false;
+  /** True right after a tool card: the next narration row needs a gap above it. */
+  let afterCard = false;
+  const gapAfterCard = (): void => {
+    if (!afterCard) return;
+    afterCard = false;
+    options.emit("");
+  };
 
   const paintMessage = (text: string): void => {
     if (!text.trim()) return;
@@ -757,6 +764,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       options.emit(text);
       return;
     }
+    gapAfterCard();
     const lines = formatAssistantBlock(text, { continued: blockOpen });
     if (!lines.length) return;
     for (const line of lines) options.emit(line);
@@ -767,6 +775,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     // Reasoning explains the block BELOW it, so a summary always closes the
     // open bullet: the next message delta starts its own `●`.
     blockOpen = false;
+    gapAfterCard();
     if (reasoningMode === "full") {
       for (const part of text.split(/\r?\n/)) {
         if (part.trim()) options.emit(formatReasoningLine(part));
@@ -850,6 +859,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
           ...formatToolEndLines(event, TOOL_RESULT_MAX_LINES, { expanded, expandable: true }),
         ].map((row) => cardRow(row, tone))]);
       }
+      afterCard = true;
       return;
     }
     if (!bullets) {
@@ -881,8 +891,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
         openCells.delete(cell.id);
         blockedCells.add(cell.id);
       }
-      if (options.block && bullets) options.block(id, () => renderPolicyBlockCard(request, block));
-      else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
+      if (options.block && bullets) {
+        options.block(id, () => renderPolicyBlockCard(request, block));
+        afterCard = true;
+      } else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
     },
     approval(request, state) {
       if (!options.block || !bullets) return;
@@ -3359,12 +3371,12 @@ function sliceAnsiRange(value: string, start: number, end: number): string {
 
 /**
  * The column a wrapped row resumes at: its own leading whitespace plus the
- * width of a gutter glyph (`●`, `⏺`, `⎿`, `>`, `✻`) when it wears one. Clamped
+ * width of a gutter glyph (`●`, `⏺`, `⎿`, `>`, `✻`, `∴`) when it wears one. Clamped
  * so a deeply indented row can never wrap itself down to a one-character
  * column.
  */
 function hangingIndent(clean: string, cleanWidth: number): string {
-  const match = clean.match(/^( *)(?:([●⏺⎿>✻▸]) )?/u);
+  const match = clean.match(/^( *)(?:([●⏺⎿>✻∴▸]) )?/u);
   const leading = match?.[1]?.length ?? 0;
   const glyph = match?.[2] ? 2 : 0;
   return " ".repeat(Math.max(0, Math.min(leading + glyph, cleanWidth - 10)));

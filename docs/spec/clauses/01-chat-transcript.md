@@ -180,7 +180,7 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/tui-stream-render.test.ts` › "reasoning summaries use their own glyph, not the spinner's"
 - **Environment:** narration painter, NO_COLOR.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** UNVERIFIED live — three gpt-6.1-terra turns in tmux (`/tmp/polish-tr`, `/reasoning full`) emitted no reasoning summary, so the row could not be shown live; red→green: tui-stream-render.test.ts (painter emits `∴ Implementing now`).
 
 ## MUS-SPEC-01-7B — A blank row separates a tool cell from the narration after it
 
@@ -190,4 +190,4 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "the narration after a tool cell starts below a blank row"
 - **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it; NO_COLOR.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, tmux 110 cols, built CLI, `/tmp/polish-tr`: `⏺ Bash(ls -la …)` cell, then a blank row, then `● add subtracts b from a instead of adding them.` (before: the `●` row sat directly under the cell's last output row, S/46-narrow80). Capture: `screens/polish/qa40-after-gap.ansi`. Red→green: chat-tool-cards.test.ts.

@@ -107,7 +107,7 @@ test("narration painter heuristically separates sentence-start deltas after term
   assert.deepEqual(lines, ["● The suite is green now.", "  ", "  Tests pass without a join."]);
 });
 
-test("reasoning summaries render violet italic with a sparkle above the message they explain", () => {
+test("reasoning summaries render violet italic with their own glyph above the message they explain", () => {
   const painted: string[] = [];
   const painter = createNarrationPainter({ emit: (line) => painted.push(line), minChars: 8, maxChars: 64 });
   painter.reasoning("Checking whether the spool lease is renewed.\n");
@@ -118,7 +118,7 @@ test("reasoning summaries render violet italic with a sparkle above the message 
   const messageIndex = painted.findIndex((line) => stripAnsi(line).includes("The lease renews"));
   assert.ok(reasoningIndex >= 0 && messageIndex >= 0);
   assert.ok(reasoningIndex < messageIndex, "reasoning must render above the message");
-  assert.match(stripAnsi(painted[reasoningIndex]), /^✻ /);
+  assert.match(stripAnsi(painted[reasoningIndex]), /^∴ /);
   if (!process.env.NO_COLOR) {
     assert.ok(painted[reasoningIndex].includes("\x1b[3m"), "reasoning renders italic");
     assert.ok(formatReasoningLine("x").includes("183;157;219"), "reasoning uses the sanctioned violet");
@@ -466,7 +466,7 @@ test("narration painter gives each reasoning summary part its own row", () => {
     painter.reasoning("Finding pytest environment");
     painter.reasoning("\n\nRunning an isolated package");
     painter.finish();
-    assert.deepEqual(plain(lines), ["✻ Finding pytest environment", "✻ Running an isolated package"]);
+    assert.deepEqual(plain(lines), ["∴ Finding pytest environment", "∴ Running an isolated package"]);
   } finally {
     if (previous === undefined) delete process.env.NO_COLOR;
     else process.env.NO_COLOR = previous;
