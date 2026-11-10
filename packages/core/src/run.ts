@@ -271,6 +271,8 @@ export interface RunOutcome {
   readonly piResult?: PiAgentRunResult;
   /** Native codex session handle to persist for resuming the next turn. */
   readonly codexThreadId?: string;
+  /** The provider's id for this turn (Codex app-server), for rewind. */
+  readonly providerTurnId?: string;
 }
 
 export interface RunTimingBreakdown {
@@ -478,6 +480,7 @@ interface AttemptResult {
     readonly outputTokens?: number;
   };
   readonly context?: { readonly usedTokens: number; readonly windowTokens: number };
+  readonly providerTurnId?: string;
 }
 
 function normalizeNativeTransport(value: string | undefined): "auto" | "warm" | "exec" {
@@ -802,6 +805,7 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
       errorMessage: finalCodexResult.status === "failed" ? (finalCodexResult.errorMessage || "codex run failed") : undefined,
       route,
       codexThreadId: finalCodexResult.threadId,
+      ...("turnId" in finalCodexResult && finalCodexResult.turnId ? { providerTurnId: finalCodexResult.turnId } : {}),
       sessionMode: useNativeSession && finalCodexResult.threadId ? (reuse ? "continue" : "create") : undefined,
       sessionId: finalCodexResult.threadId,
       firstTokenMs: "firstDeltaMs" in finalCodexResult ? finalCodexResult.firstDeltaMs : undefined,
@@ -1364,5 +1368,5 @@ export async function executeRun(config: MusterConfig, initialOptions: RunOption
   if (options.hooks?.count("turn.end")) {
     await options.hooks.emit("turn.end", { event: "turn.end", prompt: options.prompt, responseText: episode.responseText }).catch(() => undefined);
   }
-  return { plan, episode, tokens, recalled, recallReceipt, timings, fallbackUsed, piResult: attempt.piResult, codexThreadId: attempt.codexThreadId, ...(attempt.context ? { context: attempt.context } : {}) };
+  return { plan, episode, tokens, recalled, recallReceipt, timings, fallbackUsed, piResult: attempt.piResult, codexThreadId: attempt.codexThreadId, ...(attempt.context ? { context: attempt.context } : {}), ...(attempt.providerTurnId ? { providerTurnId: attempt.providerTurnId } : {}) };
 }

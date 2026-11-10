@@ -244,6 +244,10 @@ import {
   interruptActiveCodexTurn,
   queryCodexAppServer,
   steerActiveCodexTurn,
+  callCodexConversation,
+  rewindTurns,
+  forgetTurnMemories,
+  type RecordedTurn,
   type MusterConfig as ChatMusterConfig,
   undoWorkspacePatches,
   type WorkspacePatchEvent,
@@ -1302,6 +1306,8 @@ interface ChatState {
   activeProvider?: ModelProvider;
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
+  /** Every turn of this chat with its file changes and provider ids (`/rewind`). */
+  turnStack?: RecordedTurn[];
   /** Observer events of the last turn that changed files (`/undo`). */
   lastTurnPatches?: readonly WorkspacePatchEvent[];
   /** How much turns may do without asking (`/access`); unset means auto-edit. */
@@ -2443,6 +2449,9 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
     case "undo":
       await undoLastChatTurn(state);
       return true;
+    case "rewind":
+      await rewindChat(args, state);
+      return true;
     case "access":
       setChatAccessMode(args, state);
       return true;
@@ -3182,8 +3191,15 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     stopWorking();
     await liveDiff.finish().catch(() => {});
   }
-  // /undo works on the most recent turn that changed files.
+  // /undo works on the most recent turn that changed files; /rewind on any turn.
   if (turnPatches.length) state.lastTurnPatches = turnPatches;
+  state.turnStack = [...(state.turnStack ?? []), {
+    prompt,
+    runId: outcome.plan.runId,
+    patches: turnPatches,
+    ...(outcome.providerTurnId ? { providerTurnId: outcome.providerTurnId } : {}),
+    ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
+  }].slice(-50);
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
@@ -5303,6 +5319,45 @@ function chatSelfMcpServers(config: ChatMusterConfig, cwd: string): Record<strin
   if (!entry) return {};
   const runtimeArgs = process.execArgv.filter((arg) => !arg.startsWith("--inspect"));
   return { muster: { transport: { kind: "stdio", command: process.execPath, args: [...runtimeArgs, entry, "mcp", "serve"], cwd } } };
+}
+
+async function rewindChat(args: string, state: ChatState): Promise<void> {
+  const stack = state.turnStack ?? [];
+  if (!stack.length) {
+    console.log(color("Nothing to rewind yet: no turns in this chat.", "dim"));
+    return;
+  }
+  const label = (turn: RecordedTurn) => `${turn.prompt.replace(/\s+/g, " ").slice(0, 70)}${turn.patches.length ? ` · ${new Set(turn.patches.map((patch) => patch.path)).size} file(s)` : ""}`;
+  let back = Number.parseInt(args.trim(), 10);
+  if (!Number.isFinite(back)) {
+    const options = stack.map((turn, index) => ({ value: String(stack.length - index), label: `${stack.length - index}  ${label(turn)}` })).reverse().slice(0, 15);
+    if (!state.statusSink) {
+      printChatPanel("Rewind to before…", [...options.map((option) => option.label), color("Use /rewind <n> (1 = the last turn).", "dim")]);
+      return;
+    }
+    const picked = await state.statusSink.selectFromList("Rewind to before which turn?", options);
+    if (!picked) return;
+    back = Number.parseInt(picked, 10);
+  }
+  if (back < 1 || back > stack.length) {
+    console.log(color(`Pick a turn between 1 and ${stack.length}.`, "yellow"));
+    return;
+  }
+  const conversationKey = chatConversationKey(state.sessionName);
+  const result = await rewindTurns(stack, stack.length - back, {
+    revertThread: async (threadId, beforeTurnId) => {
+      await callCodexConversation(conversationKey, "thread/revert", { threadId, beforeTurnId }, { transportOwner: "cli-chat", requireOwner: true });
+      return true;
+    },
+  });
+  const forgotten = await forgetTurnMemories(stack.slice(result.remainingTurns).map((turn) => turn.runId).filter((id): id is string => Boolean(id)), chatWorkspaceCwd(state)).catch(() => 0);
+  state.turnStack = stack.slice(0, result.remainingTurns);
+  state.lastTurnPatches = undefined;
+  if (result.conversation === "fresh") await clearConversationSessionHandles(conversationKey);
+  console.log(`${color("↺", "green")} Rewound to before “${result.prompt.replace(/\s+/g, " ").slice(0, 60)}” · ${result.files.restored.length} ${result.files.restored.length === 1 ? "file" : "files"} restored · ${result.conversation === "reverted" ? "conversation rolled back" : "next turn starts a fresh thread"}${forgotten ? ` · ${forgotten} turn ${forgotten === 1 ? "memory" : "memories"} forgotten` : ""}`);
+  for (const file of result.files.skipped) console.log(`  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`);
+  // The rewound prompt goes back into the composer for editing.
+  state.statusSink?.openPicker(result.prompt);
 }
 
 async function undoLastChatTurn(state: ChatState): Promise<void> {

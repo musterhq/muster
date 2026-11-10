@@ -25,6 +25,7 @@ export const CHAT_COMMANDS: readonly ChatCommandDef[] = [
   { name: "runtime", usage: "/runtime [id]", description: "choose which local AI app runs turns" },
   { name: "speed", usage: "/speed [session|fast]", description: "choose full context or faster replies" },
   { name: "access", usage: "/access [read-only|ask|auto-edit|full]", description: "how much the agent may do without asking", aliases: ["permissions", "approvals"] },
+  { name: "rewind", usage: "/rewind [n]", description: "go back to before an earlier turn: files and conversation", aliases: ["back"] },
   { name: "undo", usage: "/undo", description: "put back the files the last turn changed", aliases: ["revert"] },
   { name: "live-diff", usage: "/live-diff [on|off]", description: "show file changes while they happen", aliases: ["livediff", "diffs"] },
   { name: "diff", usage: "/diff", description: "open or close this turn's file changes" },

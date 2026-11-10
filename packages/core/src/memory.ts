@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, stat, unlink } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -518,6 +518,26 @@ export function isVisibleInScopes(object: ContextObject, allowedScopes: readonly
   // Zero-scope rows are malformed; the scoped SQL path hides them, so direct reads must too.
   if (!objectScopes.length) return false;
   return objectScopes.every((scope) => normalizedAllowed.some((candidate) => sameScope(scope, candidate)));
+}
+
+/**
+ * Forget the automatic turn summaries (`episode_summary`, provenance
+ * `run:<id>`) of the given runs — what `/rewind` does for rewound turns.
+ * Facts the user asked to remember are never removed. Returns how many went.
+ */
+export async function forgetTurnMemories(runIds: readonly string[], cwd = process.cwd()): Promise<number> {
+  if (!runIds.length) return 0;
+  const runs = new Set(runIds.map((id) => `run:${id}`));
+  const all = await listMemory(cwd);
+  const keep = all.filter((memory) => !(memory.kind === "episode_summary" && memory.provenance.some((entry) => runs.has(entry))));
+  const removed = all.length - keep.length;
+  if (!removed) return 0;
+  const path = memoryPath(cwd);
+  const temp = `${path}.${process.pid}.tmp`;
+  await writeFile(temp, keep.map((memory) => `${JSON.stringify(memory)}\n`).join(""), "utf8");
+  await rename(temp, path);
+  await rebuildMemoryIndex(cwd);
+  return removed;
 }
 
 async function appendMemory(object: ContextObject, cwd: string): Promise<void> {
