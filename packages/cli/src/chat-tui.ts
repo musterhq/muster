@@ -21,7 +21,7 @@ import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { createCoalescer } from "@musterhq/core";
+import { createCoalescer, unwrapShellCommand } from "@musterhq/core";
 import type { AgentToolEvent, ApprovalDecision, ApprovalRequest, BoardView, MessageRow } from "@musterhq/core";
 import { effortDisplayLabel, modelDisplayLabel, modelProvider, type ComposerPickerSelection, type ComposerPickerState, type EffortValue } from "./model-catalog.js";
 import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capabilities-overlay.js";
@@ -716,6 +716,8 @@ export interface NarrationPainter {
   delta(text: string): void;
   /** Paint a tool start/end cell in order: pending narration is flushed above it. */
   tool(event: AgentToolEvent): void;
+  /** A policy hook declined this request: its cell (if any) becomes the red Blocked card; one cell, not two. */
+  blocked(request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }): void;
   /** An approval request for an open cell: `awaiting approval` while the card waits, `running…` once answered. */
   approval(request: ApprovalRequest, state: "waiting" | "answered"): void;
   /** Paint everything buffered now (before an out-of-band card such as a diff). */
@@ -818,7 +820,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     const open = [...openCells.values()].filter((event) => event.kind === "command");
     return open.reverse().find((event) => unwrapShellCommand(event.title) === wanted) ?? open[0];
   };
+  /** Cells a policy block took over: the provider's later `failed` end must not repaint them. */
+  const blockedCells = new Set<string>();
   const paintTool = (raw: AgentToolEvent): void => {
+    if (raw.phase === "end" && blockedCells.delete(raw.id)) return;
     const event = timed(raw);
     flushAll();
     blockOpen = false;
@@ -858,6 +863,18 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   return {
     tool(event) {
       paintTool(event);
+    },
+    blocked(request, block) {
+      flushAll();
+      blockOpen = false;
+      const cell = cellFor(request);
+      const id = cell ? `tool:${cell.id}` : `policy:${request.id}`;
+      if (cell) {
+        openCells.delete(cell.id);
+        blockedCells.add(cell.id);
+      }
+      if (options.block && bullets) options.block(id, () => renderPolicyBlockCard(request, block));
+      else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
     },
     approval(request, state) {
       if (!options.block || !bullets) return;
@@ -909,21 +926,8 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   };
 }
 
-/** `/bin/zsh -lc 'pytest -q'` → `pytest -q`: the wrapper is noise, the command is the fact. */
-export function unwrapShellCommand(command: string): string {
-  const trimmed = command.trim();
-  const quoted = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
-  if (quoted) {
-    // Undo the wrapper's own quoting so the title is what the shell ran:
-    // inside "…" a backslash escapes \ " $ and `; inside '…' a quote is '\''.
-    const body = quoted[1] === '"'
-      ? quoted[2]!.replace(/\\(["\\$`])/g, "$1")
-      : quoted[2]!.replace(/'\\''/g, "'");
-    return body.trim();
-  }
-  const bare = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(\S+)$/);
-  return (bare?.[1] ?? trimmed).trim();
-}
+/** `/bin/zsh -lc 'pytest -q'` → `pytest -q` (shared with core's policy hooks). */
+export { unwrapShellCommand };
 
 function toolCellName(event: AgentToolEvent): string {
   switch (event.kind) {
@@ -1307,6 +1311,14 @@ export function renderPolicyBlockCard(request: ApprovalRequest, block: { readonl
     `  ${dim(`${RESULT_ELBOW} ${block.reason ?? "blocked by policy"}${block.hookId ? ` · policy ${block.hookId}` : ""}`)}`,
   ];
   return ["", ...rows.map((row) => cardRow(row, "failure"))];
+}
+
+/** A `turn.start` hook refused the prompt: put it back in the composer to edit. True when it did. */
+export function promptBackAfterHookBlock(error: unknown, prompt: string, sink: Pick<MusterChatSink, "openPicker"> | undefined): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!sink || !/^Run blocked by hook\b/.test(message)) return false;
+  sink.openPicker(prompt);
+  return true;
 }
 
 /** A key while an approval card waits → its decision, or undefined to hold the key. */

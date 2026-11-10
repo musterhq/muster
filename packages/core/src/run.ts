@@ -1,6 +1,6 @@
 import type { McpServerConfig } from "./mcp.js";
 import { withConfigHooks } from "./config-hooks.js";
-import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, isWorkspaceGitCommand, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
+import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, isWorkspaceGitCommand, unwrapShellCommand, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
 import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
 import type { AgentToolEvent } from "./tool-events.js";
 import { execFile } from "node:child_process";
@@ -15,7 +15,7 @@ import { defaultHookBus, type HookBus } from "./hooks.js";
 import { appendGoalLoopTurn, buildGoalLoopTurn, rememberedMemoryWrite, type GoalLoopMemoryWrite } from "./goal-loop.js";
 import { runClaudeCode } from "./claude.js";
 import { runCodex } from "./codex.js";
-import { clearCodexAppServerConversation, clearCodexAppServerSessions, runCodexAppServer } from "./codex-app-server.js";
+import { clearCodexAppServerConversation, clearCodexAppServerSessions, runCodexAppServer, steerActiveCodexTurn } from "./codex-app-server.js";
 import { canReuseHandle, clearConversationSessionHandles, clearSessionHandle, loadSessionHandle, saveSessionHandle } from "./session-handle.js";
 import { renderConversation } from "./compactor.js";
 import { messagesToTranscript, openSessionStore } from "./sessions.js";
@@ -722,9 +722,18 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
                   const request = codexApprovalRequest(method, params);
                   if (!request) return undefined;
                   if (policyGate) {
-                    const verdict = await options.hooks!.emit("tool.before", { event: "tool.before", kind: request.kind, title: request.title, ...(request.cwd ? { cwd: request.cwd } : {}), ...(request.reason ? { reason: request.reason } : {}) });
+                    // Rules and scripts see the command the shell runs, not Codex's `/bin/zsh -lc '…'` wrapper.
+                    const subject = request.kind === "command" ? unwrapShellCommand(request.title) : request.title;
+                    const verdict = await options.hooks!.emit("tool.before", { event: "tool.before", kind: request.kind, title: subject, ...(request.cwd ? { cwd: request.cwd } : {}), ...(request.reason ? { reason: request.reason } : {}) });
                     if (verdict.action === "block") {
                       try { options.onPolicyBlock?.(request, { ...(verdict.blockedBy ? { hookId: verdict.blockedBy } : {}), ...(verdict.reason ? { reason: verdict.reason } : {}) }); } catch { /* display only */ }
+                      // Codex's decline carries no reason; tell the turn why, so the
+                      // model can explain the block instead of "no reason was given".
+                      void steerActiveCodexTurn(
+                        `Muster policy${verdict.blockedBy ? ` rule "${verdict.blockedBy}"` : ""} blocked \`${subject}\`: ${verdict.reason ?? "blocked by policy"}. It did not run.`,
+                        options.nativeTransportOwner,
+                        options.conversationKey,
+                      ).catch(() => false);
                       return { decision: "decline" };
                     }
                     // With a policy gate Codex asks about every command, not just

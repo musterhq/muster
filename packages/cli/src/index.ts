@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, promptBackAfterHookBlock, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -3247,7 +3247,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         }
       },
       onPolicyBlock: (request, block) => {
-        if (state.statusSink) state.statusSink.upsertBlock(`policy:${request.id}`, () => renderPolicyBlockCard(request, block));
+        if (painter) painter.blocked(request, block);
         else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
       },
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
@@ -3280,6 +3280,10 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       timeoutMs: options.timeoutMs,
       ...(resumeThreadId ? { sessionId: resumeThreadId, resume: true } : {}),
     });
+  } catch (error) {
+    // A turn.start block: the prompt never ran, so hand it back to edit.
+    promptBackAfterHookBlock(error, text, state.statusSink);
+    throw error;
   } finally {
     painter?.finish({ interrupted: lastChatInterruptAt >= turnStartedAt });
     stopWorking();
