@@ -3179,6 +3179,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         emit: (line) => emitChatLine(state, line),
         reasoningMode: state.reasoningMode ?? "compact",
         block: (id, render) => state.statusSink?.upsertBlock(id, render),
+        width: () => process.stdout.columns || 100,
       })
     : undefined;
   let diffSummaryOpen = false;

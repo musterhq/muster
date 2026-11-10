@@ -668,6 +668,8 @@ export interface NarrationPainterOptions {
   readonly bullets?: boolean;
   /** "compact" (default) collapses each reasoning summary to a single row. */
   readonly reasoningMode?: ReasoningMode;
+  /** Terminal columns; a tool title may use the row (default: 96 characters). */
+  readonly width?: () => number;
   /** When set, tool cells are mutable blocks: painted running, then replaced in place when they finish. */
   readonly block?: (id: string, render: (expanded: boolean) => string[]) => void;
 }
@@ -745,12 +747,14 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     const label = interrupted ? "interrupted" : "no result (the turn ended)";
     for (const [id, event] of openCells) {
       const name = toolCellName(event);
-      const title = toolCellTitle(event);
+      const title = titleOf(event);
       options.block(`tool:${id}`, () => ["", ...[formatToolLine(name, title, "failure"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
     }
     openCells.clear();
   };
   const clock = options.now ?? Date.now;
+  // The headline row is `⏺ Bash(` + title + `)` on a band: leave room for both.
+  const titleOf = (event: AgentToolEvent): string => toolCellTitle(event, options.width ? Math.max(40, options.width() - 12) : undefined);
   /** When each tool started, so a cell can show a time the provider did not report (Codex sends 0 ms). */
   const startedAt = new Map<string, number>();
   const timed = (event: AgentToolEvent): AgentToolEvent => {
@@ -769,7 +773,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     blockOpen = false;
     if (options.block && bullets) {
       const name = toolCellName(event);
-      const title = toolCellTitle(event);
+      const title = titleOf(event);
       // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
         openCells.set(event.id, event);
@@ -785,16 +789,16 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       return;
     }
     if (!bullets) {
-      if (event.phase === "start") options.emit(`$ ${toolCellTitle(event)}`);
+      if (event.phase === "start") options.emit(`$ ${titleOf(event)}`);
       return;
     }
     if (event.phase === "start") {
-      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), "pending"));
+      options.emit(formatToolLine(toolCellName(event), titleOf(event), "pending"));
       headlineToolId = event.id;
       return;
     }
     if (headlineToolId !== event.id) {
-      options.emit(formatToolLine(toolCellName(event), toolCellTitle(event), event.failed ? "failure" : "success"));
+      options.emit(formatToolLine(toolCellName(event), titleOf(event), event.failed ? "failure" : "success"));
     }
     for (const line of formatToolEndLines(event)) options.emit(line);
     headlineToolId = undefined;
@@ -853,7 +857,14 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
 export function unwrapShellCommand(command: string): string {
   const trimmed = command.trim();
   const quoted = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
-  if (quoted) return quoted[2]!.trim();
+  if (quoted) {
+    // Undo the wrapper's own quoting so the title is what the shell ran:
+    // inside "…" a backslash escapes \ " $ and `; inside '…' a quote is '\''.
+    const body = quoted[1] === '"'
+      ? quoted[2]!.replace(/\\(["\\$`])/g, "$1")
+      : quoted[2]!.replace(/'\\''/g, "'");
+    return body.trim();
+  }
   const bare = trimmed.match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(\S+)$/);
   return (bare?.[1] ?? trimmed).trim();
 }
