@@ -160,7 +160,7 @@ test("a long tool result line is cut to the terminal width with an ellipsis", ()
   const { renderTranscriptLine, cardRow, formatToolEndLines } = await import("../src/chat-tui.js");
   const output = "File created successfully at: /private/tmp/qafix-claude/note.txt (file state is current in your context — no need to Read it back)";
   const event = { phase: "end" as const, id: "r1", kind: "tool" as const, title: "Read notes", output };
-  const collapsed = formatToolEndLines(event, 6, { expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80));
+  const collapsed = plain(formatToolEndLines(event, 6, { expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80)));
   assert.equal(collapsed.length, 2, "head row plus ONE output row");
   assert.ok(collapsed.every((row) => row.length <= 80), collapsed.join("\n"));
   assert.match(collapsed[1]!, /File created successfully at: .*…\s*$/);

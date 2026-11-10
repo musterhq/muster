@@ -949,10 +949,13 @@ export const CARD_BAND_RGB = "32;33;37";
 export const CARD_FAILURE_BAND_RGB = "58;30;34";
 
 export type CardTone = "tool" | "failure";
-const CARD_MARK = /^\u0000band:(tool|failure)\u0000/;
+const CARD_MARK = /^\u0000band:(tool|failure)(:clip)?\u0000/;
+/** A card row that is cut to the width with `…` instead of wrapping (collapsed tool output). */
+const CLIP_MARK = "\u0000clip\u0000";
 
 /** Mark a transcript row as part of a card; the screen paints it as a full-width band. */
 export function cardRow(text: string, tone: CardTone = "tool"): string {
+  if (text.startsWith(CLIP_MARK)) return `\u0000band:${tone}:clip\u0000${text.slice(CLIP_MARK.length)}`;
   return `\u0000band:${tone}\u0000${text}`;
 }
 
@@ -969,7 +972,9 @@ export function renderTranscriptLine(line: string, frameWidth: number, padTo: nu
   const mark = line.match(CARD_MARK);
   if (!mark) return wrapLine(line, frameWidth);
   const rgb = mark[1] === "failure" ? CARD_FAILURE_BAND_RGB : CARD_BAND_RGB;
-  return wrapLine(line.slice(mark[0].length), frameWidth).map((row) => bandRow(row, padTo, rgb));
+  const body = line.slice(mark[0].length);
+  if (mark[2]) return [bandRow(truncateToWidth(body, Math.max(10, frameWidth - 2), "…"), padTo, rgb)];
+  return wrapLine(body, frameWidth).map((row) => bandRow(row, padTo, rgb));
 }
 
 /** Rows shown for one tool's output when Ctrl+O has expanded it; beyond this a count is shown. */
@@ -994,7 +999,10 @@ export function formatToolEndLines(
   // The hint promises a key only where the key exists (block mode).
   const hint = view.expandable ? " (ctrl+o to expand)" : "";
   if (hidden > 0) lines.push(`    ${dim(`… +${hidden} lines${view.expanded ? "" : hint}`)}`);
-  for (const row of output.slice(hidden)) lines.push(`    ${dim(stripAnsi(row).slice(0, 200))}`);
+  // Collapsed, each output row is one screen row, cut with `…` (a long path
+  // line used to run past the edge); Ctrl+O shows it whole, wrapped.
+  const clip = view.expandable && !view.expanded ? CLIP_MARK : "";
+  for (const row of output.slice(hidden)) lines.push(`${clip}    ${dim(stripAnsi(row).slice(0, view.expanded ? 2000 : 200))}`);
   if (view.expanded && view.expandable && output.length > maxLines) lines.push(`    ${dim("ctrl+o to collapse")}`);
   return lines;
 }
