@@ -101,3 +101,13 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** the status-bar repaint after the panel closes is proven in the live tmux run only.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-14-2D — `validate` warns about ignored keys and names JSON errors
+
+- **Precondition:** `muster init`; the global file holds `routing.maxCostUsdPerRun` (project-only; earlier Muster versions wrote it there).
+- **Action:** `muster config validate`; then break the project file (a missing comma on line 3, so the parser stops on line 4) and run `config validate` and `config list`.
+- **Expected result:** the first validate exits 0 and prints a warning that `routing.maxCostUsdPerRun` is ignored in the global file (no `✗`). With the broken file, validate exits non-zero saying the file is not valid JSON and naming line 4; `config list` warns that it skipped that file instead of ignoring it silently.
+- **Test:** `packages/cli/test/settings.test.ts` › "validate warns about keys a file ignores and names a JSON error with its line"
+- **Environment:** real CLI via `tsx`, temp workspace and `MUSTER_CONFIG_HOME`.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

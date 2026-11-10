@@ -296,3 +296,24 @@ test("config set saves every key to the project unless --global is given, like t
     await ws.cleanup();
   }
 });
+
+// Spec: MUS-SPEC-14-2D (docs/spec/clauses/14-settings.md#mus-spec-14-2d--validate-warns-about-ignored-keys-and-names-json-errors)
+test("validate warns about keys a file ignores and names a JSON error with its line", { timeout: 180_000 }, async () => {
+  const ws = await workspace();
+  try {
+    await muster(ws, ["init"]);
+    writeFileSync(ws.global, JSON.stringify({ version: 1, routing: { maxCostUsdPerRun: 1 } }, null, 2));
+    const ignored = await muster(ws, ["config", "validate"]);
+    assert.equal(ignored.code, 0, `a key Muster itself once wrote is a warning, not a failure:\n${ignored.stdout}${ignored.stderr}`);
+    assert.match(ignored.stdout, /routing\.maxCostUsdPerRun.*ignored/);
+    assert.doesNotMatch(ignored.stdout, /✗/);
+    writeFileSync(ws.project, '{\n  "version": 1,\n  "chat": { "access": "ask" }\n  "oops": true\n}\n');
+    const broken = await muster(ws, ["config", "validate"]);
+    assert.notEqual(broken.code, 0);
+    assert.match(broken.stdout + broken.stderr, /not valid JSON.*line 4/);
+    const list = await muster(ws, ["config", "list"]);
+    assert.match(list.stdout + list.stderr, /not valid JSON.*config\.json/, "list says the file was skipped instead of ignoring it silently");
+  } finally {
+    await ws.cleanup();
+  }
+});
