@@ -144,6 +144,8 @@ export interface MusterChatSink {
   openBoard(force?: boolean): Promise<boolean>;
   /** Replace chat with the full-screen settings panel; resolves when it closes. */
   openSettings(options: OpenSettingsOptions): Promise<void>;
+  /** Rebuild the status bar now (after a change it shows, such as access). */
+  refreshFooter?: (width?: number) => Promise<void>;
 }
 
 export interface OpenSettingsOptions {

@@ -1617,6 +1617,8 @@ async function openChatSettings(state: ChatState): Promise<void> {
   const sink = state.statusSink;
   void sink.openSettings({ cwd, onChange: (change) => applySettingToChat(state, change, sink) }).then(async () => {
     sink.setHeaderLines(await buildChatHeaderLines(state));
+    // The bar shows access, model and the like: a change applies now, so show it now.
+    await sink.refreshFooter?.();
   });
 }
 
@@ -1667,14 +1669,16 @@ function configCommand(commandArgs: readonly string[]): void {
       const raw = positional.slice(1).join(" ");
       const setting = guard(() => requireSetting(key));
       if (!positional[1] && setting.type !== "string") fail(`Usage: muster config set ${key} <value>. Allowed: ${allowedSettingValues(setting)}.`);
-      const write = guard(() => setSetting(key, raw, { scope }));
+      // Same default as the /settings panel: this project, unless --global.
+      const write = guard(() => setSetting(key, raw, { scope: scope ?? (setting.scopes.includes("project") ? "project" : setting.scope) }));
       console.log(color(`Saved ${key} → ${formatSettingValue(setting, write.value)} · ${write.scope}`, "green"));
       return;
     }
     case "reset":
     case "unset": {
       const key = positional[0] ?? fail("Usage: muster config reset <key> [--global|--project]");
-      const write = guard(() => resetSettingValue(key, { scope }));
+      const resetScope = scope ?? (guard(() => requireSetting(key)).scopes.includes("project") ? "project" : undefined);
+      const write = guard(() => resetSettingValue(key, { ...(resetScope ? { scope: resetScope } : {}) }));
       const row = resolveSetting(key);
       console.log(color(`Reset ${key} in ${write.scope} → ${formatSettingValue(row.setting, row.value)} (${row.source})`, "green"));
       return;

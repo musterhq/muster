@@ -75,7 +75,7 @@ export const SETTINGS: readonly SettingDef[] = [
       { value: "session", description: "full memory recall and skills on every turn" },
       { value: "fast", description: "warm native session with light context; recall and skills off" },
     ],
-    description: "How much context each turn loads. /speed still switches per session.",
+    description: "Fast keeps a warm session and skips memory recall and skills for quicker turns; session loads them on every turn. /speed still switches per session.",
     scope: "project",
     scopes: BOTH,
   },
