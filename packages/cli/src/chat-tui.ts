@@ -569,6 +569,43 @@ export function paintWorkingRow(row: string, tick: number): string {
   return `${accent(match[1]!)} ${shimmerText(match[2]!, tick)}`;
 }
 
+/** The status row's verb while an approval card waits for the user. */
+export const APPROVAL_WAIT_VERB = "Waiting for approval";
+
+/** A turn's elapsed time that can stop while the user decides on an approval. */
+export class TurnTimer {
+  private readonly startedAt: number;
+  private pausedAt: number | undefined;
+  private pausedTotal = 0;
+
+  constructor(private readonly now: () => number = Date.now) {
+    this.startedAt = now();
+  }
+
+  get paused(): boolean {
+    return this.pausedAt !== undefined;
+  }
+
+  pause(): void {
+    if (this.pausedAt === undefined) this.pausedAt = this.now();
+  }
+
+  resume(): void {
+    if (this.pausedAt === undefined) return;
+    this.pausedTotal += this.now() - this.pausedAt;
+    this.pausedAt = undefined;
+  }
+
+  elapsedMs(): number {
+    return Math.max(0, (this.pausedAt ?? this.now()) - this.startedAt - this.pausedTotal);
+  }
+}
+
+/** The running turn's status row: the rotating verb and live timer, or `Waiting for approval` with the timer held. */
+export function formatTurnStatusLine(info: StatusLineInfo, timer: TurnTimer, frame: number): string {
+  return formatStatusLine({ ...info, verb: timer.paused ? APPROVAL_WAIT_VERB : workingVerbForFrame(frame), frame, elapsedMs: timer.elapsedMs() });
+}
+
 /** The status row's live verb — rotates every ~4s of spinner frames. */
 export function workingVerbForFrame(frame: number): string {
   return WORKING_VERBS[Math.floor(Math.abs(frame) / 16) % WORKING_VERBS.length]!;
@@ -679,6 +716,8 @@ export interface NarrationPainter {
   delta(text: string): void;
   /** Paint a tool start/end cell in order: pending narration is flushed above it. */
   tool(event: AgentToolEvent): void;
+  /** An approval request for an open cell: `awaiting approval` while the card waits, `running…` once answered. */
+  approval(request: ApprovalRequest, state: "waiting" | "answered"): void;
   /** Paint everything buffered now (before an out-of-band card such as a diff). */
   flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
@@ -767,6 +806,18 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     if ((event.durationMs ?? 0) > 0 || started === undefined) return event;
     return { ...event, durationMs: Math.max(0, clock() - started) };
   };
+  const paintOpenCell = (event: AgentToolEvent, label: string): void => {
+    options.block?.(`tool:${event.id}`, () => ["", ...[formatToolLine(toolCellName(event), titleOf(event), "pending"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
+  };
+  /** The open cell an approval request is about: same item id, else the newest command with the same text. */
+  const cellFor = (request: ApprovalRequest): AgentToolEvent | undefined => {
+    const byId = openCells.get(request.id);
+    if (byId) return byId;
+    if (request.kind !== "command") return undefined;
+    const wanted = unwrapShellCommand(request.title);
+    const open = [...openCells.values()].filter((event) => event.kind === "command");
+    return open.reverse().find((event) => unwrapShellCommand(event.title) === wanted) ?? open[0];
+  };
   const paintTool = (raw: AgentToolEvent): void => {
     const event = timed(raw);
     flushAll();
@@ -777,7 +828,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
         openCells.set(event.id, event);
-        options.block(`tool:${event.id}`, () => ["", ...[formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`].map((row) => cardRow(row))]);
+        paintOpenCell(event, "running…");
       } else {
         openCells.delete(event.id);
         const tone: CardTone = event.failed ? "failure" : "tool";
@@ -807,6 +858,11 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   return {
     tool(event) {
       paintTool(event);
+    },
+    approval(request, state) {
+      if (!options.block || !bullets) return;
+      const cell = cellFor(request);
+      if (cell) paintOpenCell(cell, state === "waiting" ? "awaiting approval" : "running…");
     },
     flush() {
       flushAll();

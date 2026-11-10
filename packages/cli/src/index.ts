@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, routeEngineLine, runMusterChatTui, workingVerbForFrame, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, renderPolicyBlockCard, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -3214,8 +3214,10 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // session handle for the conversation and every later turn resumes from that.
   const resumeThreadId = state.resumeThreadId;
   state.resumeThreadId = undefined;
+  // Stopped while an approval card waits: deciding is the user's time, not the agent's.
+  const turnTimer = new TurnTimer();
   const stopWorking = state.statusSink
-    ? startTuiWorkingStatus(state.statusSink, { ...(await chatStatusInfo(state)), agentId })
+    ? startTuiWorkingStatus(state.statusSink, { ...(await chatStatusInfo(state)), agentId }, turnTimer)
     : startWorkingStatus(agentId);
   // Defect #3: the parent model's narration streams into the transcript while
   // the turn runs. onDelta/onReasoningDelta already arrive in-process; the
@@ -3233,7 +3235,17 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       extraMcpServers: chatSelfMcpServers(loadedConfig, workspaceCwd),
       accessMode: state.accessMode ?? "auto-edit",
       // Ask mode: provider approval requests become cards in the transcript.
-      onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
+      onApprovalRequest: async (request) => {
+        if (!state.statusSink) return "decline";
+        turnTimer.pause();
+        painter?.approval(request, "waiting");
+        try {
+          return await state.statusSink.requestApproval(request);
+        } finally {
+          turnTimer.resume();
+          painter?.approval(request, "answered");
+        }
+      },
       onPolicyBlock: (request, block) => {
         if (state.statusSink) state.statusSink.upsertBlock(`policy:${request.id}`, () => renderPolicyBlockCard(request, block));
         else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
@@ -3868,11 +3880,10 @@ async function boardCommand(commandArgs: string[]): Promise<void> {
  * of its own: it paints at the left edge of the one status line, whose elapsed
  * segment counts THIS turn while the turn runs.
  */
-function startTuiWorkingStatus(sink: MusterChatSink, info: Parameters<typeof formatStatusLine>[0]): () => void {
+function startTuiWorkingStatus(sink: MusterChatSink, info: Parameters<typeof formatStatusLine>[0], turnTimer = new TurnTimer()): () => void {
   let frame = 0;
-  const startedAt = Date.now();
   const render = (): void => {
-    sink.setStatus(formatStatusLine({ ...info, verb: workingVerbForFrame(frame), frame, elapsedMs: Date.now() - startedAt }));
+    sink.setStatus(formatTurnStatusLine(info, turnTimer, frame));
     frame += 1;
   };
   render();
