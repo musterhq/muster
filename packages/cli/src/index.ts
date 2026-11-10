@@ -6279,7 +6279,9 @@ function printChatPanel(title: string, lines: readonly string[]): void {
   const width = chatPanelWidth();
   console.log(formatToolLine(title, undefined, "success"));
   for (const line of lines) {
-    for (const part of wrapPreserveLines(line || "", width - 4)) {
+    // A row that fits keeps its own spacing (aligned columns); only longer rows are re-wrapped.
+    const parts = line && !line.includes("\n") && stripAnsi(line).length <= width - 8 ? [line] : wrapPreserveLines(line || "", width - 4);
+    for (const part of parts) {
       console.log(part ? `  ${part}` : "");
     }
   }
