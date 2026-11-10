@@ -91,3 +91,13 @@ Every user-facing setting is one typed row in `SETTINGS` (`packages/core/src/set
 - **Environment:** real CLI via `tsx`, temp workspace.
 - **Known gaps:** the full-screen panel outside chat is proven in the live tmux run only.
 - **Evidence:** same run, pass; live tmux `17-muster-settings-outside-chat.png`.
+
+## MUS-SPEC-14-2C — Every key saves to the project unless `--global` is given
+
+- **Precondition:** `muster init` in a temp workspace; `MUSTER_CONFIG_HOME` in a temp dir; a chat open with `/settings`.
+- **Action:** `muster config set chat.liveDiff false` (no flag); `muster config set appearance.header full --global`; read the Speed row's description. In chat, change Access in `/settings` and close the panel.
+- **Expected result:** the first writes the project file and says `· project`, like the panel's default and `config set chat.access`; the global file is untouched; `--global` writes the global file. Speed is described by what it trades (fast skips recall and skills), not as "how much context each turn loads". A change made in the panel applies to the open chat and the status bar shows it as soon as the panel closes.
+- **Test:** `packages/cli/test/settings.test.ts` › "config set saves every key to the project unless --global is given, like the panel"
+- **Environment:** real CLI via `tsx`, temp workspace.
+- **Known gaps:** the status-bar repaint after the panel closes is proven in the live tmux run only.
+- **Evidence:** UNVERIFIED

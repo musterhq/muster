@@ -276,3 +276,23 @@ test("muster settings without a TTY prints the list and a hint", { timeout: 120_
     await ws.cleanup();
   }
 });
+
+// Spec: MUS-SPEC-14-2C (docs/spec/clauses/14-settings.md#mus-spec-14-2c--every-key-saves-to-the-project-unless---global-is-given)
+test("config set saves every key to the project unless --global is given, like the panel", { timeout: 180_000 }, async () => {
+  const ws = await workspace();
+  try {
+    await muster(ws, ["init"]);
+    const live = await muster(ws, ["config", "set", "chat.liveDiff", "false"]);
+    assert.equal(live.code, 0, live.stderr);
+    assert.match(live.stdout, /Saved chat\.liveDiff → off · project|Saved chat\.liveDiff → false · project/);
+    assert.equal(readJson(ws.project).chat.liveDiff, false);
+    assert.equal(existsSync(ws.global) ? readJson(ws.global).chat?.liveDiff : undefined, undefined, "the global file is untouched");
+    const global = await muster(ws, ["config", "set", "appearance.header", "full", "--global"]);
+    assert.match(global.stdout, /· global/);
+    const { findSetting } = await import("@musterhq/core");
+    assert.doesNotMatch(findSetting("chat.speed")!.description, /How much context/, "Speed is described as speed");
+    assert.match(findSetting("chat.speed")!.description, /fast/i);
+  } finally {
+    await ws.cleanup();
+  }
+});
