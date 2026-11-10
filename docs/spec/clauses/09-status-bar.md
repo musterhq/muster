@@ -31,3 +31,13 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Environment:** chat harness.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-09-1D — The working row shows this turn, not the session
+
+- **Precondition:** a chat whose earlier turns used 91.8k input / 387 output tokens on a subscription (cost 0); a new turn has run 10.8 s.
+- **Action:** render the working row for the running turn; render a status line with cost 0, and one with cost $0.0123.
+- **Expected result:** the working row shows the verb, model, session and `10.8s` — no token counts (they belong to earlier turns; this turn's are known when it ends) and no `$0.0000`. A status line never shows a zero cost; a real cost still shows (`$0.0123`).
+- **Test:** `packages/cli/test/status-bar.test.ts` › "the working row shows this turn's time, not session totals or a zero cost"
+- **Environment:** pure renderers, injected clock.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

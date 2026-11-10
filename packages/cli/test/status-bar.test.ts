@@ -46,3 +46,17 @@ test("the footer renders below the composer", async () => {
   assert.equal(rows.at(-1)!.trim(), "gpt-6.1-terra · High │ ~/repo");
   assert.ok(rows.findIndex((row) => row.startsWith("❯")) < rows.length - 1, "composer above the bar");
 });
+
+// Spec: MUS-SPEC-09-1D (docs/spec/clauses/09-status-bar.md#mus-spec-09-1d--the-working-row-shows-this-turn-not-the-session)
+test("the working row shows this turn's time, not session totals or a zero cost", async () => {
+  const { formatTurnStatusLine, formatStatusLine, TurnTimer } = await import("../src/chat-tui.js");
+  let now = 0;
+  const timer = new TurnTimer(() => now);
+  now = 10_800;
+  const row = formatTurnStatusLine({ model: "gpt-6.1-terra · High", session: "qa-1", inputTokens: 91_800, outputTokens: 387, costUsd: 0 }, timer, 40).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.doesNotMatch(row, /in \/|out|\$/, row);
+  assert.match(row, /10\.8s/);
+  const idle = formatStatusLine({ model: "gpt", session: "s", inputTokens: 1000, outputTokens: 5, costUsd: 0 }).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.doesNotMatch(idle, /\$0\.0000/, "a subscription turn has no cost to show");
+  assert.match(formatStatusLine({ model: "gpt", session: "s", costUsd: 0.0123 }).replace(/\x1b\[[0-9;]*m/g, ""), /\$0\.0123/);
+});
