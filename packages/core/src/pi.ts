@@ -303,6 +303,35 @@ export async function runPiInteractive(input: PiInteractiveRunInput = {}): Promi
   };
 }
 
+/** The env var pi reads for each common provider's key. */
+const PI_PROVIDER_KEY_ENV: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GEMINI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  groq: "GROQ_API_KEY",
+  xai: "XAI_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  together: "TOGETHER_API_KEY",
+  fireworks: "FIREWORKS_API_KEY",
+};
+
+/**
+ * pi's "No API key found" ends with advice for its own TUI (`/login`), which
+ * Muster does not have. Say which key is missing and what to run instead.
+ */
+export function explainPiError(message: string): string {
+  const match = message.match(/^No API key found for (?:"([^"]+)"|the selected model|([\w.-]+))/);
+  if (!match) return message;
+  const provider = (match[1] ?? match[2])?.replace(/\.+$/, "");
+  if (provider) {
+    const env = PI_PROVIDER_KEY_ENV[provider];
+    return `No API key for pi provider ${provider}: ${env ? `set ${env}` : "set its API key in the environment"}, or pick another provider with /model <provider>/<model> (muster pi models lists them).`;
+  }
+  return "pi has no model it can use: no API key is set for any pi provider. Set one, for example ANTHROPIC_API_KEY or OPENAI_API_KEY, then run muster pi models to see which providers are available.";
+}
+
 export async function listPiModels(input: PiModelListInput = {}): Promise<PiModelInfo[]> {
   const pi = await import("@earendil-works/pi-coding-agent");
   const agentDir = input.agentDir ?? (process.env.MUSTER_PI_AGENT_DIR || join(homedir(), ".pi", "agent"));
@@ -562,7 +591,7 @@ export async function runPiEmbeddedAgent(input: PiAgentRunInput): Promise<PiAgen
         eventTypes,
         eventCounts,
         eventTrace,
-        errorMessage: promptError ?? (responseText ? undefined : session.state.errorMessage ?? "Pi SDK completed without assistant text."),
+        errorMessage: promptError ? explainPiError(promptError) : (responseText ? undefined : session.state.errorMessage ? explainPiError(session.state.errorMessage) : "Pi SDK completed without assistant text."),
         fallbackEligible: false,
       };
     } finally {
@@ -582,7 +611,7 @@ export async function runPiEmbeddedAgent(input: PiAgentRunInput): Promise<PiAgen
       eventTypes,
       eventCounts,
       eventTrace,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: explainPiError(error instanceof Error ? error.message : String(error)),
       fallbackEligible: !promptDispatched,
     };
   }
