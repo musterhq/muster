@@ -31,3 +31,13 @@
 - **Environment:** temp memory store (JSONL + rebuilt index).
 - **Known gaps:** Codex's own server-side history is reverted by `thread/revert`; Claude Code sessions start fresh instead.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-17-2A — Rewound turns are greyed out in the transcript
+
+- **Precondition:** a chat with turns "first", "second", "third".
+- **Action:** `/rewind 2` (rewinds "second" and "third").
+- **Expected result:** a dim `↺ rewound — the turns below were undone` row is inserted above "> second", and every row from "> second" on is repainted grey, so the transcript no longer reads as if those turns still stand; "first" keeps its look.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "rewound turns are greyed out in the transcript"
+- **Environment:** chat harness.
+- **Known gaps:** when the same prompt was sent more than once, the latest copy is the one marked.
+- **Evidence:** UNVERIFIED

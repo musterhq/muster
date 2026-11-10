@@ -31,3 +31,13 @@
 - **Environment:** real non-git temp dir, real workspace observer.
 - **Known gaps:** Muster does not undo untracked turns itself; the user needs git.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-13-1D — Undo and rewind share one record of a turn's changes
+
+- **Precondition:** chat in a git repo; the last turn changed `calc.py` and created `notes2.txt`.
+- **Action:** `/undo`; then open `/rewind`; then `/undo` again.
+- **Expected result:** after the undo the turn's recorded changes are cleared for `/rewind` too: the picker shows the turn as `· undone` (not `· 2 file(s)`), and rewinding past it does not report those files as "left alone". A second `/undo` says the last turn's changes were already undone, never that it "changed no files".
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "an undone turn has no changes left for rewind, and a second undo says it was already undone"
+- **Environment:** pure helpers (`markTurnUndone`, `rewindTurnLabel`, `undoLastTurnRows`).
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

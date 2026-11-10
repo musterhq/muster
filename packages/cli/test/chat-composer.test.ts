@@ -176,3 +176,22 @@ test("composer pickers cover every column and open under a rule", async () => {
   ruled.handleInput?.("j");
   assert.equal(typed, "j", "keys reach the picker");
 });
+
+// Spec: MUS-SPEC-17-2A (docs/spec/clauses/17-rewind.md#mus-spec-17-2a--rewound-turns-are-greyed-out-in-the-transcript)
+test("rewound turns are greyed out in the transcript", async () => {
+  let sinkRef!: MusterChatSink;
+  const chat = createMusterChatHarness({ onSubmit: async (text, sink) => { sinkRef = sink; sink.appendLine(`● answer to ${text}`); return true; } });
+  for (const prompt of ["first", "second", "third"]) {
+    chat.type(prompt);
+    await chat.submit();
+  }
+  const before = chat.transcript().length;
+  sinkRef.markRewound("second");
+  const rows = chat.transcript();
+  assert.equal(rows.length, before + 1, "one marker row is added");
+  const at = rows.findIndex((row) => row.replace(/\x1b\[[0-9;]*m/g, "").includes("rewound"));
+  assert.ok(at >= 0 && rows[at + 1]!.replace(/\x1b\[[0-9;]*m/g, "").startsWith("> second"), rows.join("\n"));
+  const muted = "\x1b[38;2;148;144;140m";
+  assert.ok(rows.slice(at + 1).filter((row) => row.trim()).every((row) => row.startsWith(muted) && !row.slice(muted.length).includes("\x1b[38;2;2")), "every rewound row is grey");
+  assert.ok(!rows.find((row) => row.includes("answer to first"))!.startsWith(muted), "earlier turns keep their look");
+});
