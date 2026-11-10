@@ -275,3 +275,41 @@ test("switching runtime leaves the composer empty and hints at /model", { timeou
     assert.match(out, /^Type \/model to pick a different model\.$/m, `${command}:\n${out}`);
   }
 });
+
+// Spec: MUS-SPEC-17-3A (docs/spec/clauses/17-rewind.md#mus-spec-17-3a--the-rewind-picker-is-titled-aligned-and-lists-only-turns-worth-rewinding)
+test("the rewind picker is titled, aligned and leaves out failed turns", async () => {
+  const liveDiff = await import("../src/live-diff.js") as Record<string, unknown>;
+  const { RuledOverlay } = await import("../src/chat-tui.js");
+  const rewindPickerOptions = liveDiff.rewindPickerOptions as (stack: readonly { prompt: string; patches: readonly unknown[] }[]) => Array<{ value: string; label: string }>;
+  const recordableTurn = liveDiff.recordableTurn as (turn: { failed: boolean; patches: readonly unknown[] }) => boolean;
+  assert.equal(typeof rewindPickerOptions, "function");
+  assert.equal(typeof recordableTurn, "function");
+  assert.equal(recordableTurn({ failed: true, patches: [] }), false, "a failed turn that changed nothing is not recorded");
+  assert.equal(recordableTurn({ failed: true, patches: [{ path: "a.txt" }] }), true, "a failed turn that changed files can still be rewound");
+  assert.equal(recordableTurn({ failed: false, patches: [] }), true);
+
+  const stack = Array.from({ length: 13 }, (_, index) => ({ prompt: `prompt ${index + 1}`, patches: [] }));
+  const options = rewindPickerOptions(stack);
+  assert.equal(options[0]!.value, "1", "most recent first");
+  const starts = options.map((option) => option.label.indexOf("prompt"));
+  assert.ok(starts.every((start) => start === starts[0]), options.map((option) => option.label).join("\n"));
+  assert.equal(options.find((option) => option.value === "13")!.label, "13  prompt 1");
+  assert.equal(options.find((option) => option.value === "9")!.label, " 9  prompt 5");
+
+  const inner = { render: () => ["item"], handleInput: () => {}, invalidate: () => {} };
+  const rows = new RuledOverlay(inner, { title: "Rewind to before which turn?", hint: "↑↓ choose · enter select · esc cancel" })
+    .render(60).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.deepEqual(rows, ["─".repeat(60), "Rewind to before which turn?", "item", "↑↓ choose · enter select · esc cancel"]);
+});
+
+// Spec: MUS-SPEC-17-3B (docs/spec/clauses/17-rewind.md#mus-spec-17-3b--the-rewind-result-names-the-prompt-without-cutting-a-word)
+test("the rewind result quotes the prompt and cuts only at a word", async () => {
+  const { rewindPromptPreview } = await import("../src/live-diff.js") as { rewindPromptPreview?: (prompt: string, max?: number) => string };
+  assert.equal(typeof rewindPromptPreview, "function");
+  assert.equal(rewindPromptPreview!("Create b.txt containing two. Remember the second codeword is WALRUS."), "Create b.txt containing two. Remember the second codeword…");
+  assert.equal(rewindPromptPreview!("Create b.txt containing two."), "Create b.txt containing two.");
+  assert.equal(rewindPromptPreview!("short  prompt\nhere"), "short prompt here");
+  const long = rewindPromptPreview!("Append a function sub(a, b) returning a - b to calc.py, and create notes2.txt containing two.");
+  assert.ok(long.endsWith("…") && long.length <= 61, long);
+  assert.equal(long, "Append a function sub(a, b) returning a - b to calc.py, and…");
+});

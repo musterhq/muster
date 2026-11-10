@@ -41,3 +41,23 @@
 - **Environment:** chat harness.
 - **Known gaps:** when the same prompt was sent more than once, the latest copy is the one marked.
 - **Evidence:** live, 2026-11-10: after `/rewind` of 2 turns, PgUp shows `↺ rewound — the turns below were undone` above the rewound prompt and the rows below in grey (`38;2;148;144;140`). Red→green: chat-composer.test.ts.
+
+## MUS-SPEC-17-3A — The rewind picker is titled, aligned and lists only turns worth rewinding
+
+- **Precondition:** a chat with 13 turns; turn 4 failed before doing anything (`Command failed (exit 1)`, no file changes).
+- **Action:** run `/rewind` with no number.
+- **Expected result:** the picker opens under a rule with the title `Rewind to before which turn?` and a dim key hint `↑↓ choose · enter select · esc cancel`; turn numbers are right-aligned so the prompts of turns 1–9 and 10+ start in one column; a failed turn that changed no files is not recorded, so it is neither listed nor counted (a failed turn that did change files is still listed).
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "the rewind picker is titled, aligned and leaves out failed turns"
+- **Environment:** pure `rewindPickerOptions` / `recordableTurn` (`live-diff.ts`) and `RuledOverlay`, NO_COLOR.
+- **Known gaps:** the picker shows the 15 most recent turns.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-17-3B — The rewind result names the prompt without cutting a word
+
+- **Precondition:** a turn whose prompt is "Create b.txt containing two. Remember the second codeword is WALRUS."
+- **Action:** rewind to before it.
+- **Expected result:** the result line quotes the prompt whole when it fits in 60 characters; a longer prompt is cut at the last word boundary and ends in `…` (never "…the second codeword is”" with no mark).
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "the rewind result quotes the prompt and cuts only at a word"
+- **Environment:** pure `rewindPromptPreview` (`live-diff.ts`).
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
