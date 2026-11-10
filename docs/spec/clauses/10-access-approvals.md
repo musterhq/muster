@@ -71,3 +71,13 @@
 - **Environment:** card renderer.
 - **Known gaps:** past 60 lines the card shows the first 60 and a count of the rest.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1G — Changing access mid-chat keeps the Codex conversation
+
+- **Precondition:** a chat on the Codex app-server with one finished turn; its warm app-server process still holds the thread (a thread has one writer).
+- **Action:** `/access read-only` (or any other mode), then send a prompt in the same conversation.
+- **Expected result:** the turn runs in the new mode on the SAME thread: Muster closes the idle warm process that holds the thread, waits for it to exit, and resumes the thread in a process with the new sandbox. The turn never fails with "failed to initialize thread persistence" and never falls back to a fresh thread.
+- **Test:** `packages/core/test/access-approvals.test.ts` › "an access change resumes the same Codex thread instead of colliding with the warm writer"
+- **Environment:** fake app-server that refuses to resume a thread while another live process holds its writer lock.
+- **Known gaps:** a warm process that is busy with a turn is left alone; the new turn waits behind the chat's own turn order.
+- **Evidence:** live repro before the fix, 2026-11-10: `/tmp/qafix-tr`, session qafix-acc1 — `✖ Command failed (exit 1): codex … failed to initialize thread persistenc` right after `/access read-only`.
