@@ -2752,13 +2752,13 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       state.sessionWorkspaceCwd = chatWorkspaceCwd(state);
       const removed = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
       ensureNamedChatSession(state.sessionName, chatSessionWorkspaceCwd(state));
-      console.log(color(`session=${state.sessionName} provider_handles_cleared=${removed}`, "green"));
+      console.log(color(`New session ${state.sessionName}.`, "green"));
       return true;
     }
     case "reset": {
       const removed = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
       clearCodexAppServerConversation(chatConversationKey(state.sessionName), "cli-chat");
-      console.log(color(`provider_handles_cleared=${removed}`, "green"));
+      console.log(color("Conversation reset; the next turn starts a fresh provider thread.", "green"));
       return true;
     }
     case "clear":
@@ -3457,7 +3457,7 @@ async function switchChatReasoningMode(args: string, state: ChatState): Promise<
   if (mode === "auto" || mode === "config") {
     state.effortOverride = undefined;
     state.effortSource = state.configuredEffortSource ?? "app default";
-    console.log(color(`Effort=${effortDisplayLabel(state.configuredEffort)} · ${state.effortSource}`, "green"));
+    console.log(color(`Effort: ${effortDisplayLabel(state.configuredEffort)} · ${state.effortSource}`, "green"));
     await refreshChatTuiHeader(state);
     return;
   }
@@ -3469,7 +3469,7 @@ async function switchChatReasoningMode(args: string, state: ChatState): Promise<
     }
     state.effortOverride = effort;
     state.effortSource = "session";
-    console.log(color(`Effort=${effortDisplayLabel(effort)} · session`, "green"));
+    console.log(color(`Effort: ${effortDisplayLabel(effort)} · this session`, "green"));
     await refreshChatTuiHeader(state);
     return;
   }
@@ -3478,7 +3478,7 @@ async function switchChatReasoningMode(args: string, state: ChatState): Promise<
     return;
   }
   state.reasoningMode = mode;
-  console.log(color(`reasoning_density=${mode}`, "green"));
+  console.log(color(`Reasoning summaries: ${mode}`, "green"));
 }
 
 function toggleChatLiveDiff(args: string, state: ChatState): void {
@@ -4388,7 +4388,7 @@ async function switchChatProvider(args: string, state: ChatState): Promise<void>
     }
     provider = await addPresetProvider(providerId);
     config = await loadConfig();
-    console.log(color(`provider_added=${provider.id} key=${provider.apiKeyEnv ?? "none"} default_model=${provider.defaultModel}`, "green"));
+    console.log(color(`Added provider ${provider.id} · key ${provider.apiKeyEnv ?? "none"} · default model ${provider.defaultModel}`, "green"));
   }
   const runtimeId = state.runtime ?? config.routing.defaultRuntime;
   const model = modelParts.join(" ").trim() || provider.defaultModel;
@@ -4397,8 +4397,8 @@ async function switchChatProvider(args: string, state: ChatState): Promise<void>
   state.provider = providerId;
   state.model = model;
   await refreshChatTuiHeader(state);
-  const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-  console.log(color(`provider=${providerId} model=${model} runtime=${runtimeId} provider_handles_cleared=${cleared}`, "green"));
+  await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+  console.log(color(`Provider: ${providerId} · model ${model} · runtime ${runtimeId}`, "green"));
   if (provider.apiKeyEnv && !process.env[provider.apiKeyEnv]) {
     printChatPanel("Setup Required", [
       `${color(provider.apiKeyEnv, "yellow")} is not set for ${providerId}.`,
@@ -4407,7 +4407,7 @@ async function switchChatProvider(args: string, state: ChatState): Promise<void>
       `${color("Next", "accent")} Choose a model now; the provider will work once the key exists.`,
     ]);
   }
-  openNextPicker(state, "/model");
+  console.log(color(PICK_MODEL_HINT, "dim"));
 }
 
 async function cloudChatProvider(args: string, state: ChatState): Promise<void> {
@@ -4472,7 +4472,7 @@ async function openComposerPicker(state: ChatState): Promise<void> {
   if (selection.kind === "effort") {
     state.effortOverride = selection.value;
     state.effortSource = "session";
-    console.log(color(`Effort=${effortDisplayLabel(selection.value)} · session`, "green"));
+    console.log(color(`Effort: ${effortDisplayLabel(selection.value)} · this session`, "green"));
     await refreshChatTuiHeader(state);
   }
   if (selection.kind === "speed") {
@@ -4508,8 +4508,8 @@ async function selectChatModel(model: string, state: ChatState): Promise<void> {
     state.runtime = "codex";
     state.provider = "codex";
     await refreshChatTuiHeader(state);
-    const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-    console.log(color(`Model=${gateway.model} via ${gateway.provider} (Codex model provider) · provider_handles_cleared=${cleared}`, "green"));
+    await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+    console.log(color(`Model: ${gateway.model} via ${gateway.provider} (Codex model provider)`, "green"));
     return;
   }
   const nextProvider = modelProvider(model);
@@ -4527,7 +4527,7 @@ async function selectChatModel(model: string, state: ChatState): Promise<void> {
     state.pendingContinuityContext = loadChatContinuityContext(state.sessionName);
     console.log(color(`switched to ${modelDisplayLabel(model)} — conversation continues; ${priorProvider} thread parked`, "dim"));
   } else {
-    console.log(color(`Model=${modelDisplayLabel(model)} · session`, "green"));
+    console.log(color(`Model: ${modelDisplayLabel(model)} · this session`, "green"));
   }
   await refreshChatTuiHeader(state);
 }
@@ -4566,10 +4566,10 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
     state.provider = "claude-code";
     state.model = "sonnet";
     await refreshChatTuiHeader(state);
-    const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-    console.log(color(`runtime=claude-code provider=claude-code model=${state.model} provider_handles_cleared=${cleared}`, "green"));
+    await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+    console.log(color(`Runtime: Claude Code · model ${state.model}`, "green"));
     console.log(color("Uses your local Claude Code login. Run `claude` once outside Muster if auth is not set.", "dim"));
-    openNextPicker(state, "/model");
+    console.log(color(PICK_MODEL_HINT, "dim"));
     return;
   }
   if (runtimeId === "codex") {
@@ -4577,9 +4577,9 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
     state.provider = "codex";
     state.model = DEFAULT_CODEX_MODEL;
     await refreshChatTuiHeader(state);
-    const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-    console.log(color(`runtime=codex provider=codex model=${state.model} provider_handles_cleared=${cleared}`, "green"));
-    openNextPicker(state, "/model");
+    await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+    console.log(color(`Runtime: Codex · model ${state.model}`, "green"));
+    console.log(color(PICK_MODEL_HINT, "dim"));
     return;
   }
   if (runtimeId === "pi") {
@@ -4587,8 +4587,8 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
     state.provider = "pi-default";
     state.model = "pi-default";
     await refreshChatTuiHeader(state);
-    const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-    console.log(color(`runtime=pi provider=pi-default model=${state.model} provider_handles_cleared=${cleared}`, "green"));
+    await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+    console.log(color(`Runtime: pi · model ${state.model}`, "green"));
     const piWarning = piNoKeyWarning(await listPiModels().catch(() => [{ available: true }]));
     if (piWarning) console.log(color(piWarning, "yellow"));
     openNextPicker(state, "/provider");
@@ -4604,9 +4604,9 @@ async function switchChatRuntime(args: string, state: ChatState): Promise<void> 
   state.provider = runtime.provider;
   state.model = firstRuntimeModel(runtime) ?? provider?.defaultModel;
   await refreshChatTuiHeader(state);
-  const cleared = await clearConversationSessionHandles(chatConversationKey(state.sessionName));
-  console.log(color(`runtime=${runtimeId} provider=${state.provider} model=${state.model ?? "-"} provider_handles_cleared=${cleared}`, "green"));
-  openNextPicker(state, "/model");
+  await clearConversationSessionHandles(chatConversationKey(state.sessionName));
+  console.log(color(`Runtime: ${runtimeId} · provider ${state.provider} · model ${state.model ?? "default"}`, "green"));
+  console.log(color(PICK_MODEL_HINT, "dim"));
 }
 
 function switchChatSpeed(args: string, state: ChatState): void {
@@ -4631,6 +4631,9 @@ function switchChatSpeed(args: string, state: ChatState): void {
     "Type a normal message to run the agent, or use /plugins, /skills, /mcp to add capabilities.",
   ]);
 }
+
+/** After a switch the composer stays empty; the user is told where the picker is. */
+const PICK_MODEL_HINT = "Type /model to pick a different model.";
 
 function openNextPicker(state: ChatState, command: string): void {
   if (state.statusSink) {
@@ -5512,7 +5515,7 @@ function setChatAccessMode(args: string, state: ChatState): void {
     return;
   }
   state.accessMode = value;
-  console.log(color(`access=${value} · ${ACCESS_MODE_HELP[value]}`, "green"));
+  console.log(color(`Access: ${value} · ${ACCESS_MODE_HELP[value]}`, "green"));
 }
 
 /** The menu's label column: the command plus whole argument hints that fit, never a half-cut `[a|b|c`. */
