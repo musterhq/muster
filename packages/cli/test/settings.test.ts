@@ -312,7 +312,7 @@ test("validate warns about keys a file ignores and names a JSON error with its l
     assert.notEqual(broken.code, 0);
     assert.match(broken.stdout + broken.stderr, /not valid JSON.*line 4/);
     const list = await muster(ws, ["config", "list"]);
-    assert.match(list.stdout + list.stderr, /not valid JSON.*config\.json/, "list says the file was skipped instead of ignoring it silently");
+    assert.match(list.stdout + list.stderr, /skipped .*config\.json.*not valid JSON/, "list says the file was skipped instead of ignoring it silently");
   } finally {
     await ws.cleanup();
   }

@@ -398,6 +398,19 @@ export interface SettingIssue {
   readonly file: string;
   readonly key: string;
   readonly message: string;
+  /** A warning is a value Muster ignores (it never fails `validate`); an error is a value it cannot use. */
+  readonly severity?: "error" | "warning";
+}
+
+/** Why a settings file cannot be read as an object: the parser's own message (with its line), or the wrong shape. */
+function jsonFileProblem(path: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    return `is not valid JSON: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? undefined : "is not a JSON object";
 }
 
 const REGISTRY_ROOTS = new Set(["chat", "appearance", "models"]);
@@ -412,14 +425,14 @@ export function validateSettingsFiles(cwd = process.cwd()): SettingIssue[] {
     if (!existsSync(file)) continue;
     const json = readJson(file);
     if (!json) {
-      issues.push({ file, key: "(file)", message: "is not a JSON object" });
+      issues.push({ file, key: "(file)", message: jsonFileProblem(file) ?? "is not a JSON object", severity: "error" });
       continue;
     }
     for (const setting of SETTINGS) {
       const raw = getPath(json, setting.key);
       if (raw === undefined) continue;
       if (!setting.scopes.includes(scope)) {
-        issues.push({ file, key: setting.key, message: `is ${setting.scopes.join("/")}-only and is ignored in the ${scope} file` });
+        issues.push({ file, key: setting.key, message: `is ${setting.scopes.join("/")}-only and is ignored in the ${scope} file (remove it, or set it in the ${setting.scopes[0]} file)`, severity: "warning" });
         continue;
       }
       try {

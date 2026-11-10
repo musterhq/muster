@@ -1656,6 +1656,10 @@ function configCommand(commandArgs: readonly string[]): void {
         return;
       }
       for (const line of renderSettingsList(process.cwd())) console.log(line);
+      // A broken file is skipped by the list: say so instead of showing defaults silently.
+      for (const issue of validateSettingsFiles().filter((entry) => entry.key === "(file)")) {
+        console.error(color(`! skipped ${issue.file}: ${issue.message}`, "yellow"));
+      }
       return;
     }
     case "get": {
@@ -1696,8 +1700,12 @@ function configCommand(commandArgs: readonly string[]): void {
         console.log(color(`Settings valid · project ${paths.project} · global ${paths.global}`, "green"));
         return;
       }
-      for (const issue of issues) console.log(`${color("✗", "red")} ${issue.key}: ${issue.message} (${issue.file})`);
-      process.exit(1);
+      for (const issue of issues) {
+        const warning = issue.severity === "warning";
+        console.log(`${warning ? color("!", "yellow") : color("✗", "red")} ${issue.key === "(file)" ? issue.file : issue.key}: ${issue.message}${issue.key === "(file)" ? "" : ` (${issue.file})`}`);
+      }
+      if (issues.some((issue) => issue.severity !== "warning")) process.exit(1);
+      return;
     }
     default:
       fail(`Unknown config command ${sub}. Use: muster config list [--json] | get <key> | set <key> <value> | reset <key> | path | validate`);
