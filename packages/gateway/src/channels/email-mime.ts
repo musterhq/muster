@@ -16,6 +16,15 @@ export interface ParsedEmail {
   readonly precedence?: string;
   readonly listId?: string;
   readonly text: string;
+  /** audio/* parts (base64 bytes), for the shared voice path. */
+  readonly attachments?: readonly EmailAttachment[];
+}
+
+export interface EmailAttachment {
+  readonly name: string;
+  readonly mime: string;
+  readonly bytes: string;
+  readonly sizeBytes: number;
 }
 
 interface Part {
@@ -95,6 +104,27 @@ function partText(part: Part): { readonly plain?: string; readonly html?: string
   return {};
 }
 
+/** audio/* parts anywhere in the MIME tree. */
+function audioParts(part: Part, out: EmailAttachment[] = []): EmailAttachment[] {
+  const contentType = part.headers.get("content-type") ?? "text/plain";
+  const type = contentType.toLowerCase();
+  if (type.startsWith("multipart/")) {
+    const boundary = headerParam(contentType, "boundary");
+    if (!boundary) return out;
+    const sections = part.body.split(new RegExp(`\\r?\\n?--${boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:--)?[ \\t]*\\r?\\n?`));
+    for (const section of sections.slice(1)) if (section.trim()) audioParts(splitHeaders(section), out);
+    return out;
+  }
+  if (!type.startsWith("audio/")) return out;
+  const encoding = (part.headers.get("content-transfer-encoding") ?? "7bit").toLowerCase();
+  const bytes = encoding === "base64"
+    ? Buffer.from(part.body.replace(/\s+/g, ""), "base64")
+    : Buffer.from(encoding === "quoted-printable" ? decodeQuotedPrintable(part.body) : part.body, "latin1");
+  const name = decodeHeaderWords(headerParam(part.headers.get("content-disposition"), "filename") ?? headerParam(contentType, "name") ?? "audio");
+  out.push({ name, mime: type.split(";")[0].trim(), bytes: bytes.toString("base64"), sizeBytes: bytes.length });
+  return out;
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
@@ -141,6 +171,7 @@ export function parseEmailMessage(raw: string | Buffer): ParsedEmail {
   const from = addressOf(header("from"));
   const found = partText(top);
   const text = found.plain ?? (found.html ? htmlToText(found.html) : "");
+  const attachments = audioParts(top);
   return {
     messageId: messageIds(header("message-id"))[0],
     from: from.address,
@@ -153,6 +184,7 @@ export function parseEmailMessage(raw: string | Buffer): ParsedEmail {
     precedence: header("precedence")?.toLowerCase(),
     listId: header("list-id"),
     text: text.replace(/\r\n/g, "\n"),
+    ...(attachments.length ? { attachments } : {}),
   };
 }
 

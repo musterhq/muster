@@ -33,6 +33,8 @@ export interface FakeMatrixHomeserver {
   readonly requests: Array<{ readonly method: string; readonly path: string; readonly authorization?: string }>;
   syncCount(): number;
   inject(roomId: string, sender: string, body: string, content?: Record<string, unknown>): string;
+  /** Store media and return its mxc:// URI (served by the authenticated download endpoint). */
+  putMedia(bytes: Uint8Array, contentType: string): string;
   invite(roomId: string, inviter: string): void;
   waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void>;
   /** Wait until the client has completed `count` more sync requests. */
@@ -53,6 +55,12 @@ export async function startFakeMatrixHomeserver(options: {
   const joins: string[] = [];
   const requests: FakeMatrixHomeserver["requests"] = [];
   const txns = new Map<string, string>();
+  const media = new Map<string, { readonly bytes: Buffer; readonly type: string }>();
+  const putMedia = (bytes: Uint8Array, type: string): string => {
+    const id = `m${media.size + 1}`;
+    media.set(id, { bytes: Buffer.from(bytes), type });
+    return `mxc://fake.test/${id}`;
+  };
   let eventCounter = 0;
   let syncs = 0;
   let waiters: Array<() => void> = [];
@@ -136,7 +144,15 @@ export async function startFakeMatrixHomeserver(options: {
         return;
       }
       if (request.method === "POST" && url.pathname === "/_matrix/media/v3/upload") {
-        json(response, 200, { content_uri: `mxc://fake.test/${body.length}` });
+        json(response, 200, { content_uri: putMedia(body, request.headers["content-type"] ?? "application/octet-stream") });
+        return;
+      }
+      const download = url.pathname.match(/^\/_matrix\/client\/v1\/media\/download\/fake\.test\/([^/]+)$/);
+      if (request.method === "GET" && download) {
+        const item = media.get(decodeURIComponent(download[1]));
+        if (!item) { json(response, 404, { errcode: "M_NOT_FOUND", error: "Not found" }); return; }
+        response.writeHead(200, { "content-type": item.type });
+        response.end(item.bytes);
         return;
       }
       json(response, 404, { errcode: "M_UNRECOGNIZED", error: "Unrecognized request" });
@@ -165,6 +181,7 @@ export async function startFakeMatrixHomeserver(options: {
     inject(roomId, sender, body, content) {
       return appendEvent(roomId, sender, content?.type === "m.room.encrypted" ? "m.room.encrypted" : "m.room.message", content ?? { msgtype: "m.text", body }).event_id;
     },
+    putMedia,
     invite(roomId, inviter) {
       log.push({ index: log.length + 1, kind: "invite", roomId, inviter });
       notify();

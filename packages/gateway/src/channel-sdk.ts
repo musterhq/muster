@@ -1,4 +1,4 @@
-import type { ApprovalRequest, SurfaceArtifact, SurfaceMessage, SurfaceReply } from "./envelope.js";
+import type { ApprovalRequest, SurfaceArtifact, SurfaceAttachment, SurfaceMessage, SurfaceReply } from "./envelope.js";
 import type { GatewayConfig } from "./gateway-config.js";
 import type { ApprovalActionParser, ApprovalActionRenderContext, ApprovalActionTokens } from "./presentation.js";
 
@@ -57,6 +57,12 @@ export interface ChannelOutbound {
   readonly buttons?: readonly ChannelButton[];
   /** True for the 2nd..nth chunk of one long reply. */
   readonly continuation?: boolean;
+}
+
+export interface ChannelVoiceAudio {
+  readonly path: string;
+  readonly mime: string;
+  readonly seconds?: number;
 }
 
 export interface ChannelSendResult {
@@ -141,6 +147,14 @@ export interface ChannelAdapter {
   send(peer: ChannelPeer, outbound: ChannelOutbound, context: ChannelContext): Promise<ChannelSendResult>;
   edit?(peer: ChannelPeer, messageId: string, outbound: ChannelOutbound, context: ChannelContext): Promise<void>;
   sendMedia?(peer: ChannelPeer, artifact: SurfaceArtifact, context: ChannelContext): Promise<ChannelSendResult>;
+  /**
+   * Fetch the bytes of an inbound attachment that carries a platform url
+   * (Telegram file id, Matrix mxc://). The shared voice path calls this only
+   * after its length and size checks pass.
+   */
+  downloadAttachment?(attachment: SurfaceAttachment, context: ChannelContext): Promise<Uint8Array>;
+  /** Send a spoken reply as a native voice message (Ogg/Opus). Without it the runner falls back to sendMedia. */
+  sendVoice?(peer: ChannelPeer, audio: ChannelVoiceAudio, context: ChannelContext): Promise<ChannelSendResult>;
   /** Approval prompt: buttons when the channel has them, otherwise a numbered choice. */
   renderApproval(input: { readonly request: ApprovalRequest; readonly text?: string; readonly actions?: ApprovalActionTokens }): ChannelApprovalRender;
   /** Text sent to an unpaired sender. */

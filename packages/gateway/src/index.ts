@@ -41,3 +41,4 @@ export * from "./rpc.js";
 export * from "./channel-sdk.js";
 export * from "./channels/index.js";
 export * from "./channel-runner.js";
+export * from "./voice-notes.js";

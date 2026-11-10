@@ -28,6 +28,7 @@ import {
 } from "./presentation.js";
 import type { ApprovalActionCodec, ApprovalActionRenderContext } from "./presentation.js";
 import { completeAdapterIngress, handleSurfaceMessage } from "./server.js";
+import { deliverSpokenReply, prepareVoiceInbound, withVoiceEcho } from "./voice-notes.js";
 
 /**
  * The shared channel path. Every SDK channel's inbound goes through
@@ -314,8 +315,30 @@ export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDep
   await deps.ingress.transition({ ...ownership, to: "running" });
   let delivering = false;
   try {
-    const message = await applyNumberedChoice(item.message, deps);
-    const reply = await handleSurfaceMessage(message, {
+    const chosen = await applyNumberedChoice(item.message, deps);
+    const peer: ChannelPeer = {
+      conversationId: chosen.conversationId,
+      replyTo: chosen.replyTo,
+      senderId: chosen.senderId,
+      surfaceId: chosen.surfaceId,
+      raw: item.message.raw,
+    };
+    // Shared voice path: adapters only expose audio; transcription happens here.
+    const voiceStep = await prepareVoiceInbound(chosen, {
+      config: deps.config,
+      cwd: context.cwd,
+      env: process.env,
+      log: context.log,
+      download: adapter.downloadAttachment ? (attachment) => adapter.downloadAttachment!(attachment, context) : undefined,
+    });
+    if (voiceStep.kind === "refuse") {
+      delivering = true;
+      await deliverChannelReply(adapter, peer, { text: voiceStep.text }, context, deps.approvals);
+      await completeAdapterIngress(deps.ingress, ownership, "delivered");
+      return "handled";
+    }
+    const message = voiceStep.message;
+    const answered = await handleSurfaceMessage(message, {
       config: deps.config,
       cwd: context.cwd,
       gateway: context.gateway,
@@ -325,15 +348,22 @@ export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDep
       registry: deps.registry,
       fetcher: context.fetcher,
     });
+    const reply = withVoiceEcho(answered, message);
     delivering = true;
-    await deliverChannelReply(adapter, {
-      conversationId: message.conversationId,
-      replyTo: message.replyTo,
-      senderId: message.senderId,
-      surfaceId: message.surfaceId,
-      raw: item.message.raw,
-    }, reply, context, deps.approvals);
+    await deliverChannelReply(adapter, peer, reply, context, deps.approvals);
     await completeAdapterIngress(deps.ingress, ownership, "delivered");
+    await deliverSpokenReply({
+      config: deps.config,
+      cwd: context.cwd,
+      message,
+      reply,
+      log: context.log,
+      send: async (audio) => {
+        if (adapter.sendVoice) return adapter.sendVoice(peer, audio, context);
+        if (adapter.capabilities.media && adapter.sendMedia) return adapter.sendMedia(peer, { name: "voice-reply.ogg", mime: audio.mime, path: audio.path }, context);
+        throw new Error(`${adapter.id} cannot send audio`);
+      },
+    });
     return "handled";
   } catch (error) {
     if (delivering) await completeAdapterIngress(deps.ingress, ownership, "unknown").catch(() => undefined);

@@ -62,6 +62,7 @@ import { ChannelVerificationError } from "./channel-sdk.js";
 import type { ChannelAdapter } from "./channel-sdk.js";
 import { parseSlackBody, slackChannel } from "./channels/slack.js";
 import { telegramChannel } from "./channels/telegram.js";
+import { deliverSpokenReply, prepareVoiceInbound, voiceEchoLine, withVoiceEcho } from "./voice-notes.js";
 import type { OutboundQueue } from "./streaming.js";
 import {
   createGatewayIngressFingerprint,
@@ -2695,7 +2696,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
   const deliveryKey = adapterDeliveryKey("telegram", body);
   const cached = deliveryLookup(deliveryKey);
   if (cached !== undefined) return cached;
-  const mapped = telegramUpdateToSurfaceMessage(payload, { approvalActions: context.approvalActions });
+  let mapped = telegramUpdateToSurfaceMessage(payload, { approvalActions: context.approvalActions });
   if (!mapped) return { ok: true, ignored: "not a text message update" };
   const onboardingReply = await frappeTelegramOnboardingReply(mapped, payload, context);
   if (onboardingReply) {
@@ -2709,8 +2710,48 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
     deliveryStore(deliveryKey, result);
     return result;
   }
+  // Shared voice path: audio becomes the prompt, or the user hears why not.
+  const telegramChannelContext = {
+    gateway: context.gateway,
+    cwd: context.cwd,
+    fetcher: context.fetcher,
+    log: context.log,
+    env: process.env,
+  };
+  const voiceStep = await prepareVoiceInbound(mapped, {
+    config: context.config,
+    cwd: context.cwd,
+    log: context.log,
+    download: (attachment) => telegramChannel.downloadAttachment!(attachment, telegramChannelContext),
+  });
+  if (voiceStep.kind === "refuse") {
+    const refusal: SurfaceReply = { text: voiceStep.text };
+    if (context.durableDelivery) {
+      // Durable checkpoints need a non-empty text; a caption-less voice note has none.
+      await context.durableDelivery.checkpoint([{ message: { ...mapped, text: mapped.text.trim() || "[voice note]" }, reply: refusal }]);
+      await context.durableDelivery.begin();
+    }
+    await deliverTelegramReply(botToken, refusal, mapped.conversationId, context, mapped);
+    if (context.durableDelivery) await context.durableDelivery.delivered();
+    const result = { ok: true, voice: "refused" };
+    deliveryStore(deliveryKey, result);
+    return result;
+  }
+  mapped = voiceStep.message;
+  const speakTelegramReply = async (source: SurfaceMessage, reply: SurfaceReply | PairingChallenge) => {
+    await deliverSpokenReply({
+      config: context.config,
+      cwd: context.cwd,
+      message: source,
+      reply,
+      log: context.log,
+      send: (audio) => telegramChannel.sendVoice!({ conversationId: source.conversationId }, audio, telegramChannelContext),
+    });
+  };
   if (context.gateway.telegram?.stream === "draft") {
     const message: SurfaceMessage = { ...mapped, stream: "draft" };
+    // A streamed reply cannot be prefixed, so the echo of what was heard goes first.
+    if (message.voice) await sendTelegramPayload(botToken, { chat_id: message.conversationId, text: voiceEchoLine(message.voice.transcript) }, context);
     const channelSink = createTelegramDraftSink({
       botToken,
       chatId: message.conversationId,
@@ -2759,6 +2800,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
       // pairing challenges fall through to the normal buffered send below.
       if (!isPairingChallenge(reply) && durableDraftDelivered) {
         for (const artifact of reply.artifacts ?? []) await sendTelegramArtifact(botToken, artifact, message.conversationId, context);
+        await speakTelegramReply(message, reply);
         const result = { ok: true, streamed: true };
         deliveryStore(deliveryKey, result);
         return result;
@@ -2769,6 +2811,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
       }
       await deliverTelegramReply(botToken, reply, message.conversationId, context, message);
       if (context.durableDelivery && !durableDraftDelivered) await context.durableDelivery.delivered();
+      await speakTelegramReply(message, reply);
       const result = { ok: true };
       deliveryStore(deliveryKey, result);
       return result;
@@ -2792,6 +2835,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
       onReasoningDelta: (delta) => progress.update(delta),
       onStatus: (status) => progress.set(status),
     }));
+    reply = withVoiceEcho(reply, message);
     if (context.durableDelivery) await context.durableDelivery.checkpoint([{ message, reply }]);
     if (context.durableDelivery && !isPairingChallenge(reply) && !reply.approvalRequest) {
       await context.durableDelivery.begin();
@@ -2822,6 +2866,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
       await deliverTelegramArtifactsOnly(botToken, reply, message.conversationId, context);
     }
     if (context.durableDelivery) await context.durableDelivery.delivered();
+    await speakTelegramReply(message, reply);
     const result = { ok: true };
     deliveryStore(deliveryKey, result);
     return result;

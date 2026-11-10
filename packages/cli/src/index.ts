@@ -342,6 +342,7 @@ import {
 } from "@musterhq/gateway";
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
 import { sdkChannelsCommand } from "./sdk-channels-command.js";
+import { voiceCommand } from "./voice-command.js";
 import { renderSettingsList, SettingsPanel, type SettingsChange } from "./settings-panel.js";
 import { allowedSettingValues, formatSettingValue, requireSetting, resetSetting as resetSettingValue, resolveSetting, resolveSettings, setSetting, settingsPaths, settingValues, validateSettingsFiles, type SettingScope } from "@musterhq/core";
 import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
@@ -382,7 +383,7 @@ const SHELL_COMMANDS = [
   "episodes", "feedback", "candidates", "eval", "capability", "roster", "artifacts", "plugins", "mcp", "dashboard",
   "context", "latency", "memory", "goal", "tui", "provider", "runtime", "qa", "pi", "state", "migrate", "sessions",
   "skills", "pulse", "subagents", "tasks", "board", "demo", "benchmark", "run", "tokens", "traces", "profile",
-  "schedule", "daemon", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe",
+  "schedule", "daemon", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe", "voice",
 ] as const;
 
 function readCliPackageVersion(): string {
@@ -580,6 +581,9 @@ async function main(): Promise<void> {
     case "frappe":
       await frappeCommand(args);
       return;
+    case "voice":
+      await voiceCommand(args);
+      return;
     default:
       throw new Error(unknownShellCommandMessage(command, SHELL_COMMANDS));
   }
@@ -728,6 +732,9 @@ Usage:
   muster profile create|list|use|current [name] | clone <from> <to>
   muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<channel>/<peer>] | list | remove <id> | run-due
   muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<channel>/<peer>]   # one-off reminder (also: ISO time)
+  muster voice doctor [--json]                # speech tools, whisper models, and the config line that turns local speech on
+  muster voice transcribe <audio-file> [--json]
+  muster voice say "text" [-o out.ogg|out.wav] [--voice Name]   # without -o it plays the speech
   muster daemon [--interval 20] [--once]   # run due reminders and routines; see muster daemon --help
   muster evolve <suite.json> [--runtime pi] [--provider anthropic] [--model ...] [--iterations 2]
   muster evolve selfcheck

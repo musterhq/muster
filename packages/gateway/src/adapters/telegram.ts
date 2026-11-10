@@ -1,5 +1,5 @@
 import { isPairingChallenge } from "../envelope.js";
-import type { PairingChallenge, SurfaceMessage, SurfaceReply } from "../envelope.js";
+import type { PairingChallenge, SurfaceAttachment, SurfaceMessage, SurfaceReply } from "../envelope.js";
 import {
   approvalFallbackText,
   bindSurfaceAction,
@@ -44,6 +44,9 @@ interface TelegramUpdate {
     readonly text?: string;
     readonly caption?: string;
     readonly reply_to_message?: { readonly message_id?: number };
+    readonly voice?: TelegramFile;
+    readonly audio?: TelegramFile;
+    readonly document?: TelegramFile;
   };
   readonly callback_query?: {
     readonly id?: string;
@@ -56,7 +59,39 @@ interface TelegramUpdate {
   };
 }
 
-/** Map a Telegram update to the gateway envelope. Non-text updates map to undefined. */
+interface TelegramFile {
+  readonly file_id?: string;
+  readonly file_name?: string;
+  readonly mime_type?: string;
+  readonly file_size?: number;
+  readonly duration?: number;
+}
+
+/** Pseudo-url for a Telegram file; the channel adapter resolves it with getFile. */
+export const TELEGRAM_FILE_URL_PREFIX = "telegram-file:";
+
+/** Voice notes, audio files and audio documents as attachments (the shared voice path transcribes them). */
+function telegramAudioAttachments(message: NonNullable<TelegramUpdate["message"]>): SurfaceAttachment[] {
+  const out: SurfaceAttachment[] = [];
+  const add = (file: TelegramFile | undefined, fallbackName: string, fallbackMime: string) => {
+    if (!file?.file_id) return;
+    const mime = file.mime_type ?? fallbackMime;
+    if (!mime.startsWith("audio/")) return;
+    out.push({
+      name: file.file_name ?? fallbackName,
+      mime,
+      url: `${TELEGRAM_FILE_URL_PREFIX}${file.file_id}`,
+      ...(typeof file.duration === "number" ? { seconds: file.duration } : {}),
+      ...(typeof file.file_size === "number" ? { sizeBytes: file.file_size } : {}),
+    });
+  };
+  add(message.voice, "voice.ogg", "audio/ogg");
+  add(message.audio, "audio", "audio/mpeg");
+  add(message.document, "document", "application/octet-stream");
+  return out;
+}
+
+/** Map a Telegram update to the gateway envelope. Updates with neither text nor audio map to undefined. */
 export function telegramUpdateToSurfaceMessage(update: unknown, options: TelegramMappingOptions = {}): SurfaceMessage | undefined {
   if (typeof update !== "object" || update === null) return undefined;
   const typed = update as TelegramUpdate;
@@ -81,13 +116,15 @@ export function telegramUpdateToSurfaceMessage(update: unknown, options: Telegra
   }
   const message = typed.message;
   if (!message?.chat?.id || !message.from?.id) return undefined;
-  const text = message.text ?? message.caption;
-  if (typeof text !== "string" || !text.trim()) return undefined;
+  const text = message.text ?? message.caption ?? "";
+  const attachments = telegramAudioAttachments(message);
+  if (typeof text !== "string" || (!text.trim() && !attachments.length)) return undefined;
   return {
     surfaceId: TELEGRAM_SURFACE_ID,
     conversationId: String(message.chat.id),
     senderId: String(message.from.id),
     text,
+    ...(attachments.length ? { attachments } : {}),
     replyTo: message.reply_to_message?.message_id !== undefined ? String(message.reply_to_message.message_id) : undefined,
     raw: update,
   };

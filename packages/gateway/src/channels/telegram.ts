@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { isPairingChallenge } from "../envelope.js";
-import { surfaceReplyToTelegramSend, TELEGRAM_SURFACE_ID, telegramUpdateToSurfaceMessage } from "../adapters/telegram.js";
+import { surfaceReplyToTelegramSend, TELEGRAM_FILE_URL_PREFIX, TELEGRAM_SURFACE_ID, telegramUpdateToSurfaceMessage } from "../adapters/telegram.js";
 import { ChannelVerificationError, headerValue, numberedApprovalRender } from "../channel-sdk.js";
 import type { ChannelAdapter, ChannelContext, ChannelDoctorCheck, ChannelSendResult } from "../channel-sdk.js";
 
@@ -88,6 +88,28 @@ export const telegramChannel: ChannelAdapter = {
     const response = await context.fetcher(`${TELEGRAM_API}/bot${botToken(context)}/sendDocument`, { method: "POST", body: form });
     const body = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok || body.ok !== true) throw new Error(`telegram sendDocument failed: HTTP ${response.status}`);
+    return { messageIds: messageIdOf(body) };
+  },
+  async downloadAttachment(attachment, context) {
+    if (!attachment.url?.startsWith(TELEGRAM_FILE_URL_PREFIX)) throw new Error("telegram: attachment has no Telegram file id");
+    const fileId = attachment.url.slice(TELEGRAM_FILE_URL_PREFIX.length);
+    const body = await callTelegram(context, "getFile", { file_id: fileId });
+    const filePath = (body.result as { file_path?: unknown } | undefined)?.file_path;
+    if (typeof filePath !== "string" || !filePath) throw new Error("telegram getFile returned no file_path");
+    const response = await context.fetcher(`${TELEGRAM_API}/file/bot${botToken(context)}/${filePath.split("/").map(encodeURIComponent).join("/")}`, { signal: context.signal });
+    // The download URL holds the bot token; errors name only the status.
+    if (!response.ok) throw new Error(`telegram file download failed: HTTP ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  },
+  async sendVoice(peer, audio, context) {
+    const bytes = await readFile(audio.path);
+    const form = new FormData();
+    form.set("chat_id", peer.conversationId);
+    form.set("voice", new Blob([bytes], { type: audio.mime || "audio/ogg" }), basename(audio.path));
+    if (audio.seconds) form.set("duration", String(Math.round(audio.seconds)));
+    const response = await context.fetcher(`${TELEGRAM_API}/bot${botToken(context)}/sendVoice`, { method: "POST", body: form });
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok || body.ok !== true) throw new Error(`telegram sendVoice failed: HTTP ${response.status}`);
     return { messageIds: messageIdOf(body) };
   },
   renderApproval(input) {
