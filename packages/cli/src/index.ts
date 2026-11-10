@@ -3205,7 +3205,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     outcome = await executeRun(config, {
       ...(gateway?.provider ? { codexModelProvider: gateway.provider } : {}),
       extraMcpServers: chatSelfMcpServers(loadedConfig, workspaceCwd),
-      ...(state.accessMode ? { accessMode: state.accessMode } : {}),
+      accessMode: state.accessMode ?? "auto-edit",
       // Ask mode: provider approval requests become cards in the transcript.
       onApprovalRequest: async (request) => state.statusSink ? state.statusSink.requestApproval(request) : "decline",
       onPolicyBlock: (request, block) => {
