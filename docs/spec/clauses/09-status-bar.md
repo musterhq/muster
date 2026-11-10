@@ -81,3 +81,13 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Environment:** pure `formatTokenPair`; real CLI through tsx for `/status` in a scratch folder, NO_COLOR.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10, tmux, built CLI, session pol-1: `conversation   pol-1` … `tokens         228.1k in · 495 out` … `inspect        muster sessions show sess_19320998-624` (before: `tokens       in 228102 / out 495`, `conversation pol-1` with one space). On main before this change the columns were already aligned (#184's `printChatPanel` keeps a fitting row's spacing; QA saw collapsed spacing on 9a72dd4). The id is not cut: `sess_` + 12 is the store's id format (`sessions.ts:172`) and `muster sessions show sess_19320998-624` opens it. Captures: `screens/polish/qa30-before-status.ansi`, `qa30-after-status.ansi`. Red→green: status-bar.test.ts.
+
+## MUS-SPEC-09-3B — The folder reads as the user typed it, and the header does not repeat the bar
+
+- **Precondition:** macOS, where `/tmp` is a link to `/private/tmp`; the user ran `cd /tmp/qa-tr && muster chat`.
+- **Action:** paint the status bar and the compact header.
+- **Expected result:** the bar's folder is `/tmp/qa-tr` (the shell's `PWD` when it is the same folder as the real cwd; `~` for home; long paths keep their tail behind `…`), not `/private/tmp/qa-tr`. The header reads `MUSTER · <session> · /help`: model and folder live only in the bar below the composer.
+- **Test:** `packages/cli/test/status-bar.test.ts` › "the bar shows the folder as the shell names it and the header does not repeat it"
+- **Environment:** pure `formatStatusBar` / `buildCompactHeaderLines` with a temp folder under `/tmp` and `PWD` set; NO_COLOR.
+- **Known gaps:** when `PWD` is unset or points elsewhere, the real path is shown.
+- **Evidence:** UNVERIFIED

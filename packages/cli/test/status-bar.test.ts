@@ -123,3 +123,24 @@ test("/status keys line up and token counts are compact", { timeout: 120_000 }, 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-09-3B (docs/spec/clauses/09-status-bar.md#mus-spec-09-3b--the-folder-reads-as-the-user-typed-it-and-the-header-does-not-repeat-the-bar)
+test("the bar shows the folder as the shell names it and the header does not repeat it", async () => {
+  const { realpath } = await import("node:fs/promises");
+  const { buildCompactHeaderLines } = await import("../src/chat-tui.js");
+  const typed = await mkdtemp("/tmp/mp-");
+  const real = await realpath(typed);
+  const previous = process.env.PWD;
+  process.env.PWD = typed;
+  try {
+    const bar = plain(formatStatusBar({ model: "gpt-6.1-terra", effort: "High", cwd: real }, 110));
+    assert.match(bar, new RegExp(`│ ${typed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} *(│|$)`), bar);
+    assert.doesNotMatch(bar, /\/private\//, bar);
+  } finally {
+    if (previous === undefined) delete process.env.PWD;
+    else process.env.PWD = previous;
+    await rm(typed, { recursive: true, force: true });
+  }
+  const header = plain(buildCompactHeaderLines({ session: "qa-1", cwd: "/private/tmp/qa-tr", scopes: "user:me", model: "gpt-6.1-terra · High", provider: "codex", runtime: "codex", speed: "session" }).join("\n"));
+  assert.equal(header, "MUSTER · qa-1 · /help");
+});
