@@ -51,3 +51,13 @@ MCP servers added with `muster mcp add-stdio|add-http` (stored in `config.tools.
 - **Environment:** pure resolver.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-03-2B — A Claude turn with MCP servers still gets its prompt
+
+- **Precondition:** at least one MCP server reaches a Claude Code turn (Muster's own server always does in chat).
+- **Action:** run a Claude Code turn.
+- **Expected result:** the prompt is passed after `--`, so `--mcp-config` (which takes several values) never swallows it; the fake `claude` receives the prompt as its last argument and the config file as the `--mcp-config` value.
+- **Test:** `packages/core/test/mcp-runtime.test.ts` › "a claude turn with MCP servers passes the prompt after --"
+- **Environment:** fake `claude` binary.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

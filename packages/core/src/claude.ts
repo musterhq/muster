@@ -127,7 +127,9 @@ export function buildClaudeCodeArgs(input: ClaudeCodeRunInput, options: { readon
   for (const pluginDir of input.pluginDirs ?? []) args.push("--plugin-dir", pluginDir);
   if (input.mcpConfig) args.push("--mcp-config", input.mcpConfig);
   if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
-  args.push(input.prompt);
+  // `--mcp-config` (and other list options) take several values: without the
+  // separator the prompt is read as one more config file and the turn fails.
+  args.push("--", input.prompt);
   return args;
 }
 
