@@ -547,3 +547,26 @@ test("diff card timing reads like command timing", () => {
   assert.equal(row(86), "  ⎿ +1 −1 · 86ms · receipt d3b9c1a2…");
   assert.equal(row(105_975), "  ⎿ +1 −1 · 1m 46s · receipt d3b9c1a2…");
 });
+
+// Spec: MUS-SPEC-13-1C (docs/spec/clauses/13-undo.md#mus-spec-13-1c--undo-in-a-folder-that-is-not-a-git-repository-says-why-it-cannot-work)
+test("undo in a folder that is not a git repository says it needs git, never that nothing changed", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { undoLastTurnRows } = await import("../src/live-diff.js");
+  const dir = await mkdtemp(join(tmpdir(), "muster-undo-nogit-"));
+  try {
+    const feed = await startLiveDiffFeed({ cwd: dir, emit: () => {}, color: false });
+    assert.equal(feed.active, false);
+    assert.equal(feed.inactiveReason, "not a git repository");
+    const rows = (await undoLastTurnRows({ untrackedReason: feed.inactiveReason })).join("\n");
+    assert.match(rows, /needs a git repository/);
+    assert.match(rows, /git init/);
+    assert.doesNotMatch(rows, /changed no files/);
+    const off = await startLiveDiffFeed({ cwd: dir, emit: () => {}, enabled: false });
+    assert.match((await undoLastTurnRows({ untrackedReason: off.inactiveReason })).join("\n"), /live diff/);
+    assert.match((await undoLastTurnRows({})).join("\n"), /changed no files/, "a tracked turn with no edits still says so");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
