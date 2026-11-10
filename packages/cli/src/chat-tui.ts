@@ -2083,6 +2083,38 @@ class BoardModeHost {
   private stopTimer(): void { if (this.timer) clearInterval(this.timer); this.timer = undefined; }
 }
 
+/**
+ * Where a composer picker opens: flush-left, directly above the input box,
+ * across EVERY column. One column short let the row behind it show a stray
+ * `─` at the right edge.
+ */
+export function composerOverlayOptions(columns: number) {
+  return {
+    anchor: "bottom-left" as const,
+    offsetY: -3,
+    width: Math.max(72, columns),
+    maxHeight: 22,
+    margin: { left: 0, right: 0 },
+  };
+}
+
+/** A picker under a dim rule, so it never reads as part of the transcript above it. */
+export class RuledOverlay implements Component {
+  constructor(private readonly inner: Component) {}
+
+  render(width: number): string[] {
+    return [dim("─".repeat(Math.max(0, width))), ...this.inner.render(width)];
+  }
+
+  handleInput(data: string): void {
+    this.inner.handleInput?.(data);
+  }
+
+  invalidate(): void {
+    this.inner.invalidate();
+  }
+}
+
 class MusterChatScreen implements Component, MusterChatSink {
   private readonly store = new TranscriptStore();
   private get lines(): string[] {
@@ -2224,15 +2256,9 @@ class MusterChatScreen implements Component, MusterChatSink {
       );
       // The Codex app's placement: flush-left, DIRECTLY above the input box —
       // never centered in the void, never painting over the composer's frame.
-      handle = this.tui.showOverlay(list, {
-        anchor: "bottom-left",
-        offsetY: -3,
-        // Full width: overlay rows must be OPAQUE across the terminal so the
-        // transcript can never bleed through beside them (owner-reported).
-        width: Math.max(72, this.tui.terminal.columns - 1),
-        maxHeight: 22,
-        margin: { left: 0, right: 1 },
-      });
+      // Full width: overlay rows must be OPAQUE across the terminal so the
+      // transcript can never bleed through beside them (owner-reported).
+      handle = this.tui.showOverlay(new RuledOverlay(list), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }
@@ -2296,14 +2322,8 @@ class MusterChatScreen implements Component, MusterChatSink {
       }, () => finish());
       // The Codex app's placement: flush-left, DIRECTLY above the input box —
       // never centered in the void, never painting over the composer's frame.
-      handle = this.tui.showOverlay(settings, {
-        anchor: "bottom-left",
-        offsetY: -3,
-        // Full width for opacity — the transcript must never bleed through.
-        width: Math.max(72, this.tui.terminal.columns - 1),
-        maxHeight: 22,
-        margin: { left: 0, right: 1 },
-      });
+      // Full width for opacity — the transcript must never bleed through.
+      handle = this.tui.showOverlay(new RuledOverlay(settings), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }
