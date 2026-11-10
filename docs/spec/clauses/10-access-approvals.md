@@ -51,3 +51,13 @@
 - **Environment:** fake app-server.
 - **Known gaps:** `git push` leaves the machine and is not auto-approved (use `/access ask` or `full`); network policy is Codex's.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1E — The default mode reaches Claude Code without being set
+
+- **Precondition:** runtime `claude-code`; the chat never ran `/access` and no `--access` flag or `chat.access` setting exists (the status bar says `auto-edit`).
+- **Action:** run a turn with no access mode.
+- **Expected result:** `claude` is started with `--permission-mode acceptEdits`, the same as an explicit `auto-edit`.
+- **Test:** `packages/core/test/access-approvals.test.ts` › "claude turns default to acceptEdits when no access mode is set"
+- **Environment:** fake `claude` binary.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

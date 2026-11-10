@@ -136,3 +136,19 @@ rl.on("line", (line) => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-10-1E (docs/spec/clauses/10-access-approvals.md#mus-spec-10-1e--the-default-mode-reaches-claude-code-without-being-set)
+test("claude turns default to acceptEdits when no access mode is set", { timeout: 60_000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-access-claude-default-"));
+  const command = join(dir, "claude");
+  const log = join(dir, "args.log");
+  await writeFile(command, `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${log}"\nprintf 'ok\\n'\n`, "utf8");
+  await chmod(command, 0o755);
+  try {
+    await executeRun(defaultConfig(), { runtime: "claude-code", prompt: "hi", cwd: dir, claudeCommand: command, ...quiet });
+    const line = (await readFile(log, "utf8")).trim();
+    assert.equal(line.match(/--permission-mode (\S+)/)?.[1], "acceptEdits");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
