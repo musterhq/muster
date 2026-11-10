@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
 import { buildCompactHeaderLines, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
-import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
+import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
   BACKEND_CARD_PROVIDERS,
@@ -1337,7 +1337,9 @@ interface ChatState {
   /** Session running totals — the bottom status row's tokens and cost. */
   usage?: ChatSessionUsage;
   /** Every turn of this chat with its file changes and provider ids (`/rewind`). */
-  turnStack?: RecordedTurn[];
+  turnStack?: Array<RecordedTurn & { readonly undone?: boolean }>;
+  /** /undo already reverted the last turn's changes (a second /undo says so). */
+  lastTurnUndone?: boolean;
   /** Why the latest turn ran without the workspace observer (not a git repo, live diff off); `/undo` says so. */
   lastTurnUntracked?: string;
   /** Observer events of the last turn that changed files (`/undo`). */
@@ -3271,6 +3273,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   }
   // /undo works on the most recent turn that changed files; /rewind on any turn.
   if (turnPatches.length) state.lastTurnPatches = turnPatches;
+  state.lastTurnUndone = false;
   state.lastTurnUntracked = liveDiff.active ? undefined : liveDiff.inactiveReason;
   state.turnStack = [...(state.turnStack ?? []), {
     prompt,
@@ -5409,7 +5412,7 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
     console.log(color("Nothing to rewind yet: no turns in this chat.", "dim"));
     return;
   }
-  const label = (turn: RecordedTurn) => `${turn.prompt.replace(/\s+/g, " ").slice(0, 70)}${turn.patches.length ? ` · ${new Set(turn.patches.map((patch) => patch.path)).size} file(s)` : ""}`;
+  const label = (turn: RecordedTurn & { readonly undone?: boolean }) => rewindTurnLabel(turn);
   let back = Number.parseInt(args.trim(), 10);
   if (!Number.isFinite(back)) {
     const options = stack.map((turn, index) => ({ value: String(stack.length - index), label: `${stack.length - index}  ${label(turn)}` })).reverse().slice(0, 15);
@@ -5438,14 +5441,22 @@ async function rewindChat(args: string, state: ChatState): Promise<void> {
   if (result.conversation === "fresh") await clearConversationSessionHandles(conversationKey);
   console.log(`${color("↺", "green")} Rewound to before “${result.prompt.replace(/\s+/g, " ").slice(0, 60)}” · ${result.files.restored.length} ${result.files.restored.length === 1 ? "file" : "files"} restored · ${result.conversation === "reverted" ? "conversation rolled back" : "next turn starts a fresh thread"}${forgotten ? ` · ${forgotten} turn ${forgotten === 1 ? "memory" : "memories"} forgotten` : ""}`);
   for (const file of result.files.skipped) console.log(`  ${color("⎿", "dim")} ${file.path} ${color(`left alone: ${file.reason}`, "yellow")}`);
+  // The rewound turns stay readable but grey, under a marker row.
+  state.statusSink?.markRewound(result.prompt);
+  state.lastTurnUndone = false;
   // The rewound prompt goes back into the composer for editing.
   state.statusSink?.openPicker(result.prompt);
 }
 
 async function undoLastChatTurn(state: ChatState): Promise<void> {
   const patches = state.lastTurnPatches;
-  const rows = await undoLastTurnRows({ patches, ...(state.lastTurnUntracked ? { untrackedReason: state.lastTurnUntracked } : {}) });
-  if (patches?.length) state.lastTurnPatches = undefined;
+  const rows = await undoLastTurnRows({ patches, alreadyUndone: state.lastTurnUndone === true, ...(state.lastTurnUntracked ? { untrackedReason: state.lastTurnUntracked } : {}) });
+  if (patches?.length) {
+    state.lastTurnPatches = undefined;
+    state.lastTurnUndone = true;
+    // /rewind reads the same record: the undone turn has nothing left to restore.
+    if (state.turnStack) state.turnStack = markTurnUndone(state.turnStack, patches);
+  }
   for (const row of rows) console.log(row);
 }
 

@@ -116,6 +116,8 @@ export interface MusterChatSink {
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void;
   /** Ctrl+O: expand or collapse every block's output. */
   toggleExpanded(): void;
+  /** /rewind: grey out the transcript from the rewound prompt on, under a marker row. */
+  markRewound(prompt: string): void;
   /** The status bar under the composer (one pre-styled row; empty hides it). */
   setFooter(line: string): void;
   /**
@@ -1213,6 +1215,33 @@ export class TranscriptStore {
     block.render = render;
   }
 
+  /**
+   * Grey out a rewound stretch: from the latest user row that sent `prompt`
+   * to the end, every row is repainted dim and a marker row goes above it.
+   * Blocks in that stretch stop being live (a later Ctrl+O must not bring
+   * the colour back). False when the prompt's row is not in the transcript.
+   */
+  markRewound(prompt: string, marker: string): boolean {
+    const first = (prompt.split(/\r?\n/)[0] ?? "").trim();
+    let at = -1;
+    for (let index = this.lines.length - 1; index >= 0; index -= 1) {
+      const line = this.lines[index]!;
+      if (isUserTranscriptLine(line) && stripAnsi(line).slice(USER_PREFIX.length).trim() === first) {
+        at = index;
+        break;
+      }
+    }
+    if (at < 0) return false;
+    for (const [id, block] of this.blocks) if (block.start >= at) this.blocks.delete(id);
+    for (let index = at; index < this.lines.length; index += 1) {
+      const plain = stripAnsi(stripCardMark(this.lines[index]!));
+      this.lines[index] = plain.trim() ? dim(plain) : plain;
+    }
+    this.lines.splice(at, 0, marker);
+    this.dirtyFrom = Math.min(this.dirtyFrom, at);
+    return true;
+  }
+
   toggleExpanded(): void {
     this.expanded = !this.expanded;
     const ordered = [...this.blocks.values()].sort((a, b) => a.start - b.start);
@@ -1387,6 +1416,8 @@ export function renderPolicyBlockCard(request: ApprovalRequest, block: { readonl
   ];
   return ["", ...rows.map((row) => cardRow(row, "failure"))];
 }
+
+export const REWOUND_MARKER = "↺ rewound — the turns below were undone";
 
 /** A `turn.start` hook refused the prompt: put it back in the composer to edit. True when it did. */
 export function promptBackAfterHookBlock(error: unknown, prompt: string, sink: Pick<MusterChatSink, "openPicker"> | undefined): boolean {
@@ -2190,6 +2221,10 @@ class MusterChatScreen implements Component, MusterChatSink {
     this.tui.requestRender(true);
   }
 
+  markRewound(prompt: string): void {
+    if (this.store.markRewound(prompt, dim(REWOUND_MARKER))) this.tui.requestRender(true);
+  }
+
   readonly approvals = new ApprovalQueue((id, render) => this.upsertBlock(id, render));
 
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
@@ -2677,6 +2712,10 @@ class HarnessSink implements MusterChatSink {
 
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
     this.store.upsert(id, render);
+  }
+
+  markRewound(prompt: string): void {
+    this.store.markRewound(prompt, dim(REWOUND_MARKER));
   }
 
   toggleExpanded(): void {
