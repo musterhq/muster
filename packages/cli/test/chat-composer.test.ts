@@ -253,7 +253,7 @@ async function chatCommandReplies(commands: readonly string[]): Promise<Map<stri
 
 // Spec: MUS-SPEC-02-3A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3a--command-replies-are-plain-sentences-not-debug-keyvalue-pairs)
 test("chat command replies are plain sentences", { timeout: 240_000 }, async () => {
-  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex", "/model gpt-5.5", "/access ask", "/reasoning full", "/new s2", "/reset"]);
+  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex", "/model gpt-5.5", "/access ask", "/reasoning full", "/new s2", "/reset", "/name s3", "/resume s2"]);
   const debug = /provider_handles_cleared|\bruntime=|\bprovider=|\bmodel=|Model=|\baccess=|reasoning_density=|session=/;
   for (const [command, out] of replies) assert.doesNotMatch(out, debug, `${command}:\n${out}`);
   assert.match(replies.get("/runtime claude-code")!, /^Runtime: Claude Code · model sonnet$/m);
@@ -263,6 +263,8 @@ test("chat command replies are plain sentences", { timeout: 240_000 }, async () 
   assert.match(replies.get("/reasoning full")!, /^Reasoning summaries: full$/m);
   assert.match(replies.get("/new s2")!, /^New session s2\.$/m);
   assert.match(replies.get("/reset")!, /^Conversation reset; the next turn starts a fresh provider thread\.$/m);
+  assert.match(replies.get("/name s3")!, /^Conversation named s3\.$/m);
+  assert.match(replies.get("/resume s2")!, /^Resumed session s2\.$/m);
 });
 
 // Spec: MUS-SPEC-02-3B (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3b--switching-runtime-does-not-pre-fill-the-composer)

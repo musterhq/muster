@@ -99,3 +99,27 @@ test("the full header panel keeps every row inside its box", async () => {
   assert.match(footer, /…/);
   assert.ok(rows.some((row) => row.includes("Session: qa-8b ")) && rows.some((row) => row.includes("0 here · 3 total")), "session and counts each on a row, uncut");
 });
+
+// Spec: MUS-SPEC-09-3A (docs/spec/clauses/09-status-bar.md#mus-spec-09-3a--status-lines-up-its-keys-and-shows-readable-token-counts)
+test("/status keys line up and token counts are compact", { timeout: 120_000 }, async () => {
+  const { formatTokenPair } = await import("../src/chat-tui.js") as { formatTokenPair?: (input: number, output: number) => string };
+  assert.equal(typeof formatTokenPair, "function", "chat-tui exports formatTokenPair");
+  assert.equal(formatTokenPair!(732130, 1361), "732.1k in · 1.4k out");
+  assert.equal(formatTokenPair!(0, 495), "0 in · 495 out");
+
+  const cwd = await mkdtemp(join(tmpdir(), "muster-status-cmd-"));
+  const cli = join(import.meta.dirname, "..", "src", "index.ts");
+  const env = { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1", MUSTER_ONBOARDING_HOME: join(cwd, ".test-home") };
+  try {
+    await run("tsx", [cli, "init"], { cwd, env });
+    const { stdout } = await run("tsx", [cli, "chat", "--session", "status-rows", "/status"], { cwd, env, timeout: 60_000 });
+    const rows = plain(stdout).split("\n").filter((row) => /^ {2}[a-z]+ {2,}\S/.test(row));
+    assert.ok(rows.some((row) => row.startsWith("  conversation ")), `conversation has a two-space gap:\n${stdout}`);
+    const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
+    assert.ok(rows.length >= 10 && starts.every((start) => start === starts[0]), `values start in one column:\n${stdout}`);
+    assert.match(stdout, /^ {2}tokens +0 in · 0 out$/m);
+    assert.match(stdout, /muster sessions show sess_[0-9a-f-]{12}$/m);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

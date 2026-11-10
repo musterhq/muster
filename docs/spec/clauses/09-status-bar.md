@@ -71,3 +71,13 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Environment:** pure name map; route store in a temp workspace.
 - **Known gaps:** the header rebuild after the picker is proven in the live tmux run only.
 - **Evidence:** live, 2026-11-10: `/status` and the `/runtime` row both say `codex`; after `/model` header and bar both say `GPT-6.1 Terra · High`; `muster chat --session qafix2-rw` reopened on `claude-code` / `sonnet`. Red→green: model-catalog.test.ts.
+
+## MUS-SPEC-09-3A — `/status` lines up its keys and shows readable token counts
+
+- **Precondition:** a chat session with prior turns (hundreds of thousands of input tokens).
+- **Action:** run `/status`.
+- **Expected result:** every key sits in one column with at least two spaces before its value (`conversation` included); token counts read `228.1k in · 495 out`, not `in 228102 / out 495`; the `inspect` row shows the full session id (`sess_` + 12 characters, the id's real length), which `muster sessions show` accepts.
+- **Test:** `packages/cli/test/status-bar.test.ts` › "/status keys line up and token counts are compact"
+- **Environment:** pure `formatTokenPair`; real CLI through tsx for `/status` in a scratch folder, NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

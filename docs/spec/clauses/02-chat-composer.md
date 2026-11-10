@@ -95,8 +95,8 @@ How the composer behaves while a turn is running. Each case names the one test t
 ## MUS-SPEC-02-3A — Command replies are plain sentences, not debug `key=value` pairs
 
 - **Precondition:** a chat session (`muster chat --session <name> "<command>"` or the TUI).
-- **Action:** run `/runtime claude-code`, `/runtime codex`, `/model gpt-5.5`, `/access ask`, `/reasoning full`, `/new s2` and `/reset`.
-- **Expected result:** each reply reads as a sentence with labels, e.g. `Runtime: Claude Code · model sonnet`, `Model: 5.5 · this session`, `Access: ask · asks before…`, `Reasoning summaries: full`, `New session s2.`, `Conversation reset; the next turn starts a fresh provider thread.`; no reply contains `provider_handles_cleared`, `runtime=`, `provider=`, `model=`, `Model=`, `access=` or `reasoning_density=`.
+- **Action:** run `/runtime claude-code`, `/runtime codex`, `/model gpt-5.5`, `/access ask`, `/reasoning full`, `/new s2`, `/reset`, `/name s3` and `/resume s2`.
+- **Expected result:** each reply reads as a sentence with labels, e.g. `Runtime: Claude Code · model sonnet`, `Model: 5.5 · this session`, `Access: ask · asks before…`, `Reasoning summaries: full`, `New session s2.`, `Conversation reset; the next turn starts a fresh provider thread.`, `Conversation named s3.`, `Resumed session s2.`; no reply contains `provider_handles_cleared`, `runtime=`, `provider=`, `model=`, `Model=`, `access=` or `reasoning_density=`, `session=`.
 - **Test:** `packages/cli/test/chat-composer.test.ts` › "chat command replies are plain sentences"
 - **Environment:** real CLI through tsx in a scratch folder, NO_COLOR; no provider is called.
 - **Known gaps:** machine-readable subcommands outside chat (`muster runtime`, `muster run`, panels such as the `/runtime` list) keep their `key=value` output for scripts.
