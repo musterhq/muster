@@ -364,3 +364,22 @@ test("denied, high-risk and path-escaping bundles are refused", { timeout: 180_0
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-11-1I (docs/spec/clauses/11-plugin-bundles.md#mus-spec-11-1i--inspect-on-a-missing-or-empty-folder-says-what-it-looked-for)
+test("plugins inspect on a missing or empty folder says what it looked for", { timeout: 60_000 }, async () => {
+  const cwd = await workspace();
+  try {
+    const missing = await cli(cwd, ["plugins", "inspect", join(cwd, "nope")]);
+    assert.notEqual(missing.code, 0);
+    assert.doesNotMatch(missing.stderr + missing.stdout, /ENOENT|manifest\.json'/);
+    assert.match(missing.stderr + missing.stdout, /No such folder: .*nope/);
+    await mkdir(join(cwd, "empty"));
+    const empty = await cli(cwd, ["plugins", "inspect", join(cwd, "empty")]);
+    assert.notEqual(empty.code, 0);
+    assert.doesNotMatch(empty.stderr + empty.stdout, /ENOENT/);
+    assert.match(empty.stderr + empty.stdout, /No plugin found in .*empty.*\.claude-plugin\/plugin\.json.*\.codex-plugin\/plugin\.json.*plugin\.json/s);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
