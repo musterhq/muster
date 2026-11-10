@@ -203,12 +203,14 @@ test("S2: modify-then-revert within one debounce window emits nothing and leaves
 
   // The revert must not have corrupted the baseline: a later real edit chains
   // from the COMMITTED content, not from the transient tamper.
+  // writeFile truncates before it writes, so a watch read can land between the
+  // two and see an empty file; the observer then emits again once the write
+  // lands. Wait for the settled content instead of taking the first event.
   await writeFile(join(repo, "keep.txt"), "real change\n");
-  await waitFor(() => events.length >= 1);
-  assert.equal(events.length, 1);
+  await waitFor(() => events.at(-1)?.afterHash === sha256("real change\n"));
   assert.equal(events[0]!.beforeHash, sha256("a\nb\nc\n"));
-  assert.equal(events[0]!.afterHash, sha256("real change\n"));
-  assert.equal(events[0]!.detectedBy, "watch");
+  for (let index = 1; index < events.length; index += 1) assert.equal(events[index]!.beforeHash, events[index - 1]!.afterHash, "events chain");
+  assert.ok(events.every((event) => event.detectedBy === "watch"));
 });
 
 /* ---------- S3: deeply nested new directories ---------- */
