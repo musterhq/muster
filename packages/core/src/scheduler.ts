@@ -31,7 +31,7 @@ export interface ScheduleJob {
   readonly at?: string;
   /** IANA time zone the cron is read in; absent = host local time. */
   readonly tz?: string;
-  /** Where the result goes: terminal | desktop | channel:<id>. Absent = log only. */
+  /** Where the result goes: terminal | desktop | channel:<channel>/<peer>. Absent = log only. */
   readonly deliver?: string;
   /** Set when a one-off job has fired; it never fires again. */
   readonly completedAt?: string;

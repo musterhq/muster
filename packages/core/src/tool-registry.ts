@@ -942,7 +942,7 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
   });
   registry.register<ScheduleManageArgs>({
     name: "schedule_manage", toolset: "schedule",
-    description: `Set reminders and routines that run by themselves. create: kind "reminder" delivers a fixed message at a time (no model call); kind "run" runs a prompt then delivers the answer. Give when ("in 5m", "in 2h", "in 1d", or an ISO time with offset) for one-off, or cron (5 fields, optional tz) for recurring. deliver: terminal (the user's open Muster chat), desktop, or channel:<id>. Messages up to ${MAX_AUTOMATION_TEXT} characters; at most ${MAX_ACTIVE_AUTOMATIONS} active jobs. The result states exactly what was scheduled — repeat it to the user. list shows all jobs; remove takes an id.`,
+    description: `Set reminders and routines that run by themselves. create: kind "reminder" delivers a fixed message at a time (no model call); kind "run" runs a prompt then delivers the answer. Give when ("in 5m", "in 2h", "in 1d", or an ISO time with offset) for one-off, or cron (5 fields, optional tz) for recurring. deliver: terminal (the user's open Muster chat), desktop, or channel:<channel>/<peer>. Messages up to ${MAX_AUTOMATION_TEXT} characters; at most ${MAX_ACTIVE_AUTOMATIONS} active jobs. The result states exactly what was scheduled — repeat it to the user. list shows all jobs; remove takes an id.`,
     inputSchema: {
       type: "object",
       required: ["action"],
@@ -953,7 +953,7 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
         when: { type: "string", description: `create one-off: ${WHEN_FORMS}.` },
         cron: { type: "string", description: "create recurring: five-field cron, e.g. \"0 9 * * 1-5\"." },
         tz: { type: "string", description: "IANA time zone the cron is read in, e.g. Asia/Kolkata." },
-        deliver: { type: "string", description: "terminal (default), desktop, or channel:<id>." },
+        deliver: { type: "string", description: "terminal (default), desktop, or channel:<channel>/<peer>." },
         id: { type: "string", description: "remove: the job id (sched_…)." },
       },
     },

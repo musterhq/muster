@@ -138,6 +138,12 @@ export async function handleAutomationCommand(
       const deliverers: AutomationDeliverers = options.deliverers ?? {
         terminal: (notice) => { out.push(...automationCardLines(notice)); },
         desktop: desktopNotifier(),
+        channel: async (target, notice) => {
+          const slash = target.indexOf("/");
+          if (slash <= 0) throw new Error(`Channel delivery needs channel:<channel>/<peer>, got channel:${target}`);
+          const { sendToChannel } = await import("@musterhq/gateway");
+          await sendToChannel(target.slice(0, slash), target.slice(slash + 1), notice.text, { cwd });
+        },
       };
       const result = await runAutomationNow(restParts[0], { cwd, now, deliverers });
       out.push(`${result.job.id}: ${result.status}${result.detail && result.status !== "completed" ? ` (${result.detail})` : ""}`);
