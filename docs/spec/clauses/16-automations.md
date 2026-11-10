@@ -121,3 +121,13 @@ A job is a **reminder** (deliver a fixed message, no model call) or a **run** (s
 - **Environment:** real CLI child process; chat slash handler with real store.
 - **Known gaps:** none.
 - **Evidence:** green 2026-11-09, automations-cli.test.ts and automations-chat.test.ts; live `/schedule list` (chat-reminder.png).
+
+## MUS-SPEC-16-5B — Automation times read in local time, and the table fits
+
+- **Precondition:** the machine's zone is Asia/Kolkata (UTC+5:30); a reminder due at `2026-11-10T04:47:10.054Z`, a done reminder, and a weekday routine whose next run is `2026-11-11T03:30:00Z` with a long prompt.
+- **Action:** echo the reminder (`/remind`, `muster schedule remind`); render the automations table at 110 columns.
+- **Expected result:** the echo says `at 2026-11-10 10:17` — the same local time the reminder card shows — never a raw UTC ISO stamp with milliseconds; the table shows `2026-11-11 09:00` for the routine; the done reminder's NEXT RUN reads `done` and its ENABLED column does not; no row is wider than 110 columns (WHAT is cut with `…`).
+- **Test:** `packages/core/test/automations.test.ts` › "automation echoes and the table show local times, and the table fits the width"
+- **Environment:** pure formatters with `TZ=Asia/Kolkata`.
+- **Known gaps:** times are the machine's local time; a routine with its own `tz` still shows the machine's clock (its zone is named in WHEN).
+- **Evidence:** UNVERIFIED
