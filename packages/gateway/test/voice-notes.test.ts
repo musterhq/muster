@@ -7,6 +7,8 @@ import type { MusterConfig, VoiceConfig } from "@musterhq/core";
 import {
   approvePairing,
   gatewayConfigPath,
+  initGatewayConfig,
+  runChannelWorker,
   loadGatewayConfig,
   requestPairing,
   startGatewayServer,
@@ -16,6 +18,8 @@ import { installFakeVoiceTools, readFakeVoiceCalls } from "../../core/test/fakes
 import { createFakeTelegramBotApi } from "./fakes/telegram-bot-api.js";
 import type { FakeTelegramBotApi } from "./fakes/telegram-bot-api.js";
 import { startStubModel, stubModelConfig } from "./fakes/stub-model.js";
+import { startFakeMatrixHomeserver } from "./fakes/matrix-homeserver.js";
+import { mailHeaders, startFakeImapServer, startFakeSmtpServer } from "./fakes/mail-servers.js";
 
 const TOKEN = "123:ABC";
 const CHAT = 4242;
@@ -199,5 +203,136 @@ test("mirror replies to a voice note with text and a voice message, text gets te
     assert.equal((await readFakeVoiceCalls(off.log)).filter((call) => call.tool === "say").length, 0);
   } finally {
     await off.stop();
+  }
+});
+
+async function withFakeVoice<T>(cwd: string, work: (input: { model: string; log: string }) => Promise<T>): Promise<T> {
+  const tools = await installFakeVoiceTools(join(cwd, ".fake"));
+  const previous = { PATH: process.env.PATH, FAKE_VOICE_LOG: process.env.FAKE_VOICE_LOG };
+  process.env.PATH = `${tools.bin}:${previous.PATH ?? ""}`;
+  process.env.FAKE_VOICE_LOG = tools.log;
+  const model = join(cwd, "ggml-tiny.en.bin");
+  await writeFile(model, "model");
+  try {
+    return await work({ model, log: tools.log });
+  } finally {
+    process.env.PATH = previous.PATH;
+    if (previous.FAKE_VOICE_LOG === undefined) delete process.env.FAKE_VOICE_LOG;
+    else process.env.FAKE_VOICE_LOG = previous.FAKE_VOICE_LOG;
+  }
+}
+
+function emailWithAudio(input: { from: string; to: string; subject: string; messageId: string; audio: Buffer }): string {
+  const boundary = "voice-boundary-1";
+  return [
+    `From: ${input.from}`,
+    `To: ${input.to}`,
+    `Subject: ${input.subject}`,
+    `Message-ID: ${input.messageId}`,
+    `Date: ${new Date().toUTCString()}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: audio/ogg; name=\"memo.ogg\"",
+    "Content-Disposition: attachment; filename=\"memo.ogg\"",
+    "Content-Transfer-Encoding: base64",
+    "",
+    input.audio.toString("base64"),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+}
+
+// Spec: MUS-SPEC-21-2E (docs/spec/clauses/21-voice.md#mus-spec-21-2e--the-same-voice-path-on-every-sdk-channel-that-carries-audio)
+test("matrix audio events and email audio attachments become prompts through the shared runner", { timeout: 60_000 }, async () => {
+  const ROOM = "!room:fake.test";
+  const ALICE = "@alice:fake.test";
+  const BOT = "muster@corp.test";
+  const BOB = "bob@corp.test";
+  const cwd = await mkdtemp(join(tmpdir(), "muster-voice-sdk-"));
+  try {
+    await withFakeVoice(cwd, async ({ model, log }) => {
+      const llm = await startStubModel("heard you");
+      try {
+      const config: MusterConfig = { ...stubModelConfig(llm.url), voice: { stt: { provider: "whisper-cpp", model } } };
+      const init = await initGatewayConfig(cwd);
+
+      // Matrix: an m.audio event with an mxc:// URL.
+      const matrix = await startFakeMatrixHomeserver();
+      const matrixGateway = { ...init.config, channels: { matrix: { homeserverUrl: matrix.url, userId: matrix.botUserId, accessTokenEnv: "MATRIX_TOKEN", allowFrom: [ALICE], syncTimeoutMs: 100 } } };
+      await requestPairing(`matrix:${matrix.botUserId}`, ALICE, cwd).then((pending) => approvePairing(pending.code, cwd));
+      const matrixStop = new AbortController();
+      const matrixDone = runChannelWorker({ channelId: "matrix", config, gateway: matrixGateway, cwd, env: { MATRIX_TOKEN: matrix.token }, signal: matrixStop.signal, log: () => undefined });
+      try {
+        await matrix.waitForSyncs(2);
+        const mxc = matrix.putMedia(Buffer.from("OggS matrix voice"), "audio/ogg");
+        const event = matrix.inject(ROOM, ALICE, "Voice message.ogg", {
+          msgtype: "m.audio",
+          body: "Voice message.ogg",
+          url: mxc,
+          info: { mimetype: "audio/ogg", size: 17, duration: 4000 },
+          "org.matrix.msc3245.voice": {},
+        });
+        await matrix.waitFor(() => matrix.sent.length === 1);
+        const answer = matrix.sent[0];
+        assert.equal(String(answer.content.body), "🎙 \"what is two plus two\"\n\nheard you");
+        assert.deepEqual((answer.content["m.relates_to"] as Record<string, unknown>)["m.in_reply_to"], { event_id: event });
+        assert.ok(matrix.requests.some((request) => request.path === `/_matrix/client/v1/media/download/fake.test/${mxc.split("/").pop()}`));
+        assert.match(llm.prompts.at(-1) ?? "", /what is two plus two/);
+      } finally {
+        matrixStop.abort();
+        await matrixDone;
+        await matrix.close();
+      }
+
+      // Email: an audio/* attachment, no text body.
+      const imap = await startFakeImapServer();
+      const smtp = await startFakeSmtpServer();
+      const emailGateway = {
+        ...init.config,
+        channels: {
+          email: {
+            address: BOT,
+            imap: { host: "127.0.0.1", port: imap.port, security: "none" as const, user: "muster", passwordEnv: "MAIL_PASSWORD" },
+            smtp: { host: "127.0.0.1", port: smtp.port, security: "none" as const, user: "muster", passwordEnv: "MAIL_PASSWORD" },
+            allowFrom: ["*@corp.test"],
+            pollIntervalMs: 100,
+            idleTimeoutMs: 1_000,
+          },
+        },
+      };
+      await requestPairing(`email:${BOT}`, BOB, cwd).then((pending) => approvePairing(pending.code, cwd));
+      const emailStop = new AbortController();
+      const emailDone = runChannelWorker({ channelId: "email", config, gateway: emailGateway, cwd, env: { MAIL_PASSWORD: "imap-secret" }, signal: emailStop.signal, log: () => undefined });
+      try {
+        const deadline = Date.now() + 5_000;
+        while (imap.idling() === 0) {
+          if (Date.now() > deadline) throw new Error("email worker never reached IMAP IDLE");
+          await new Promise((wake) => setTimeout(wake, 10));
+        }
+        const before = llm.prompts.length;
+        imap.add(emailWithAudio({ from: BOB, to: BOT, subject: "Voice memo", messageId: "<voice@corp.test>", audio: Buffer.from("OggS email voice") }));
+        await smtp.waitFor(1);
+        const { headers, body } = mailHeaders(smtp.messages[0].data);
+        assert.equal(headers["in-reply-to"], "<voice@corp.test>");
+        assert.match(body, /what is two plus two/);
+        assert.match(body, /heard you/);
+        assert.equal(llm.prompts.length, before + 1);
+        assert.match(llm.prompts.at(-1) ?? "", /what is two plus two/);
+      } finally {
+        emailStop.abort();
+        await emailDone;
+        await imap.close();
+        await smtp.close();
+      }
+      const calls = await readFakeVoiceCalls(log);
+      assert.equal(calls.filter((call) => call.tool === "whisper-cli").length, 2, "one transcription per channel, in the shared runner");
+      } finally {
+        await llm.close();
+      }
+    });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
   }
 });
