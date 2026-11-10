@@ -256,6 +256,12 @@ import {
   interruptActiveCodexTurn,
   queryCodexAppServer,
   steerActiveCodexTurn,
+  addMarketplace,
+  installMarketplacePlugin,
+  listMarketplaces,
+  removeMarketplace,
+  searchMarketplacePlugins,
+  updateMarketplace,
   callCodexConversation,
   rewindTurns,
   forgetTurnMemories,
@@ -657,6 +663,8 @@ Usage:
   muster artifacts plan --format docx|xlsx|pptx|pdf [--destination local|google-drive|microsoft-365] [--polished]
   muster artifacts create --format docx|xlsx|pptx|pdf --title "..." [--summary "..."] [--spec spec.json] [--out path]
   muster artifacts verify <file> [--format docx|xlsx|pptx|pdf] [--require text]
+  muster plugins marketplace add <owner/repo|url|folder> | list | remove <name> | update [name]
+  muster plugins search <words> | install <name>[@marketplace]
   muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path|git-url> | install <path|git-url> | remove <id> | load <path>
   muster mcp serve                          # Muster's memory and sessions as an MCP server (stdio)
   muster mcp list | status [name] | login <name> | logout <name> | catalog | check [id] | install <id> | oauth status|setup|import ... | add-http <name> <url> [--oauth ...] | add-stdio <name> <command> [args...] | test <name>
@@ -7638,8 +7646,56 @@ async function artifactsCommand(args: string[]): Promise<void> {
   throw new Error(`Usage: muster artifacts contract [--formats docx,xlsx,pptx,pdf] | plan --format ${artifactFormats()} [--destination local|google-drive|microsoft-365] [--polished] | create --format ${artifactFormats()} --title "..." [--summary "..."] [--spec spec.json] [--out path] | verify <file> [--format ${artifactFormats()}] [--require text]`);
 }
 
+async function pluginMarketplaceCommand(args: string[]): Promise<void> {
+  const [verb, target] = args;
+  if (verb === "add" && target) {
+    const { record, plugins } = await addMarketplace(target);
+    console.log(`marketplace=${record.name} plugins=${plugins} source=${record.source}`);
+    console.log(`next=muster plugins search <words> · muster plugins install <name>@${record.name}`);
+    return;
+  }
+  if ((verb === "remove" || verb === "rm") && target) {
+    const record = await removeMarketplace(target);
+    console.log(`removed marketplace=${record.name}`);
+    return;
+  }
+  if (verb === "update") {
+    const names = target ? [target] : (await listMarketplaces()).map((record) => record.name);
+    for (const name of names) console.log(`marketplace=${name} plugins=${await updateMarketplace(name)} updated`);
+    return;
+  }
+  if (verb === "list" || verb === undefined) {
+    const records = await listMarketplaces();
+    if (!records.length) {
+      console.log("No marketplaces yet. Add one: muster plugins marketplace add anthropics/claude-plugins-official");
+      return;
+    }
+    for (const record of records) console.log(`${record.name.padEnd(28)} plugins=${String(record.plugins).padEnd(5)} source=${record.source}`);
+    return;
+  }
+  throw new Error("Usage: muster plugins marketplace add <owner/repo|git url|folder> | list | remove <name> | update [name]");
+}
+
 async function pluginsCommand(args: string[]): Promise<void> {
   const [action, path] = args;
+  if (action === "marketplace" || action === "marketplaces") {
+    await pluginMarketplaceCommand(args.slice(1));
+    return;
+  }
+  if (action === "search") {
+    const query = args.slice(1).filter((arg) => !arg.startsWith("--")).join(" ");
+    const results = await searchMarketplacePlugins(query);
+    if (!results.length) {
+      const markets = await listMarketplaces();
+      console.log(markets.length ? `No plugins match "${query}".` : "No marketplaces yet. Add one: muster plugins marketplace add anthropics/claude-plugins-official");
+      return;
+    }
+    const width = Math.min(48, Math.max(...results.map((plugin) => `${plugin.name}@${plugin.marketplace}`.length)));
+    for (const plugin of results.slice(0, Number(readFlag(args, "--limit") ?? 30))) {
+      console.log(`${`${plugin.name}@${plugin.marketplace}`.padEnd(width)}  ${(plugin.description ?? "").replace(/\s+/g, " ").slice(0, 100)}${plugin.category ? `  [${plugin.category}]` : ""}`);
+    }
+    return;
+  }
   if (action === "catalog") {
     for (const plugin of listBuiltinPlugins()) {
       const aliases = plugin.aliases?.length ? ` aliases=${plugin.aliases.join(",")}` : "";
@@ -7697,8 +7753,12 @@ async function pluginsCommand(args: string[]): Promise<void> {
     return;
   }
   if (action === "install" && path) {
-    const source = isGitPluginSource(path) ? path : resolve(path);
-    const { entry, inspection } = await installPluginBundle(source, { allowHighRisk: args.includes("--allow-high-risk"), force: args.includes("--force") });
+    const installOptions = { allowHighRisk: args.includes("--allow-high-risk"), force: args.includes("--force") };
+    // A name that is neither a folder nor a git URL comes from a marketplace.
+    const byName = !isGitPluginSource(path) && !existsSync(resolve(path));
+    const { entry, inspection } = byName
+      ? await installMarketplacePlugin(path, installOptions)
+      : await installPluginBundle(isGitPluginSource(path) ? path : resolve(path), installOptions);
     console.log(`installed=${entry.id} format=${entry.format} version=${entry.version ?? "-"} source=${pluginBundleSourceLabel(entry.source)} commit=${entry.commit ?? "-"} digest=${entry.digest}`);
     console.log(`path=${entry.installedPath}`);
     for (const server of inspection.servers) console.log(`mcp_server=${server.name} status=added`);
