@@ -85,3 +85,44 @@ test("a pending approval card shows every line of a multi-line command", async (
   const answered = renderApprovalCard(request, "decline").map((row) => stripCardMark(row).replace(/\x1b\[[0-9;]*m/g, ""));
   assert.ok(!answered.some((row) => row.trim() === "ls"), "an answered card collapses to its title");
 });
+
+// Spec: MUS-SPEC-10-1H (docs/spec/clauses/10-access-approvals.md#mus-spec-10-1h--while-an-approval-waits-the-turn-reads-as-waiting-not-working)
+test("while an approval waits, the cell and the spinner say so and the timer stops", async () => {
+  const { createNarrationPainter, TurnTimer, formatTurnStatusLine } = await import("../src/chat-tui.js");
+  let sinkRef!: MusterChatSink;
+  let release!: () => void;
+  const chat = createMusterChatHarness({
+    onSubmit: (_text, sink) => new Promise<boolean>((done) => { sinkRef = sink; release = () => done(true); }),
+  });
+  chat.type("make a file");
+  const turn = chat.submit();
+  await tick();
+  const painter = createNarrationPainter({ emit: (line) => sinkRef.appendLine(line), block: (id, render) => sinkRef.upsertBlock(id, render) });
+  painter.tool({ phase: "start", id: "item-1", kind: "command", title: "/bin/zsh -lc 'touch a.txt'" });
+  const request = { id: "item-1", kind: "command" as const, title: "/bin/zsh -lc 'touch a.txt'" };
+  painter.approval(request, "waiting");
+  let shown = plain(chat.transcript());
+  const at = shown.findIndex((row) => row.includes("Bash(touch a.txt)"));
+  assert.equal(shown[at + 1], "  ⎿ awaiting approval");
+  painter.approval(request, "answered");
+  shown = plain(chat.transcript());
+  assert.equal(shown[shown.findIndex((row) => row.includes("Bash(touch a.txt)")) + 1], "  ⎿ running…");
+
+  let now = 0;
+  const timer = new TurnTimer(() => now);
+  now = 5_000;
+  timer.pause();
+  now = 20_000;
+  const waiting = formatTurnStatusLine({ model: "gpt", session: "s" }, timer, 3).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.match(waiting, /Waiting for approval/);
+  assert.match(waiting, /5\.0s/, "the timer stops while the user decides");
+  assert.doesNotMatch(waiting, /Connecting|Reading|Thinking/);
+  timer.resume();
+  now = 21_000;
+  const working = formatTurnStatusLine({ model: "gpt", session: "s" }, timer, 3).replace(/\x1b\[[0-9;]*m/g, "");
+  assert.match(working, /6\.0s/);
+  assert.doesNotMatch(working, /Waiting for approval/);
+  painter.finish();
+  release();
+  await turn;
+});
