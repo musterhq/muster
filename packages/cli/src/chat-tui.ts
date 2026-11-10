@@ -1185,12 +1185,25 @@ function cardTitle(request: ApprovalRequest): string {
   return lines.length > 1 ? `${lines[0]} …` : (lines[0] ?? raw);
 }
 
+const APPROVAL_COMMAND_MAX_LINES = 60;
+
+/** A pending card lists a multi-line command in full: the user approves what they can see. */
+function approvalCommandRows(request: ApprovalRequest): string[] {
+  if (request.kind !== "command") return [];
+  const lines = unwrapShellCommand(request.title).split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const shown = lines.slice(0, APPROVAL_COMMAND_MAX_LINES).map((line) => `    ${line}`);
+  if (lines.length > shown.length) shown.push(`    ${dim(`… +${lines.length - shown.length} more lines`)}`);
+  return shown;
+}
+
 /** The approval card: pending with its keys, or settled with the decision. */
 export function renderApprovalCard(request: ApprovalRequest, decision?: ApprovalDecision): string[] {
   const verb = request.kind === "command" ? "Run" : request.kind === "edit" ? "Allow" : "Grant";
   const approved = decision === "accept" || decision === "acceptForSession";
   const glyph = decision ? renderActionBullet(approved ? "success" : "failure") : highlight("?");
   const rows = [`${glyph} ${verb} ${cardTitle(request)}?`];
+  if (!decision) rows.push(...approvalCommandRows(request));
   if (request.reason) rows.push(`  ${dim(`${RESULT_ELBOW} ${request.reason}`)}`);
   rows.push(decision
     ? `  ${dim(APPROVAL_LABELS[decision])}`
