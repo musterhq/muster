@@ -29,6 +29,7 @@
 import {
   createWorkspaceObserver,
   matchesIgnore,
+  undoWorkspacePatches,
   WorkspaceObserverError,
   type IgnoreMatcher,
   type WorkspaceObserver,
@@ -284,14 +285,18 @@ export interface LiveDiffFeedOptions {
 export interface LiveDiffFeed {
   /** false ⇒ disabled or degraded; finish() is then a no-op returning zero totals. */
   readonly active: boolean;
+  /** Why the feed is inactive ("live diff is off", "not a git repository", …); undefined when active. */
+  readonly inactiveReason?: string;
   /** Flushes the tail (late edits still render), stops the observer, emits the summary. */
   finish(): Promise<LiveDiffTotals>;
 }
 
 const ZERO_TOTALS: LiveDiffTotals = { files: 0, additions: 0, deletions: 0 };
 
-function inertFeed(): LiveDiffFeed {
-  return { active: false, finish: async () => ZERO_TOTALS };
+export const LIVE_DIFF_OFF_REASON = "live diff is off";
+
+function inertFeed(inactiveReason: string): LiveDiffFeed {
+  return { active: false, inactiveReason, finish: async () => ZERO_TOTALS };
 }
 
 /**
@@ -299,7 +304,7 @@ function inertFeed(): LiveDiffFeed {
  * `active` flag says whether cards will actually stream; it NEVER rejects.
  */
 export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<LiveDiffFeed> {
-  if (options.enabled === false) return inertFeed();
+  if (options.enabled === false) return inertFeed(LIVE_DIFF_OFF_REASON);
   const now = options.now ?? Date.now;
   const startedAt = now();
   const render: LiveDiffRenderOptions = { color: options.color, maxLines: options.maxLines };
@@ -359,8 +364,9 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
     // walking away, then say so in exactly one line.
     finished = true;
     await observer?.stop().catch(() => {});
-    emit(renderLiveDiffNotice(describeLiveDiffFailure(error), { color: options.color }));
-    return inertFeed();
+    const reason = describeLiveDiffFailure(error);
+    emit(renderLiveDiffNotice(reason, { color: options.color }));
+    return inertFeed(reason);
   }
   const attached = observer;
 
@@ -389,6 +395,42 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
       return totals;
     },
   };
+}
+
+/* ---------- /undo ---------- */
+
+const WARN_RGB = "229;192;123";
+
+/**
+ * The rows `/undo` prints. `patches` are the observer events of the most recent
+ * turn that changed files; `untrackedReason` is set when the latest turn ran
+ * without the observer, so an empty patch list cannot be read as "no changes".
+ */
+export async function undoLastTurnRows(
+  input: { readonly patches?: readonly WorkspacePatchEvent[]; readonly untrackedReason?: string },
+  options: { readonly color?: boolean } = {},
+): Promise<string[]> {
+  const paint = colorEnabled(options.color);
+  const patches = input.patches;
+  if (!patches?.length) {
+    if (input.untrackedReason === LIVE_DIFF_OFF_REASON) {
+      return [tint("Can't undo: undo needs live diff on to record a turn's file changes, and it was off for the last turn. Turn it on with /live-diff on (ctrl+d).", WARN_RGB, paint)];
+    }
+    if (input.untrackedReason === "not a git repository") {
+      return [tint("Can't undo: undo needs a git repository, and this folder is not one, so the last turn's file changes were not recorded. Run git init here to use /undo and /rewind.", WARN_RGB, paint)];
+    }
+    if (input.untrackedReason) {
+      return [tint(`Can't undo: the last turn's file changes were not recorded (${input.untrackedReason}).`, WARN_RGB, paint)];
+    }
+    return [tint("Nothing to undo: the last turn changed no files.", MUTED_RGB, paint)];
+  }
+  const result = await undoWorkspacePatches(patches);
+  const elbow = tint(RESULT_ELBOW, MUTED_RGB, paint);
+  return [
+    `${tint("↺", result.restored.length ? ADD_RGB : WARN_RGB, paint)} Undid ${result.restored.length} ${result.restored.length === 1 ? "file" : "files"}${result.skipped.length ? `, skipped ${result.skipped.length}` : ""}`,
+    ...result.restored.map((file) => `  ${elbow} ${file.path} ${tint(`(reverted +${file.additions} −${file.deletions})`, MUTED_RGB, paint)}`),
+    ...result.skipped.map((file) => `  ${elbow} ${file.path} ${tint(`left alone: ${file.reason}`, WARN_RGB, paint)}`),
+  ];
 }
 
 /* ---------- internals ---------- */
