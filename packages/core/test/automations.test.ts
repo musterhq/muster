@@ -126,24 +126,24 @@ test("desktop delivery passes the message as an argument, never as script", asyn
 test("channel delivery reports not configured until a sender exists", async () => {
   const cwd = await workspace();
   const t0 = new Date("2026-11-09T10:00:00.000Z");
-  const job = await createAutomation({ kind: "reminder", text: "standup", when: "in 1m", deliver: "channel:telegram-main", now: t0, cwd });
+  const job = await createAutomation({ kind: "reminder", text: "standup", when: "in 1m", deliver: "channel:telegram-main/peer-1", now: t0, cwd });
   const [result] = await runAutomationsTick({ cwd, now: minutes(t0, 1), deliverers: {} });
   assert.equal(result.status, "failed");
-  assert.match(result.detail ?? "", /channel delivery not configured \(telegram-main\)/);
+  assert.match(result.detail ?? "", /channel delivery not configured \(telegram-main\/peer-1\)/);
   const [listed] = await listAutomations(cwd);
   assert.equal(listed.id, job.id);
   assert.equal(listed.lastStatus, "failed");
   assert.match(listed.lastDetail ?? "", /channel delivery not configured/);
 
   const sent: Array<[string, string]> = [];
-  await createAutomation({ kind: "reminder", text: "retro", when: "in 1m", deliver: "channel:telegram-main", now: t0, cwd });
+  await createAutomation({ kind: "reminder", text: "retro", when: "in 1m", deliver: "channel:telegram-main/peer-1", now: t0, cwd });
   const results = await runAutomationsTick({
     cwd,
     now: minutes(t0, 2),
     deliverers: { channel: (channelId, notice) => { sent.push([channelId, notice.text]); } },
   });
   assert.deepEqual(results.map((entry) => entry.status), ["completed"]);
-  assert.deepEqual(sent, [["telegram-main", "retro"]]);
+  assert.deepEqual(sent, [["telegram-main/peer-1", "retro"]]);
 });
 
 // Spec: MUS-SPEC-16-4B (docs/spec/clauses/16-automations.md#mus-spec-16-4b--agent-scheduling-is-governed)

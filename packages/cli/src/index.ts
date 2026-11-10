@@ -326,7 +326,8 @@ import {
   telegramUpdateToSurfaceMessage,
   whatsAppWebMessageToSurfaceMessage,
   whatsappSessionDir,
-  whatsAppWebhookToSurfaceMessages
+  whatsAppWebhookToSurfaceMessages,
+  sendToChannel
 } from "@musterhq/gateway";
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
 import { sdkChannelsCommand } from "./sdk-channels-command.js";
@@ -712,8 +713,8 @@ Usage:
   muster tokens [--limit 20]
   muster traces [--limit N] [--trace <id>]     # OpenTelemetry spans — set MUSTER_TRACE=1 to record, MUSTER_OTLP_ENDPOINT to export
   muster profile create|list|use|current [name] | clone <from> <to>
-  muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<id>] | list | remove <id> | run-due
-  muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<id>]   # one-off reminder (also: ISO time)
+  muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<channel>/<peer>] | list | remove <id> | run-due
+  muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<channel>/<peer>]   # one-off reminder (also: ISO time)
   muster daemon [--interval 20] [--once]   # run due reminders and routines; see muster daemon --help
   muster evolve <suite.json> [--runtime pi] [--provider anthropic] [--model ...] [--iterations 2]
   muster evolve selfcheck
@@ -11634,10 +11635,10 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     const positional = stripFlags(rest, ["--profile", "--tz", "--kind", "--deliver"]);
     const [cron, ...promptParts] = positional;
     const prompt = promptParts.join(" ").trim();
-    if (!cron || !prompt) throw new Error('Usage: muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<id>] [--profile name]');
+    if (!cron || !prompt) throw new Error('Usage: muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<channel>/<peer>] [--profile name]');
     const kind = readFlag(rest, "--kind") ?? "run";
     if (kind !== "run" && kind !== "reminder") throw new Error(`Unknown --kind ${kind}: use run or reminder.`);
-    const deliver = readFlag(rest, "--deliver");
+    const deliver = checkedDeliverTarget(readFlag(rest, "--deliver"));
     const tz = readFlag(rest, "--tz");
     // Plain cron prompts without automation flags stay legacy jobs (log-only).
     const job = kind === "run" && !deliver && !tz
@@ -11651,8 +11652,8 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     const positional = stripFlags(rest, ["--deliver"]);
     const [when, ...messageParts] = positional;
     const message = messageParts.join(" ").trim();
-    if (!when || !message) throw new Error('Usage: muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<id>]');
-    const job = await createAutomation({ kind: "reminder", text: message, when, deliver: readFlag(rest, "--deliver") ?? "terminal" });
+    if (!when || !message) throw new Error('Usage: muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<channel>/<peer>]');
+    const job = await createAutomation({ kind: "reminder", text: message, when, deliver: checkedDeliverTarget(readFlag(rest, "--deliver")) ?? "terminal" });
     console.log(describeAutomation(job));
     console.log("Fires in an open `muster chat` or while `muster daemon` is running.");
     return;
@@ -11709,6 +11710,23 @@ On Linux (systemd user unit) — ~/.config/systemd/user/muster-daemon.service:
   WantedBy=default.target
   systemctl --user enable --now muster-daemon`;
 
+/** `channel:<channel>/<peer>`: a channel delivery needs someone to deliver to. */
+function checkedDeliverTarget(target: string | undefined): string | undefined {
+  if (target?.startsWith("channel:") && !/^channel:[a-z0-9_-]+\/\S+$/i.test(target)) {
+    throw new Error(`Channel delivery needs a recipient: channel:<channel>/<peer>, for example channel:telegram/123456789 or channel:matrix/!room:example.org (got ${target}).`);
+  }
+  return target;
+}
+
+/** Deliver an automation's message through the gateway's channel SDK. */
+export function channelDeliverer(cwd = process.cwd()): (target: string, notice: { readonly text: string }) => Promise<void> {
+  return async (target, notice) => {
+    const slash = target.indexOf("/");
+    if (slash <= 0) throw new Error(`Channel delivery needs channel:<channel>/<peer>, got channel:${target}`);
+    await sendToChannel(target.slice(0, slash), target.slice(slash + 1), notice.text, { cwd });
+  };
+}
+
 /** One tick with the CLI's deliverers and prompt runner; logs one line per run. */
 async function tickAutomationsOnce(options: { log: (line: string) => void; only?: (job: ScheduleJob) => boolean }): Promise<Awaited<ReturnType<typeof runAutomationsTick>>> {
   const routineOutput = new Map<string, string>();
@@ -11716,6 +11734,7 @@ async function tickAutomationsOnce(options: { log: (line: string) => void; only?
     // The run line already carries a reminder's message; a routine's answer is printed under it.
     terminal: (notice) => { if (notice.kind !== "reminder") routineOutput.set(notice.jobId, notice.text); },
     desktop: desktopNotifier(),
+    channel: channelDeliverer(),
   };
   let config: AutomationConfig | undefined;
   const runPrompt = async (job: ScheduleJob): Promise<AutomationRunOutcome> => {

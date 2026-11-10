@@ -97,13 +97,14 @@ test("a due reminder is delivered to a Matrix room", { timeout: 120_000 }, async
   try {
     const setup = await runCli(["channels", "setup", "matrix", "--homeserver", matrix.url, "--user-id", matrix.botUserId, "--access-token-env", "MATRIX_TOKEN", "--allow-from", "@alice:fake.test"], cwd);
     assert.equal(setup.code, 0, setup.stderr);
-    const at = new Date(Date.now() - 1_000).toISOString();
+    const at = new Date(Date.now() + 2_000).toISOString();
     const scheduled = await runCli(["schedule", "remind", at, "stand up and stretch", "--deliver", "channel:matrix/!room:fake.test"], cwd);
     assert.equal(scheduled.code, 0, scheduled.stderr);
+    await new Promise((done) => setTimeout(done, 2_500));
     const tick = await runCli(["daemon", "--once"], cwd, { MATRIX_TOKEN: matrix.token });
     assert.equal(tick.code, 0, tick.stderr);
     assert.ok(matrix.sent.some((event) => JSON.stringify(event).includes("stand up and stretch") && JSON.stringify(event).includes("!room:fake.test")), JSON.stringify(matrix.sent));
-    const bad = await runCli(["schedule", "remind", at, "x", "--deliver", "channel:matrix"], cwd);
+    const bad = await runCli(["schedule", "remind", "in 5m", "x", "--deliver", "channel:matrix"], cwd);
     assert.notEqual(bad.code, 0);
     assert.match(`${bad.stdout}${bad.stderr}`, /channel:<channel>\/<peer>/);
   } finally {

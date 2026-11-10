@@ -56,8 +56,9 @@ export function parseWhen(text: string, now: Date = new Date()): Date {
 export function parseDelivery(value: string | undefined): string {
   const deliver = (value ?? "terminal").trim();
   if (deliver === "terminal" || deliver === "desktop") return deliver;
-  if (/^channel:[A-Za-z0-9._-]+$/.test(deliver)) return deliver;
-  throw new Error(`Unknown delivery "${deliver}": use terminal, desktop or channel:<id>.`);
+  if (/^channel:[A-Za-z0-9._-]+\/\S+$/.test(deliver)) return deliver;
+  if (deliver.startsWith("channel:")) throw new Error(`Channel delivery needs a recipient: channel:<channel>/<peer>, for example channel:telegram/123456789 or channel:matrix/!room:example.org (got ${deliver}).`);
+  throw new Error(`Unknown delivery "${deliver}": use terminal, desktop or channel:<channel>/<peer>.`);
 }
 
 export interface CreateAutomationInput {
