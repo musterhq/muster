@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -566,4 +566,177 @@ async function recordVoiceReceipt(input: Omit<VoiceReceipt, "id" | "createdAt">,
 export async function listVoiceReceipts(cwd = process.cwd()): Promise<VoiceReceipt[]> {
   const raw = await readFile(voiceLedgerPath(cwd), "utf8").catch(() => "");
   return raw.split("\n").filter(Boolean).map((line) => JSON.parse(line) as VoiceReceipt);
+}
+
+// ---- Doctor -----------------------------------------------------------------------------
+
+export interface VoiceDoctorTool {
+  readonly name: string;
+  readonly purpose: string;
+  readonly path?: string;
+}
+
+export interface VoiceDoctorCheck {
+  readonly provider: string;
+  readonly status: "off" | "ok" | "fail";
+  readonly detail: string;
+}
+
+export interface VoiceDoctorReport {
+  readonly stt: VoiceDoctorCheck;
+  readonly tts: VoiceDoctorCheck;
+  readonly reply: VoiceReplyMode;
+  readonly tools: readonly VoiceDoctorTool[];
+  /** whisper.cpp ggml models found in the usual places. */
+  readonly models: readonly string[];
+  /** The config that turns local speech on with what was found, when anything is missing from the current config. */
+  readonly suggestedConfig?: { readonly voice: VoiceConfig };
+  /** `suggestedConfig` as the one line to paste into .muster/config.json. */
+  readonly suggestedLine?: string;
+  readonly hints: readonly string[];
+}
+
+const DOCTOR_TOOLS: ReadonlyArray<readonly [string, string]> = [
+  ["whisper-cli", "local speech-to-text (whisper.cpp)"],
+  ["ffmpeg", "audio conversion"],
+  ["say", "local text-to-speech (macOS)"],
+  ["afplay", "playback for `muster voice say`"],
+];
+
+function modelDirs(env: VoiceEnv): string[] {
+  const home = env.HOME ?? process.env.HOME ?? "";
+  const dirs = [join(home, ".muster", "models"), join(home, ".cache", "whisper"), join(home, ".cache", "whisper.cpp")];
+  // Tools that bundle whisper keep models under ~/.cache/<tool>/whisper[/models].
+  try {
+    for (const entry of readdirSync(join(home, ".cache"), { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith("whisper")) continue;
+      dirs.push(join(home, ".cache", entry.name, "whisper", "models"), join(home, ".cache", entry.name, "whisper"));
+    }
+  } catch {
+    // no ~/.cache
+  }
+  dirs.push("/opt/homebrew/share/whisper-cpp/models", "/usr/local/share/whisper-cpp/models", "/usr/share/whisper-cpp/models");
+  return dirs;
+}
+
+/** whisper.cpp ggml model files in the usual places, smallest-English-first is not assumed: order is discovery order. */
+export function findWhisperModels(env: VoiceEnv = process.env): string[] {
+  const found: string[] = [];
+  for (const dir of modelDirs(env)) {
+    try {
+      for (const name of readdirSync(dir).sort()) {
+        if (/^ggml-.+\.bin$/.test(name) && !name.includes("encoder")) found.push(join(dir, name));
+      }
+    } catch {
+      // missing dir
+    }
+  }
+  return [...new Set(found)];
+}
+
+/** Render a value as one readable JSON line: `{"a": 1, "b": {"c": "d"}}`. */
+export function inlineJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(inlineJson).join(", ")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => `${JSON.stringify(key)}: ${inlineJson(entry)}`).join(", ")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sttCheck(voice: VoiceConfig | undefined, env: VoiceEnv): VoiceDoctorCheck {
+  const stt = voice?.stt;
+  if (!stt || stt.provider === "off") return { provider: "off", status: "off", detail: "voice notes get a setup hint instead of a turn" };
+  const ffmpeg = findExecutable(voice?.ffmpeg ?? "ffmpeg", env);
+  if (stt.provider === "whisper-cpp") {
+    const binary = findExecutable(stt.binary ?? "whisper-cli", env);
+    const model = stt.model ? expandHome(stt.model, env) : undefined;
+    const problems = [
+      ...(binary ? [] : [`${stt.binary ?? "whisper-cli"} not found (brew install whisper-cpp)`]),
+      ...(!model ? ["voice.stt.model is not set"] : existsSync(model) ? [] : [`model ${model} does not exist`]),
+      ...(ffmpeg ? [] : ["ffmpeg not found (brew install ffmpeg)"]),
+    ];
+    return problems.length
+      ? { provider: stt.provider, status: "fail", detail: problems.join("; ") }
+      : { provider: stt.provider, status: "ok", detail: `local, ${binary} with ${model}` };
+  }
+  if (stt.provider === "command") {
+    const program = stt.command?.[0];
+    if (!program) return { provider: stt.provider, status: "fail", detail: "voice.stt.command is empty" };
+    return findExecutable(program, env)
+      ? { provider: stt.provider, status: "ok", detail: `local, ${program}` }
+      : { provider: stt.provider, status: "fail", detail: `${program} not found on PATH` };
+  }
+  if (stt.provider === "openai") return cloudCheck(stt.provider, stt.apiKeyEnv, trimBase(stt.baseUrl, "https://api.openai.com/v1"), env);
+  return { provider: String(stt.provider), status: "fail", detail: "unknown provider (whisper-cpp, command, openai)" };
+}
+
+function ttsCheck(voice: VoiceConfig | undefined, env: VoiceEnv): VoiceDoctorCheck {
+  const tts = voice?.tts;
+  if (!tts || tts.provider === "off") return { provider: "off", status: "off", detail: "replies are text only" };
+  const ffmpeg = findExecutable(voice?.ffmpeg ?? "ffmpeg", env);
+  if (tts.provider === "say") {
+    const binary = findExecutable(tts.binary ?? "say", env);
+    const problems = [
+      ...(binary ? [] : ["say not found (macOS only; use the command provider with piper, or a cloud provider)"]),
+      ...(ffmpeg ? [] : ["ffmpeg not found (brew install ffmpeg)"]),
+    ];
+    return problems.length ? { provider: tts.provider, status: "fail", detail: problems.join("; ") } : { provider: tts.provider, status: "ok", detail: `local, ${binary}${tts.voice ? ` voice ${tts.voice}` : ""}` };
+  }
+  if (tts.provider === "command") {
+    const program = tts.command?.[0];
+    if (!program) return { provider: tts.provider, status: "fail", detail: "voice.tts.command is empty" };
+    return findExecutable(program, env)
+      ? { provider: tts.provider, status: "ok", detail: `local, ${program}` }
+      : { provider: tts.provider, status: "fail", detail: `${program} not found on PATH` };
+  }
+  if (tts.provider === "openai") return cloudCheck(tts.provider, tts.apiKeyEnv, trimBase(tts.baseUrl, "https://api.openai.com/v1"), env);
+  if (tts.provider === "elevenlabs") {
+    if (!tts.voice) return { provider: tts.provider, status: "fail", detail: "voice.tts.voice (an ElevenLabs voice id) is not set" };
+    return cloudCheck(tts.provider, tts.apiKeyEnv, trimBase(tts.baseUrl, "https://api.elevenlabs.io/v1"), env);
+  }
+  return { provider: String(tts.provider), status: "fail", detail: "unknown provider (say, command, openai, elevenlabs)" };
+}
+
+function cloudCheck(provider: string, apiKeyEnv: string | undefined, baseUrl: string, env: VoiceEnv): VoiceDoctorCheck {
+  if (!apiKeyEnv) return { provider, status: "fail", detail: "apiKeyEnv is not set (the NAME of the env var holding the key)" };
+  const value = env[apiKeyEnv];
+  return value
+    ? { provider, status: "ok", detail: `cloud, ${baseUrl}, key from env ${apiKeyEnv}` }
+    : { provider, status: "fail", detail: `environment variable ${apiKeyEnv} is not set` };
+}
+
+/** What speech can run here. Reads the filesystem only; never makes a network call. */
+export function voiceDoctor(options: { readonly voice: VoiceConfig | undefined; readonly env?: VoiceEnv }): VoiceDoctorReport {
+  const env = options.env ?? process.env;
+  const tools = DOCTOR_TOOLS.map(([name, purpose]) => ({ name, purpose, path: findExecutable(name, env) }));
+  const models = findWhisperModels(env);
+  const configuredModel = options.voice?.stt?.model ? expandHome(options.voice.stt.model, env) : undefined;
+  if (configuredModel && existsSync(configuredModel) && !models.includes(configuredModel)) models.unshift(configuredModel);
+  const stt = sttCheck(options.voice, env);
+  const tts = ttsCheck(options.voice, env);
+  const has = (name: string) => tools.some((tool) => tool.name === name && tool.path);
+  const suggested: { stt?: VoiceSttConfig; tts?: VoiceTtsConfig } = {};
+  const hints: string[] = [];
+  if (stt.status !== "ok") {
+    if (has("whisper-cli") && models[0]) suggested.stt = { provider: "whisper-cpp", model: models[0] };
+    else if (!has("whisper-cli")) hints.push("Local speech-to-text needs whisper.cpp: brew install whisper-cpp");
+    else hints.push("Download a whisper model, e.g. ggml-small.en.bin from https://huggingface.co/ggerganov/whisper.cpp, into ~/.muster/models");
+  }
+  if (tts.status !== "ok") {
+    if (has("say")) suggested.tts = { provider: "say" };
+    else hints.push("Local text-to-speech: on macOS `say` is built in; elsewhere use the command provider with a TTS that takes the text as an argument and writes {output}, or configure openai/elevenlabs with apiKeyEnv.");
+  }
+  if (!has("ffmpeg")) hints.push("Audio conversion needs ffmpeg: brew install ffmpeg");
+  const voice: VoiceConfig | undefined = suggested.stt || suggested.tts
+    ? { ...(options.voice ?? {}), ...(suggested.stt ? { stt: suggested.stt } : {}), ...(suggested.tts ? { tts: suggested.tts } : {}) }
+    : undefined;
+  return {
+    stt,
+    tts,
+    reply: options.voice?.reply ?? "off",
+    tools,
+    models,
+    ...(voice ? { suggestedConfig: { voice }, suggestedLine: `"voice": ${inlineJson(voice)}` } : {}),
+    hints,
+  };
 }
