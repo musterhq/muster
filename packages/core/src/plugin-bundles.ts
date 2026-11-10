@@ -51,6 +51,14 @@ export interface PluginBundleIgnoredPart {
   readonly reason: string;
 }
 
+export interface PluginBundleCommand {
+  readonly name: string;
+  readonly description?: string;
+  readonly argumentHint?: string;
+  /** Relative to the bundle root in an inspection; absolute in the lock. */
+  readonly path: string;
+}
+
 export interface PluginBundleInspection {
   readonly path: string;
   readonly installRoot: string;
@@ -63,6 +71,8 @@ export interface PluginBundleInspection {
   readonly skills: readonly PluginBundleSkill[];
   /** Skill directories relative to the bundle root. */
   readonly skillRoots: readonly string[];
+  /** Markdown prompt commands (`commands/*.md`), usable as chat slash commands. */
+  readonly commands: readonly PluginBundleCommand[];
   readonly ignored: readonly PluginBundleIgnoredPart[];
   readonly risk: PluginBundleRisk;
   readonly permissions: readonly string[];
@@ -89,6 +99,8 @@ export interface PluginBundleLockEntry {
   readonly skills: readonly string[];
   /** Absolute skill directories, scanned by skills.ts. */
   readonly skillRoots: readonly string[];
+  /** Absolute paths to the bundle's prompt commands (older locks have none). */
+  readonly commands?: readonly PluginBundleCommand[];
   readonly ignored: readonly PluginBundleIgnoredPart[];
   readonly risk: PluginBundleRisk;
 }
@@ -218,9 +230,21 @@ export async function inspectPluginBundle(dir: string, options: { readonly insta
     }
   }
 
+  // Prompt commands: Markdown with front matter, read cold, never executed.
+  const commands: PluginBundleCommand[] = [];
+  for (const commandDir of declaredPaths("commands", ["commands"])) {
+    if (!(await isDirectory(commandDir))) continue;
+    for (const entry of (await readdir(commandDir)).filter((name) => name.endsWith(".md")).sort()) {
+      const name = entry.slice(0, -3);
+      if (!/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(name)) continue;
+      const head = readCommandHead(await readFile(join(commandDir, entry), "utf8"));
+      commands.push({ name, ...head, path: relative(root, join(commandDir, entry)) });
+    }
+  }
+
   // Parts that would need plugin code or a register API.
   const optionalParts: readonly { part: string; field?: string; paths: readonly string[] }[] = [
-    { part: "commands", field: "commands", paths: ["commands"] },
+    ...(commands.length ? [] : [{ part: "commands", field: "commands", paths: ["commands"] }]),
     { part: "agents", field: "agents", paths: ["agents"] },
     { part: "hooks", field: "hooks", paths: ["hooks", join("hooks", "hooks.json")] },
     { part: "apps", field: "apps", paths: [".app.json"] },
@@ -247,7 +271,7 @@ export async function inspectPluginBundle(dir: string, options: { readonly insta
   const permissions = permissionsSource.filter((item): item is string => typeof item === "string");
   const flagged = servers.some((server) => server.flags.length > 0);
   const risk: PluginBundleRisk = declaredRisk === "high" ? "high" : declaredRisk === "medium" || flagged ? "medium" : declaredRisk ?? "low";
-  if (!servers.length && !skills.length) warnings.push("The bundle contributes no MCP servers or skills; nothing would be activated.");
+  if (!servers.length && !skills.length && !commands.length) warnings.push("The bundle contributes no MCP servers, skills or commands; nothing would be activated.");
 
   return {
     path: root,
@@ -260,6 +284,7 @@ export async function inspectPluginBundle(dir: string, options: { readonly insta
     servers,
     skills,
     skillRoots,
+    commands,
     ignored,
     risk,
     permissions,
@@ -399,6 +424,7 @@ export async function installPluginBundle(source: string, options: InstallPlugin
       mcpServers: inspection.servers.map((server) => server.name),
       skills: inspection.skills.map((skill) => skill.name),
       skillRoots: inspection.skillRoots.map((dir) => resolve(installedPath, dir)),
+      commands: inspection.commands.map((command) => ({ ...command, path: resolve(installedPath, command.path) })),
       ignored: inspection.ignored,
       risk: inspection.risk,
     };
@@ -664,4 +690,46 @@ async function isFile(path: string): Promise<boolean> {
 /** lstat: a symlinked directory inside a bundle is not followed. */
 async function isDirectory(path: string): Promise<boolean> {
   return lstat(path).then((info) => info.isDirectory(), () => false);
+}
+
+/** `description` and `argument-hint` from a command's front matter. */
+function readCommandHead(text: string): { description?: string; argumentHint?: string } {
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const field = (key: string) => {
+    const line = match[1]!.split(/\r?\n/).find((row) => row.startsWith(`${key}:`));
+    const value = line?.slice(key.length + 1).trim().replace(/^["']|["']$/g, "");
+    return value || undefined;
+  };
+  const description = field("description");
+  const argumentHint = field("argument-hint");
+  return { ...(description ? { description } : {}), ...(argumentHint ? { argumentHint } : {}) };
+}
+
+export interface InstalledPluginCommand extends PluginBundleCommand {
+  readonly plugin: string;
+}
+
+/** Every installed bundle's prompt commands. */
+export async function listPluginCommands(cwd = process.cwd()): Promise<InstalledPluginCommand[]> {
+  const entries = await listPluginBundles(cwd);
+  return entries.flatMap((entry) => (entry.commands ?? []).map((command) => ({ ...command, plugin: entry.id })));
+}
+
+export const SHELL_SNIPPET_NOTE = "(a shell snippet was here; shell snippets in plugin commands are not executed)";
+
+/**
+ * A command's prompt for one use: front matter dropped, `$ARGUMENTS` and
+ * `$1`…`$9` filled, and every `` !`cmd` `` snippet replaced by a note — plugin
+ * commands never run shell on the user's machine.
+ */
+export async function expandPluginCommand(command: PluginBundleCommand, args: string): Promise<string> {
+  const text = await readFile(command.path, "utf8");
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  const positional = args.trim() ? args.trim().split(/\s+/) : [];
+  return body
+    .replace(/!`[^`]*`/g, SHELL_SNIPPET_NOTE)
+    .replace(/\$ARGUMENTS/g, args.trim())
+    .replace(/\$(\d)/g, (_, index: string) => positional[Number(index) - 1] ?? "")
+    .trim();
 }

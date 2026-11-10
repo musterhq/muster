@@ -262,6 +262,9 @@ import {
   removeMarketplace,
   searchMarketplacePlugins,
   updateMarketplace,
+  expandPluginCommand,
+  listPluginCommands,
+  type InstalledPluginCommand,
   callCodexConversation,
   rewindTurns,
   forgetTurnMemories,
@@ -1350,6 +1353,8 @@ interface ChatState {
   liveFileTurn?: LiveFileTurnAccumulator;
   /** Active inherited plugins discovered once when chat starts. */
   dynamicCommands?: readonly ChatCommandDef[];
+  /** Installed plugin bundles' prompt commands, by slash name. */
+  bundleCommands?: ReadonlyMap<string, InstalledPluginCommand>;
   inheritedTools?: BackendEcosystem;
   /** Conflict recovery differs for a Codex import and a native chat. */
   importedFromCodex?: boolean;
@@ -1890,6 +1895,14 @@ async function initializeChatComposerState(state: ChatState): Promise<void> {
   const [config, codexDefaults, ecosystem] = await Promise.all([loadConfig(), readCodexComposerDefaults(), inheritedEcosystem()]);
   state.inheritedTools = ecosystem;
   state.dynamicCommands = dynamicPluginCommands(ecosystem.codex.plugins);
+  const builtinNames = new Set(CHAT_COMMANDS.flatMap((entry) => [entry.name, ...(entry.aliases ?? [])]));
+  const bundleCommands = new Map<string, InstalledPluginCommand>();
+  for (const command of await listPluginCommands().catch(() => [])) {
+    // A name a built-in already owns stays reachable as /<plugin>:<name>.
+    const slash = builtinNames.has(command.name) || bundleCommands.has(command.name) ? `${command.plugin}:${command.name}` : command.name;
+    bundleCommands.set(slash, command);
+  }
+  state.bundleCommands = bundleCommands;
   const runtimeId = state.runtime ?? config.routing.defaultRuntime;
   const runtime = config.runtimes[runtimeId];
   const configuredProviderId = state.provider ?? runtime?.provider;
@@ -1918,7 +1931,12 @@ async function initializeChatComposerState(state: ChatState): Promise<void> {
 }
 
 function chatCommands(state?: ChatState): readonly ChatCommandDef[] {
-  return [...CHAT_COMMANDS, ...(state?.dynamicCommands ?? [])];
+  const bundle: ChatCommandDef[] = [...(state?.bundleCommands ?? new Map<string, InstalledPluginCommand>()).entries()].map(([slash, command]) => ({
+    name: slash,
+    usage: `/${slash}${command.argumentHint ? ` ${command.argumentHint}` : ""}`,
+    description: `${command.description ?? "plugin command"} · ${command.plugin}`,
+  }));
+  return [...CHAT_COMMANDS, ...(state?.dynamicCommands ?? []), ...bundle];
 }
 
 function activeChatProvider(state: ChatState): ModelProvider {
@@ -2750,6 +2768,11 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       return true;
     default:
       {
+        const bundleCommand = state.bundleCommands?.get(name);
+        if (bundleCommand) {
+          await runChatTurn(await expandPluginCommand(bundleCommand, args), state);
+          return true;
+        }
         const plugin = directPluginCommand(name, args, state.dynamicCommands ?? []);
         if (plugin?.kind === "insert") {
           if (state.statusSink) state.statusSink.openPicker(plugin.text);
@@ -7766,6 +7789,7 @@ async function pluginsCommand(args: string[]): Promise<void> {
     console.log(`path=${entry.installedPath}`);
     for (const server of inspection.servers) console.log(`mcp_server=${server.name} status=added`);
     for (const skill of inspection.skills) console.log(`skill=${skill.name} status=discoverable`);
+    for (const command of inspection.commands) console.log(`command=${command.name} status=available`);
     for (const part of inspection.ignored) console.log(`ignored=${part.part} reason="${part.reason}"`);
     console.log("next=muster mcp list");
     return;
@@ -7844,6 +7868,7 @@ async function printPluginBundleInspection(source: string): Promise<void> {
   if (!report.servers.length) console.log("mcp_servers=none");
   for (const skill of report.skills) console.log(`skill=${skill.name} path=${skill.path} description="${skill.description.slice(0, 80)}"`);
   if (!report.skills.length) console.log("skills=none");
+  for (const command of report.commands) console.log(`command=${command.name} path=${command.path}${command.description ? ` description="${command.description.slice(0, 80)}"` : ""}`);
   for (const part of report.ignored) console.log(`ignored=${part.part} reason="${part.reason}"`);
   for (const warning of report.warnings) console.log(`warning="${warning}"`);
   console.log("runs_plugin_code=no");

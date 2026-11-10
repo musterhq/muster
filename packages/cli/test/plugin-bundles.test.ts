@@ -147,7 +147,8 @@ test("inspect lists servers, skills and ignored parts of an Agent Plugins v1 bun
     assert.match(out, /mcp_server=weather-kit__forecast .*flags=command-outside-bundle/);
     assert.match(out, /mcp_server=weather-kit__docs transport=http url=https:\/\/docs\.weather\.example\/mcp .*header_keys=X-Api-Key .*flags=remote-url/);
     assert.match(out, /skill=forecast-helper /);
-    assert.match(out, /ignored=commands .*not activated \(needs register API\)/);
+    // Prompt commands are read cold and offered as slash commands (spec 20).
+    assert.match(out, /command=today path=commands\/today\.md/);
     assert.match(out, /ignored=package\.json scripts .*never run/);
     assert.doesNotMatch(out, /lit-secret-123|hdr-secret-456/, "env and header values are never printed");
     assert.equal(await exists(marker), false, "inspect never runs plugin code");
@@ -197,7 +198,8 @@ test("a Claude Code plugin installs with CLAUDE_PLUGIN_ROOT resolved and hooks r
     assert.match(inspected, /bundle=claude-notes format=claude-code version=0\.2\.0/);
     assert.match(inspected, /mcp_server=claude-notes__notes transport=stdio command=\S+\/bin\/notes/);
     assert.doesNotMatch(inspected, /mcp_server=claude-notes__notes .*command-outside-bundle/, "a command inside the bundle is not flagged");
-    for (const part of ["commands", "agents", "hooks"]) assert.match(inspected, new RegExp(`ignored=${part} .*not activated \\(needs register API\\)`));
+    assert.match(inspected, /command=save path=commands\/save\.md/, "prompt commands are offered (spec 20)");
+    for (const part of ["agents", "hooks"]) assert.match(inspected, new RegExp(`ignored=${part} .*not activated \\(needs register API\\)`));
     await ok(cwd, ["plugins", "install", bundle]);
     const entry = (await lock(cwd))["claude-notes"]!;
     assert.equal(entry.format, "claude-code");
