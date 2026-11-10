@@ -121,3 +121,13 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Environment:** real CLI process; fake servers.
 - **Known gaps:** none.
 - **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
+
+## MUS-SPEC-18-6A — Automations deliver to a channel
+
+- **Precondition:** Matrix is set up (`muster channels setup matrix …`); a reminder is scheduled with `--deliver channel:matrix/!room:fake.test` and is due.
+- **Action:** `muster daemon --once`.
+- **Expected result:** the homeserver receives the reminder text in that room; the run line reports it delivered; a target without a peer (`channel:matrix`) is refused with the expected form.
+- **Test:** `packages/cli/test/channels-sdk.test.ts` › "a due reminder is delivered to a Matrix room"
+- **Environment:** real CLI, fake homeserver.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
