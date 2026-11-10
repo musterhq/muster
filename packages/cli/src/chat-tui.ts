@@ -531,7 +531,8 @@ export function formatStatusLine(info: StatusLineInfo): string {
   if (info.inputTokens !== undefined || info.outputTokens !== undefined) {
     segments.push(`${compactCount(info.inputTokens ?? 0)} in / ${compactCount(info.outputTokens ?? 0)} out`);
   }
-  if (info.costUsd !== undefined && Number.isFinite(info.costUsd)) segments.push(`$${info.costUsd.toFixed(4)}`);
+  // A subscription turn costs nothing per call: `$0.0000` reads as a broken meter.
+  if (info.costUsd !== undefined && Number.isFinite(info.costUsd) && info.costUsd > 0) segments.push(`$${info.costUsd.toFixed(4)}`);
   if (info.elapsedMs !== undefined && Number.isFinite(info.elapsedMs)) segments.push(formatDuration(Math.max(0, info.elapsedMs)));
   for (const extra of info.extra ?? []) segments.push(extra);
   const body = segments.join(" · ");
@@ -603,7 +604,10 @@ export class TurnTimer {
 
 /** The running turn's status row: the rotating verb and live timer, or `Waiting for approval` with the timer held. */
 export function formatTurnStatusLine(info: StatusLineInfo, timer: TurnTimer, frame: number): string {
-  return formatStatusLine({ ...info, verb: timer.paused ? APPROVAL_WAIT_VERB : workingVerbForFrame(frame), frame, elapsedMs: timer.elapsedMs() });
+  // Token and cost counts here would be the session's or the last turn's, not
+  // this turn's (known only when it ends, on the summary row): leave them out.
+  const { inputTokens: _input, outputTokens: _output, costUsd: _cost, ...turnInfo } = info;
+  return formatStatusLine({ ...turnInfo, verb: timer.paused ? APPROVAL_WAIT_VERB : workingVerbForFrame(frame), frame, elapsedMs: timer.elapsedMs() });
 }
 
 /** The status row's live verb — rotates every ~4s of spinner frames. */
