@@ -154,7 +154,7 @@ On the envelope, `SurfaceAttachment` gains optional `seconds` and `sizeBytes` (c
 - **Test:** `packages/gateway/test/voice-notes.test.ts` › "a failed transcription answers plainly and keeps tool errors out of the chat"
 - **Environment:** as 21-2A, with the fake ffmpeg failing.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10: gateway `test/voice-notes.test.ts` 6/6 (red first: the reply carried `ffmpeg failed (exit 1): …`).
 
 ## MUS-SPEC-21-3A — Every transcription and synthesis leaves a receipt
 
@@ -190,4 +190,4 @@ On the envelope, `SurfaceAttachment` gains optional `seconds` and `sizeBytes` (c
 - **Test:** `packages/cli/test/voice.test.ts` › "voice say speaks text that starts with a dash"
 - **Environment:** fake binaries.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10: CLI `test/voice.test.ts` 4/4. Live on macOS: `muster voice say "-5 degrees outside, bring a jacket" -o minus.ogg` wrote Opus in Ogg (ffprobe: `opus`, `ogg`), and `muster voice transcribe minus.ogg` with whisper-cli and ggml-small.en printed `5 degrees outside, bring a jacket.`
