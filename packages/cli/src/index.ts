@@ -8792,7 +8792,7 @@ async function mcpCommand(args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
   if (action === "serve") {
     // stdout is the protocol channel: nothing else may print to it.
-    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION }));
+    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION, defaultScopes: defaultChatScopes().map(formatMemoryScope) }));
     return;
   }
   // Like chat and config set: a folder without .muster/ gets its config
