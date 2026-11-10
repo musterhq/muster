@@ -681,8 +681,8 @@ export interface NarrationPainter {
   flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
   reasoning(text: string): void;
-  /** Flush both buffers at end of turn. */
-  finish(): void;
+  /** Flush both buffers at end of turn and close any cell still running (as interrupted, or as ended without a result). */
+  finish(options?: { readonly interrupted?: boolean }): void;
   /** Characters of assistant narration painted so far. */
   readonly painted: number;
 }
@@ -738,6 +738,18 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   };
   /** The tool whose headline is the last thing painted; its result hangs right under it. */
   let headlineToolId: string | undefined;
+  /** Cells painted as running that have not had their end event yet. */
+  const openCells = new Map<string, AgentToolEvent>();
+  const closeOpenCells = (interrupted: boolean): void => {
+    if (!options.block || !bullets) return;
+    const label = interrupted ? "interrupted" : "no result (the turn ended)";
+    for (const [id, event] of openCells) {
+      const name = toolCellName(event);
+      const title = toolCellTitle(event);
+      options.block(`tool:${id}`, () => ["", ...[formatToolLine(name, title, "failure"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
+    }
+    openCells.clear();
+  };
   const paintTool = (event: AgentToolEvent): void => {
     flushAll();
     blockOpen = false;
@@ -746,8 +758,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       const title = toolCellTitle(event);
       // A card: one blank gap row, then the rows on a band (red-tinted on failure).
       if (event.phase === "start") {
+        openCells.set(event.id, event);
         options.block(`tool:${event.id}`, () => ["", ...[formatToolLine(name, title, "pending"), `  ${dim(`${RESULT_ELBOW} running…`)}`].map((row) => cardRow(row))]);
       } else {
+        openCells.delete(event.id);
         const tone: CardTone = event.failed ? "failure" : "tool";
         options.block(`tool:${event.id}`, (expanded) => ["", ...[
           formatToolLine(name, title, event.failed ? "failure" : "success"),
@@ -807,12 +821,13 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
         }
       });
     },
-    finish() {
+    finish(finishOptions) {
       drainReasoning();
       for (const event of message.flush("message_end")) {
         if (event.type === "block") paintMessage(event.text);
       }
       blockOpen = false;
+      closeOpenCells(Boolean(finishOptions?.interrupted));
     },
     get painted() {
       return painted;

@@ -3224,6 +3224,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
   // ~/.codex/config.toml); a provider prefix Codex does not know is refused
   // before any spend instead of failing inside the provider.
   const gateway = await resolveChatGatewayModel(state);
+  const turnStartedAt = Date.now();
   let outcome: RunOutcome;
   try {
     outcome = await executeRun(config, {
@@ -3267,7 +3268,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       ...(resumeThreadId ? { sessionId: resumeThreadId, resume: true } : {}),
     });
   } finally {
-    painter?.finish();
+    painter?.finish({ interrupted: lastChatInterruptAt >= turnStartedAt });
     stopWorking();
     await liveDiff.finish().catch(() => {});
   }
@@ -3348,7 +3349,11 @@ function emitChatLine(state: ChatState, line: string): void {
   console.log(line);
 }
 
+/** When the user last interrupted a chat turn; a turn that started before it ended interrupted. */
+let lastChatInterruptAt = 0;
+
 async function interruptChatTurn(): Promise<boolean> {
+  lastChatInterruptAt = Date.now();
   const [codex, claude] = await Promise.all([
     interruptActiveCodexTurn("cli-chat").catch(() => false),
     interruptClaudeSubprocesses(),
