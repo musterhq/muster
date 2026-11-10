@@ -18,7 +18,7 @@ import {
   type Terminal,
 } from "@earendil-works/pi-tui";
 import { execFile } from "node:child_process";
-import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createCoalescer, unwrapShellCommand } from "@musterhq/core";
@@ -1119,25 +1119,11 @@ export function renderFullHeaderPanel(input: {
  * `/header full` restores the full panel.
  */
 export function buildCompactHeaderLines(info: CompactHeaderInfo): string[] {
-  // ONE line of idle chrome — the Claude Code bar. Model appears here and
-  // nowhere else while idle (the status row exists only during a turn), so
-  // nothing is ever stated twice on screen.
+  // ONE line of idle chrome. Model and folder live in the status bar under
+  // the composer, so the header names only the session: nothing is stated twice.
   return [
-    `${accent("MUSTER")} ${dim(`· ${info.model} · ${info.session} · ${shortenPathForHeader(info.cwd)} · /help`)}`,
+    `${accent("MUSTER")} ${dim(`· ${info.session} · /help`)}`,
   ];
-}
-
-/** `~` for home; long foreign paths keep first and last segments around an ellipsis. */
-export function shortenPathForHeader(cwd: string, max = 48): string {
-  const home = process.env.HOME;
-  const tilded = home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
-  if (tilded.length <= max) return tilded;
-  const parts = tilded.split("/").filter(Boolean);
-  if (parts.length <= 2) return `…${tilded.slice(-max + 1)}`;
-  const tail = parts.slice(-2).join("/");
-  const head = tilded.startsWith("~") ? "~" : `/${parts[0]}`;
-  const short = `${head}/…/${tail}`;
-  return short.length <= max ? short : `…/${parts[parts.length - 1]}`.slice(0, max);
 }
 
 export function createMusterAutocompleteProvider(options: MusterAutocompleteOptions): AutocompleteProvider {
@@ -1325,9 +1311,26 @@ export interface StatusBarInfo {
  * The bar under the composer: `model · effort │ ~/repo │ ⎇ main *1 ?1 │ ctx 25% │ 128.4k tok · $0.42`.
  * Segments drop from the right (spend first, the model never) so it never wraps.
  */
-export function formatStatusBar(info: StatusBarInfo, width: number): string {
+/**
+ * The folder as the user's shell names it: `PWD` when it is the same folder as
+ * the real cwd (macOS reports `/tmp/x` as `/private/tmp/x`), then `~` for home.
+ */
+export function displayFolder(cwd: string): string {
+  let shown = cwd;
+  const pwd = process.env.PWD;
+  if (pwd && pwd !== cwd) {
+    try {
+      if (realpathSync(pwd) === realpathSync(cwd)) shown = pwd;
+    } catch {
+      // A vanished folder keeps its real path.
+    }
+  }
   const home = process.env.HOME;
-  const folder = home && info.cwd.startsWith(home) ? `~${info.cwd.slice(home.length)}` : info.cwd;
+  return home && (shown === home || shown.startsWith(`${home}/`)) ? `~${shown.slice(home.length)}` : shown;
+}
+
+export function formatStatusBar(info: StatusBarInfo, width: number): string {
+  const folder = displayFolder(info.cwd);
   const shortFolder = folder.length > 32 ? `…${folder.slice(folder.length - 31)}` : folder;
   const segments: Array<{ text: string; styled: string }> = [];
   const model = info.effort ? `${info.model} · ${info.effort}` : info.model;

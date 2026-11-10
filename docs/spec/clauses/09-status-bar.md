@@ -90,4 +90,4 @@ A one-row bar under the composer answers "what am I running, where, and how full
 - **Test:** `packages/cli/test/status-bar.test.ts` › "the bar shows the folder as the shell names it and the header does not repeat it"
 - **Environment:** pure `formatStatusBar` / `buildCompactHeaderLines` with a temp folder under `/tmp` and `PWD` set; NO_COLOR.
 - **Known gaps:** when `PWD` is unset or points elsewhere, the real path is shown.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, tmux 110 cols, `cd /tmp/polish-tr && muster chat`: header `MUSTER · pol-1 · /help`, bar `gpt-6.1-terra · High │ /tmp/polish-tr │ ⎇ main ?3` (before: header `MUSTER · gpt-6.1-terra · High · pol-1 · /private/tmp/polish-tr · /help`, bar `… │ /private/tmp/polish-tr │ …`). Capture: `screens/polish/qa31-after-header-bar.ansi`. Red→green: status-bar.test.ts; tui-stream-render.test.ts header test updated deliberately.
