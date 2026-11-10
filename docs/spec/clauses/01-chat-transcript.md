@@ -131,3 +131,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it.
 - **Known gaps:** whether the provider stops the child process on interrupt is the runtime's job, not the painter's.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-1G — A reply the provider retries is painted once
+
+- **Precondition:** runtime `codex` (app-server) on a gateway provider whose stream end Codex cannot parse (observed live on `hybrow:cc/claude-sonnet-5-5`: `error` notification "Reconnecting... 1/1", `willRetry: true`, `failed to parse ResponseCompleted: missing field cached_tokens`). Codex re-sends the request and streams the same answer again under a new item id.
+- **Action:** run a turn: message item `m1` streams "four five six", then the retry `error`, then item `m2` streams "four five six" again.
+- **Expected result:** the deltas the chat receives read "four five six" once. If the retried answer differs, it is painted as a new paragraph; if it extends the first, only the new tail is painted.
+- **Test:** `packages/core/test/codex.test.ts` › "runCodexAppServer: a retried response is not streamed twice"
+- **Environment:** fake app-server replaying the live event order.
+- **Known gaps:** the gateway's malformed `response.completed` (missing `cached_tokens`) is the upstream cause and is not fixed here; every such turn costs a second model call.
+- **Evidence:** live, 2026-11-10 — app-server stdout tee in `/tmp/qafix-dup-log` showed `error{willRetry:true}` between two identical agentMessage items.

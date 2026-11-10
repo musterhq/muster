@@ -1215,3 +1215,52 @@ rl.on("line", (line) => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-01-1G (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-1g--a-reply-the-provider-retries-is-painted-once)
+test("runCodexAppServer: a retried response is not streamed twice", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-retry-"));
+  const fake = join(dir, "codex-fake.mjs");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin });
+const threadId = "thread-retry";
+let turns = 0;
+function send(msg) { process.stdout.write(JSON.stringify(msg) + "\\n"); }
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") send({ id: msg.id, result: { userAgent: "fake" } });
+  else if (msg.method === "thread/start") send({ id: msg.id, result: { thread: { id: threadId } } });
+  else if (msg.method === "turn/start") {
+    turns += 1;
+    const turnId = "turn-" + turns;
+    const p = (extra) => ({ threadId, turnId, ...extra });
+    const message = (id, text) => {
+      send({ method: "item/started", params: p({ item: { type: "agentMessage", id, text: "" } }) });
+      send({ method: "item/agentMessage/delta", params: p({ itemId: id, delta: text }) });
+      send({ method: "item/completed", params: p({ item: { type: "agentMessage", id, text } }) });
+    };
+    const retry = () => send({ method: "error", params: p({ error: { message: "Reconnecting... 1/1", additionalDetails: "stream disconnected before completion" }, willRetry: true }) });
+    send({ id: msg.id, result: { turn: { id: turnId, status: "inProgress" } } });
+    if (turns === 1) { message("m1", "four five six"); retry(); message("m2", "four five six"); }
+    if (turns === 2) { message("m1", "four five"); retry(); message("m2", "four five six"); }
+    if (turns === 3) { message("m1", "alpha"); retry(); message("m2", "beta"); }
+    send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+  }
+});
+`, "utf8");
+  await chmod(fake, 0o755);
+  try {
+    const run = async () => {
+      const deltas: string[] = [];
+      const result = await runCodexAppServer({ prompt: "say it", cwd: dir, command: fake, cacheKey: "retry", keepAlive: true, onDelta: (delta) => deltas.push(delta) });
+      assert.equal(result.status, "completed");
+      return deltas.join("");
+    };
+    assert.equal(await run(), "four five six", "an identical retry is swallowed");
+    assert.equal(await run(), "four five six", "a retry that extends the first attempt adds only the tail");
+    assert.equal(await run(), "alpha\n\nbeta", "a different retry is a new paragraph");
+  } finally {
+    clearCodexAppServerSessions();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
