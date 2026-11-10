@@ -61,3 +61,13 @@ MCP servers added with `muster mcp add-stdio|add-http` (stored in `config.tools.
 - **Environment:** fake `claude` binary.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-03-2C — MCP commands work in a folder without `.muster/`
+
+- **Precondition:** a fresh folder with no `.muster/` (only `git init`, or nothing).
+- **Action:** `muster mcp add-stdio orders node server.mjs`; in another fresh folder `muster mcp list`.
+- **Expected result:** both succeed, like `muster chat` and `muster config set` do: the project config is created (`.muster/config.json`, with `orders` added), never a raw `ENOENT … .muster/config.json`.
+- **Test:** `packages/cli/test/plugin-bundles.test.ts` › "mcp add-stdio, list and test work in a folder without .muster/"
+- **Environment:** real CLI via tsx, temp folders.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED

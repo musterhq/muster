@@ -383,3 +383,24 @@ test("plugins inspect on a missing or empty folder says what it looked for", { t
   }
 });
 
+// Spec: MUS-SPEC-03-2C (docs/spec/clauses/03-mcp-runtime.md#mus-spec-03-2c--mcp-commands-work-in-a-folder-without-muster)
+test("mcp add-stdio, list and test work in a folder without .muster/", { timeout: 90_000 }, async () => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "muster-mcp-fresh-")));
+  try {
+    const added = await cli(cwd, ["mcp", "add-stdio", "orders", "node", "server.mjs"]);
+    assert.equal(added.code, 0, added.stderr);
+    assert.doesNotMatch(added.stderr, /ENOENT/);
+    const config = JSON.parse(await readFile(join(cwd, ".muster", "config.json"), "utf8"));
+    assert.equal(config.tools.mcp.servers.orders.transport.command, "node");
+    const fresh = await realpath(await mkdtemp(join(tmpdir(), "muster-mcp-list-")));
+    try {
+      const listed = await cli(fresh, ["mcp", "list"]);
+      assert.equal(listed.code, 0, listed.stderr);
+      assert.doesNotMatch(listed.stderr + listed.stdout, /ENOENT/);
+    } finally {
+      await rm(fresh, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
