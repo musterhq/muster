@@ -75,6 +75,7 @@ test("a marketplace is added, searched and its plugins install by name at their 
     assert.equal(lock.entries.weather?.commit, f.monoSha);
     assert.equal(lock.entries.weather?.source.path, "plugins/weather");
     assert.equal(lock.entries.tides?.source.marketplace, "fixture-market");
+    assert.match(lock.entries.notes?.commit ?? "", /^[0-9a-f]{40}$/, "a plugin inside the marketplace repo is pinned by its commit");
     const skills = await f.cli("skills", "list");
     for (const name of ["tide-lookup", "forecast", "note-taking"]) assert.match(skills, new RegExp(name));
     const mcp = await f.cli("mcp", "list");

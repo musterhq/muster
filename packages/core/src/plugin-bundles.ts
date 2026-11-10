@@ -72,8 +72,8 @@ export interface PluginBundleInspection {
 }
 
 export type PluginBundleSource =
-  | { readonly type: "local"; readonly path: string }
-  | { readonly type: "git"; readonly url: string; readonly ref?: string };
+  | { readonly type: "local"; readonly path: string; readonly marketplace?: string }
+  | { readonly type: "git"; readonly url: string; readonly ref?: string; readonly path?: string; readonly marketplace?: string };
 
 export interface PluginBundleLockEntry {
   readonly id: string;
@@ -271,6 +271,14 @@ export async function inspectPluginBundle(dir: string, options: { readonly insta
 
 export interface InstallPluginBundleOptions {
   readonly cwd?: string;
+  /** Install only this subdirectory of the source (marketplace `git-subdir`). */
+  readonly subdir?: string;
+  /** A marketplace entry's own description, used when the plugin directory has no manifest (`strict: false`). */
+  readonly inlineManifest?: Record<string, unknown>;
+  /** The marketplace this install came from (recorded in the lock). */
+  readonly marketplace?: string;
+  /** Commit to record when the source itself is a folder inside a cloned repo (marketplace path entries). */
+  readonly commit?: string;
   readonly allowHighRisk?: boolean;
   /** Replace an installed bundle with the same id. */
   readonly force?: boolean;
@@ -283,7 +291,8 @@ export interface InstallPluginBundleResult {
 }
 
 /** Fetch a source (local directory or git URL) into a fresh directory, without running anything in it. */
-async function stageSource(source: string, into: string): Promise<{ readonly source: PluginBundleSource; readonly commit?: string }> {
+async function stageSource(source: string, into: string, subdir?: string): Promise<{ readonly source: PluginBundleSource; readonly commit?: string }> {
+  if (subdir !== undefined && (subdir.startsWith("/") || subdir.split(/[\\/]/).includes(".."))) throw new Error(`Plugin subdirectory escapes its source: ${subdir}`);
   if (isGitPluginSource(source)) {
     const hash = source.indexOf("#");
     const url = hash >= 0 ? source.slice(0, hash) : source;
@@ -303,13 +312,15 @@ async function stageSource(source: string, into: string): Promise<{ readonly sou
       }
       const commit = (await git(["rev-parse", "HEAD"], checkout)).stdout.trim();
       if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`Could not resolve the commit of ${url}.`);
-      await copyTree(checkout, into);
-      return { source: { type: "git", url, ...(ref ? { ref } : {}) }, commit };
+      const from = subdir ? join(checkout, subdir) : checkout;
+      if (!(await stat(from).then((info) => info.isDirectory(), () => false))) throw new Error(`Plugin subdirectory not found in ${url}: ${subdir}`);
+      await copyTree(from, into);
+      return { source: { type: "git", url, ...(ref ? { ref } : {}), ...(subdir ? { path: subdir } : {}) }, commit };
     } finally {
       await rm(checkout, { recursive: true, force: true });
     }
   }
-  const path = resolve(source);
+  const path = subdir ? resolve(source, subdir) : resolve(source);
   if (!(await stat(path).then((info) => info.isDirectory(), () => false))) throw new Error(`Plugin source is not a directory or git URL: ${source}`);
   await copyTree(path, into);
   return { source: { type: "local", path } };
@@ -339,7 +350,14 @@ export async function installPluginBundle(source: string, options: InstallPlugin
   await mkdir(pluginsDir, { recursive: true, mode: 0o700 });
   const staging = join(pluginsDir, `.staging-${randomUUID()}`);
   try {
-    const staged = await stageSource(source, staging);
+    const stagedRaw = await stageSource(source, staging, options.subdir);
+    const withMarket = options.marketplace ? { ...stagedRaw, source: { ...stagedRaw.source, marketplace: options.marketplace } } : stagedRaw;
+    const staged = !withMarket.commit && options.commit ? { ...withMarket, commit: options.commit } : withMarket;
+    if (options.inlineManifest && !(await detectPluginBundle(staging))) {
+      // `strict: false` marketplace entries describe the plugin themselves.
+      await mkdir(join(staging, ".claude-plugin"), { recursive: true });
+      await writeFile(join(staging, ".claude-plugin", "plugin.json"), JSON.stringify(options.inlineManifest, null, 2));
+    }
     const probe = await inspectPluginBundle(staging);
     const installedPath = join(pluginsDir, probe.id);
     const inspection = await inspectPluginBundle(staging, { installRoot: installedPath });
