@@ -11774,7 +11774,7 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     return;
   }
   if (action === "list") {
-    for (const line of formatAutomationsTable(await listSchedules())) console.log(line);
+    for (const line of formatAutomationsTable(await listSchedules(), process.stdout.columns || Number.POSITIVE_INFINITY)) console.log(line);
     return;
   }
   if (action === "remove" && rest[0]) {

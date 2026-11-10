@@ -54,7 +54,11 @@ test("/remind schedules and /schedule list shows it", async () => {
   const now = new Date("2026-11-09T10:00:00.000Z");
   try {
     const echoed = plain(await handleAutomationCommand("remind", "in 10m drink water", { cwd, now }));
-    assert.ok(echoed.some((line) => line.includes("drink water") && line.includes("2026-11-09T10:10:00")), echoed.join("\n"));
+    // The echo reads in local time, like the reminder card (MUS-SPEC-16-5B).
+    const due = new Date("2026-11-09T10:10:00.000Z");
+    const two = (value: number) => String(value).padStart(2, "0");
+    const local = `${due.getFullYear()}-${two(due.getMonth() + 1)}-${two(due.getDate())} ${two(due.getHours())}:${two(due.getMinutes())}`;
+    assert.ok(echoed.some((line) => line.includes("drink water") && line.includes(`at ${local}`)), echoed.join("\n"));
 
     const usage = plain(await handleAutomationCommand("remind", "", { cwd, now }));
     assert.match(usage.join("\n"), /\/remind <when> <message>/);

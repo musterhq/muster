@@ -265,34 +265,43 @@ function oneLine(text: string, max: number): string {
 
 // ── Table ───────────────────────────────────────────────────────────────────
 
+/** `2026-11-10 10:17` in this machine's zone: the clock the reminder card and the user read. */
 function shortTime(iso: string | undefined): string {
   if (!iso) return "-";
-  return iso.replace(/\.\d{3}Z$/, "Z").replace("T", " ");
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
 /** The automations table shared by `muster schedule list`, `/schedule list` and the tool. */
-export function formatAutomationsTable(jobs: readonly ScheduleJob[]): string[] {
+export function formatAutomationsTable(jobs: readonly ScheduleJob[], width = Number.POSITIVE_INFINITY): string[] {
   if (!jobs.length) return ["No automations."];
   const rows = jobs.map((job) => [
     job.id,
     job.kind ?? "run",
     job.at ? "once" : `${job.cron}${job.tz ? ` ${job.tz}` : ""}`,
-    job.completedAt ? "-" : shortTime(job.at ?? job.nextRunAt),
+    // A one-off that already ran has no next run: it is done (ENABLED is about routines).
+    job.completedAt ? "done" : shortTime(job.at ?? job.nextRunAt),
     shortTime(job.lastRunAt),
     job.lastStatus ? `${job.lastStatus}${job.lastStatus === "failed" && job.lastDetail ? `: ${oneLine(job.lastDetail, 40)}` : ""}` : "-",
-    job.completedAt ? "done" : job.disabled ? "no" : "yes",
+    job.completedAt ? "-" : job.disabled ? "no" : "yes",
     job.deliver ?? "log",
     oneLine(job.flowId ? `flow ${job.flowId}` : job.prompt, 48),
   ]);
   const header = ["ID", "KIND", "WHEN", "NEXT RUN", "LAST RUN", "RESULT", "ENABLED", "DELIVER", "WHAT"];
   const widths = header.map((title, column) => Math.max(title.length, ...rows.map((row) => row[column]!.length)));
-  const render = (row: readonly string[]) => row.map((cell, column) => (column === row.length - 1 ? cell : cell.padEnd(widths[column]!))).join("  ").trimEnd();
+  // WHAT takes what is left of the row, so the table never wraps.
+  const before = widths.slice(0, -1).reduce((sum, size) => sum + size + 2, 0);
+  const whatWidth = Math.max(8, width - before);
+  const fit = (cell: string) => (cell.length > whatWidth ? `${cell.slice(0, whatWidth - 1)}…` : cell);
+  const render = (row: readonly string[]) => row.map((cell, column) => (column === row.length - 1 ? fit(cell) : cell.padEnd(widths[column]!))).join("  ").trimEnd();
   return [render(header), ...rows.map(render)];
 }
 
 /** Exactly what was scheduled, for echoes (CLI, chat, tool result). */
 export function describeAutomation(job: ScheduleJob): string {
-  const when = job.at ? `at ${job.at}` : `on cron "${job.cron}"${job.tz ? ` (${job.tz})` : ""}, next ${job.nextRunAt}`;
+  const when = job.at ? `at ${shortTime(job.at)}` : `on cron "${job.cron}"${job.tz ? ` (${job.tz})` : ""}, next ${shortTime(job.nextRunAt)}`;
   return `Scheduled ${job.id}: ${job.kind ?? "run"} "${job.prompt}" ${when}, delivered to ${job.deliver ?? "log"}.`;
 }
 
