@@ -167,3 +167,22 @@ test("extra servers ride along, obey deny rules, and never override the user's o
   const own = await resolveRuntimeMcpServers(withServers({ muster: DOCS }), tmpdir(), self);
   assert.equal(own.servers.muster?.transport.kind, "http", "the user's own entry wins");
 });
+
+// Spec: MUS-SPEC-03-2B (docs/spec/clauses/03-mcp-runtime.md#mus-spec-03-2b--a-claude-turn-with-mcp-servers-still-gets-its-prompt)
+test("a claude turn with MCP servers passes the prompt after --", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-claude-dashdash-"));
+  const command = join(dir, "claude");
+  const record = join(dir, "args.json");
+  await writeFile(command, `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));\nconsole.log("ok");\n`, "utf8");
+  await chmod(command, 0o755);
+  try {
+    await executeRun(withServers({ notes: NOTES }), { runtime: "claude-code", prompt: "list my notes", cwd: dir, claudeCommand: command, skipAgentRules: true, skipRecall: true, skipSkillSelection: true, skipMemoryWrite: true });
+    const args = JSON.parse(await readFile(record, "utf8")) as string[];
+    const mcp = args.indexOf("--mcp-config");
+    assert.ok(mcp >= 0);
+    assert.equal(args.at(-1), "list my notes");
+    assert.equal(args.at(-2), "--", "the prompt is separated from variadic options");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
