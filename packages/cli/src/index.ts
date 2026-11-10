@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { printBanner, renderBanner } from "./banner.js";
-import { buildCompactHeaderLines, cardRow, promptBackAfterHookBlock, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
+import { buildCompactHeaderLines, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
@@ -2006,11 +2006,8 @@ function replaceReadlineLine(rl: Interface, value: string): void {
 
 async function printChatHeader(state: ChatState): Promise<void> {
   const width = Math.min(Math.max((process.stdout.columns || 120) - 2, 100), 240);
-  const inner = width - 4;
-  const gutter = 3;
-  const leftWidth = Math.max(24, Math.min(34, Math.floor(inner * 0.2)));
-  const midWidth = Math.max(42, Math.floor((inner - leftWidth - gutter * 2) * 0.48));
-  const rightWidth = inner - leftWidth - midWidth - gutter * 2;
+  const layout = fullHeaderLayout(width);
+  const { leftWidth, midWidth, rightWidth } = layout;
   const cwd = truncate(chatWorkspaceCwd(state).replace(process.env.HOME ?? "", "~"), leftWidth - 2);
   const sessionCounts = chatSessionsByDirectory();
   const config = await loadConfig().catch(() => undefined);
@@ -2045,7 +2042,8 @@ async function printChatHeader(state: ChatState): Promise<void> {
     " ",
     color(model, "accent"),
     color(cwd, "dim"),
-    color(truncate(`Session: ${state.sessionName} (${sessionCounts.here.length} here · ${sessionCounts.all.length} total)`, leftWidth), "dim"),
+    color(`Session: ${state.sessionName}`, "dim"),
+    color(`${sessionCounts.here.length} here · ${sessionCounts.all.length} total`, "dim"),
     color(truncate(`Scope: ${formatChatScopes(scopes)}`, leftWidth), "dim"),
   ];
   const rightLines = [
@@ -2061,19 +2059,8 @@ async function printChatHeader(state: ChatState): Promise<void> {
     `${color("plugins:", "accent")} ${pluginCount ? `${pluginCount} configured` : "none configured"}`,
     `${color("mcp:", "accent")} ${mcpNames.length ? truncate(mcpNames.join(", "), rightWidth - 5) : "no servers"}`,
   ];
-  const rows = Math.max(leftLines.length, middleLines.length, rightLines.length);
-  console.log(color(`╭${"─".repeat(width - 2)}╮`, "accent"));
-  console.log(panelTitle(width, `Muster Agent · ${new Date().toISOString().slice(0, 10)}`));
-  for (let index = 0; index < rows; index += 1) {
-    const left = visiblePadEnd(leftLines[index] ?? "", leftWidth);
-    const middle = visiblePadEnd(middleLines[index] ?? "", midWidth);
-    const right = visiblePadEnd(rightLines[index] ?? "", rightWidth);
-    console.log(color("│ ", "accent") + left + " ".repeat(gutter) + middle + " ".repeat(gutter) + right + color(" │", "accent"));
-  }
   const footer = `${model} · ${providerId} · ${runtimeId} · speed ${state.speedMode ?? "fast"} · scopes ${formatChatScopes(scopes)} · ${formatCompactNumber(8)} tool groups · ${formatCompactNumber(skills.length)} skills · ${formatCompactNumber(pluginCount)} plugins · ${formatCompactNumber(mcpNames.length)} mcp · /help`;
-  console.log(color("├" + "─".repeat(width - 2) + "┤", "accent"));
-  console.log(color("│ ", "accent") + visiblePadEnd(color(footer, "accent"), width - 4) + color(" │", "accent"));
-  console.log(color(`╰${"─".repeat(width - 2)}╯`, "accent"));
+  for (const row of renderFullHeaderPanel({ layout, title: `Muster Agent · ${new Date().toISOString().slice(0, 10)}`, left: leftLines, middle: middleLines, right: rightLines, footer })) console.log(row);
   console.log("");
 }
 
@@ -2335,13 +2322,6 @@ function formatSkillLines(names: readonly string[], width: number): string[] {
 
 function formatSkillList(names: readonly string[], width: number): string {
   return truncate(names.join(", "), Math.max(12, width));
-}
-
-function panelTitle(width: number, title: string): string {
-  const text = ` ${title} `;
-  const left = Math.max(1, Math.floor((width - 2 - stripAnsi(text).length) / 2));
-  const right = Math.max(1, width - 2 - left - stripAnsi(text).length);
-  return color("│", "accent") + color("─".repeat(left), "accent") + color(text, "accent") + color("─".repeat(right), "accent") + color("│", "accent");
 }
 
 function visiblePadEnd(value: string, width: number): string {

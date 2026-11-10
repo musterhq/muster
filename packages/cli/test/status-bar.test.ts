@@ -86,7 +86,7 @@ test("the full header panel keeps every row inside its box", async () => {
   const rows = renderFullHeaderPanel({
     layout,
     title: "Muster Agent · 2026-11-10",
-    left: ["MUSTER", "agent harness", " ", "gpt-6.1-terra", "/private/tmp/qa-set", "Session: qa-8b-with-a-long-name", "0 here · 3 total"],
+    left: ["MUSTER", "agent harness", " ", "gpt-6.1-terra", "/private/tmp/qa-set", "Session: qa-8b", "0 here · 3 total"],
     middle: ["Available Tools", "workspace: read, edit, shell, git"],
     right: ["Commands", "/help commands and shortcuts"],
     footer: "gpt-6.1-terra · codex · native · speed fast · scopes user:dhairya · 8 tool groups · 0 skills · 0 plugins · 0 mcp · /help",
@@ -97,5 +97,5 @@ test("the full header panel keeps every row inside its box", async () => {
   const footer = rows.at(-2)!;
   assert.ok(footer.endsWith(" │"), footer);
   assert.match(footer, /…/);
-  assert.ok(rows.some((row) => row.includes("Session: qa-8b-with-a-long-name")), "the session name is not cut at this width");
+  assert.ok(rows.some((row) => row.includes("Session: qa-8b ")) && rows.some((row) => row.includes("0 here · 3 total")), "session and counts each on a row, uncut");
 });

@@ -1046,6 +1046,53 @@ export interface CompactHeaderInfo {
   readonly backends?: string;
 }
 
+export interface FullHeaderLayout {
+  readonly width: number;
+  readonly leftWidth: number;
+  readonly midWidth: number;
+  readonly rightWidth: number;
+  readonly gutter: number;
+}
+
+/** Column widths of the full (`/header full`) panel for a box `width` columns wide. */
+export function fullHeaderLayout(width: number): FullHeaderLayout {
+  const inner = width - 4;
+  const gutter = 3;
+  const leftWidth = Math.max(24, Math.min(34, Math.floor(inner * 0.2)));
+  const midWidth = Math.max(42, Math.floor((inner - leftWidth - gutter * 2) * 0.48));
+  const rightWidth = inner - leftWidth - midWidth - gutter * 2;
+  return { width, leftWidth, midWidth, rightWidth, gutter };
+}
+
+/**
+ * The full header panel: title in the top border, three columns, a summary
+ * row. Every row is exactly `layout.width` wide; anything longer is cut with
+ * `…` inside the border, never past it.
+ */
+export function renderFullHeaderPanel(input: {
+  readonly layout: FullHeaderLayout;
+  readonly title: string;
+  readonly left: readonly string[];
+  readonly middle: readonly string[];
+  readonly right: readonly string[];
+  readonly footer: string;
+}): string[] {
+  const { width, leftWidth, midWidth, rightWidth, gutter } = input.layout;
+  const cell = (value: string, cellWidth: number): string => padAnsi(truncateToWidth(value, cellWidth, "…"), cellWidth);
+  const title = ` ${input.title} `;
+  const titleLeft = Math.max(1, Math.floor((width - 2 - visibleWidth(title)) / 2));
+  const titleRight = Math.max(1, width - 2 - titleLeft - visibleWidth(title));
+  const rows = [accent(`╭${"─".repeat(titleLeft)}${title}${"─".repeat(titleRight)}╮`)];
+  const count = Math.max(input.left.length, input.middle.length, input.right.length);
+  for (let index = 0; index < count; index += 1) {
+    rows.push(`${accent("│ ")}${cell(input.left[index] ?? "", leftWidth)}${" ".repeat(gutter)}${cell(input.middle[index] ?? "", midWidth)}${" ".repeat(gutter)}${cell(input.right[index] ?? "", rightWidth)}${accent(" │")}`);
+  }
+  rows.push(accent(`├${"─".repeat(width - 2)}┤`));
+  rows.push(`${accent("│ ")}${cell(accent(input.footer), width - 4)}${accent(" │")}`);
+  rows.push(accent(`╰${"─".repeat(width - 2)}╯`));
+  return rows;
+}
+
 /**
  * Compact launch header (defect #6): four lines instead of a ~20-line table.
  * `/header full` restores the full panel.

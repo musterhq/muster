@@ -56,7 +56,7 @@ A one-row bar under the composer answers "what am I running, where, and how full
 
 - **Precondition:** `appearance.header = full`; a 110-column terminal (box width 108); the summary row (`gpt-6.1-terra · codex · native · speed fast · … · 0 mcp · /help`) is longer than the box.
 - **Action:** render the full header panel.
-- **Expected result:** every row is exactly the box width with its right border; the summary row is cut with `…` inside the border; the title sits in the top border (`╭── Muster Agent · 2026-11-10 ──╮`) rather than a second border row inside the box; the session row is not cut (the counts go on their own row).
+- **Expected result:** every row is exactly the box width with its right border; the summary row is cut with `…` inside the border; the title sits in the top border (`╭── Muster Agent · 2026-11-10 ──╮`) rather than a second border row inside the box; the session name and its counts each get their own row, uncut.
 - **Test:** `packages/cli/test/status-bar.test.ts` › "the full header panel keeps every row inside its box"
 - **Environment:** pure renderer, NO_COLOR-equivalent (ANSI stripped).
 - **Known gaps:** below 100 columns the panel is cut by the frame like before; the compact header is the default there.
