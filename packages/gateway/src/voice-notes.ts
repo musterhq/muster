@@ -198,7 +198,10 @@ export async function deliverSpokenReply(input: {
   readonly send: (audio: ChannelVoiceAudio) => Promise<unknown>;
 }): Promise<boolean> {
   if (!wantsSpokenReply(input.config, input.message, input.reply) || isPairingChallenge(input.reply)) return false;
-  const text = speakableText(input.reply.text, input.config.voice?.maxReplyChars ?? VOICE_DEFAULTS.maxReplyChars);
+  // Speak the answer, not the echo of what was heard.
+  const echo = input.message.voice ? voiceEchoLine(input.message.voice.transcript) : undefined;
+  const answer = echo && input.reply.text.startsWith(echo) ? input.reply.text.slice(echo.length) : input.reply.text;
+  const text = speakableText(answer, input.config.voice?.maxReplyChars ?? VOICE_DEFAULTS.maxReplyChars);
   if (!text) return false;
   let spoken: Awaited<ReturnType<typeof synthesize>> | undefined;
   try {
