@@ -167,3 +167,25 @@ test("a long tool result line is cut to the terminal width with an ellipsis", ()
   const expanded = formatToolEndLines(event, 6, { expanded: true, expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80));
   assert.ok(expanded.join(" ").replace(/\s+/g, " ").includes("no need to Read it back"), "ctrl+o shows the whole line, wrapped");
 }));
+
+// Spec: MUS-SPEC-12-1E (docs/spec/clauses/12-policy-hooks.md#mus-spec-12-1e--a-blocked-command-is-one-cell-and-a-blocked-prompt-comes-back)
+test("a policy block replaces the command's cell; a blocked prompt goes back to the composer", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  const title = "/bin/zsh -lc 'curl -s https://example.com'";
+  painter().tool({ phase: "start", id: "b1", kind: "command", title });
+  painter().blocked({ id: "b1", kind: "command", title }, { hookId: "script", reason: "nope: no curl here" });
+  painter().tool({ phase: "end", id: "b1", kind: "command", title, failed: true });
+  const text = plain(chat.transcript());
+  assert.equal(text.filter((row) => row.includes("curl -s https://example.com")).length, 1, text.join("\n"));
+  const at = text.findIndex((row) => row.includes("Blocked curl -s https://example.com"));
+  assert.ok(at >= 0, text.join("\n"));
+  assert.equal(text[at + 1], "  ⎿ nope: no curl here · policy script");
+  await finish();
+
+  const { promptBackAfterHookBlock } = await import("../src/chat-tui.js");
+  const opened: string[] = [];
+  const sink = { openPicker: (value: string) => opened.push(value) };
+  assert.equal(promptBackAfterHookBlock(new Error("Run blocked by hook no-prod: prod deploys go through the release flow"), "deploy to prod", sink), true);
+  assert.equal(promptBackAfterHookBlock(new Error("Command failed (exit 1)"), "other", sink), false);
+  assert.deepEqual(opened, ["deploy to prod"]);
+}));

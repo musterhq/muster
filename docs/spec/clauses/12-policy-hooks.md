@@ -31,3 +31,23 @@ Rules in `.muster/config.json` → `hooks` run on turn and tool events. A rule i
 - **Environment:** fake app-server that records launches.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-12-1D — The model learns why a command was blocked
+
+- **Precondition:** `hooks["tool.before"]` holds a command hook that prints `nope: no curl here` on stdout and exits 2 for commands containing `curl`, and a rule `{ id: "anchored", match: "^echo safe$", action: "block" }`; Codex reports commands wrapped as `/bin/zsh -lc '…'`.
+- **Action:** the provider asks to run `/bin/zsh -lc 'curl -s https://example.com'`, then `/bin/zsh -lc 'echo safe'`.
+- **Expected result:** both are declined; the first with reason `nope: no curl here` (a script's stdout is its reason when stderr is empty), the second by `anchored` (rules and scripts see the bare command, `title: "curl -s https://example.com"`, not the shell wrapper). For each block Muster tells the running turn which command was blocked, by which rule, and why, so the model can explain it instead of saying "no reason was given".
+- **Test:** `packages/core/test/policy-hooks.test.ts` › "a block's reason reaches the model; a script's stdout is its reason; scripts see the bare command"
+- **Environment:** fake app-server that records approvals and `turn/steer` requests; temp script.
+- **Known gaps:** Codex's approval answer has no reason field, so the reason travels as a steer message on the same turn.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-12-1E — A blocked command is one cell, and a blocked prompt comes back
+
+- **Precondition:** chat TUI; a `tool.before` hook blocks `curl -s https://example.com` (Codex then ends the command item as failed); separately a `turn.start` rule blocks the prompt "deploy to prod".
+- **Action:** the command cell starts, the block is reported, the failed end arrives. Separately, the turn fails with `Run blocked by hook no-prod: …`.
+- **Expected result:** one cell for the command: it becomes `⏺ Blocked curl -s https://example.com` / `⎿ nope: no curl here · policy script` (no extra `⎿ failed` cell). The blocked prompt is put back in the composer so the user can edit it.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a policy block replaces the command's cell; a blocked prompt goes back to the composer"
+- **Environment:** chat harness with the narration painter, NO_COLOR; `promptBackAfterHookBlock` with a recording sink.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
