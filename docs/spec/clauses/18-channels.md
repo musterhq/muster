@@ -10,7 +10,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-sdk.test.ts` › "the default registry lists telegram, slack, matrix and email with their capabilities"
 - **Environment:** in-process.
 - **Known gaps:** Discord, WhatsApp, Google Chat and Teams still run only on their legacy handlers in `server.ts`.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-1B — Telegram and Slack on the SDK behave exactly as before
 
@@ -20,7 +20,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-sdk.test.ts` › "telegram and slack SDK adapters verify, key and normalize exactly like the legacy routes"
 - **Environment:** real gateway HTTP server; no network.
 - **Known gaps:** the Telegram/Slack webhook handlers (draft streaming, progress, Frappe onboarding) still live in `server.ts`; only verification, delivery keys, normalization and outbound send moved to the SDK.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-2A — sendToChannel chunks long text to the channel limit
 
@@ -30,7 +30,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-sdk.test.ts` › "sendToChannel splits long text into channel-sized messages in order"
 - **Environment:** fake fetcher.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-2B — sendToChannel reaches Slack threads and refuses unknown or unconfigured channels
 
@@ -40,7 +40,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-sdk.test.ts` › "sendToChannel posts into a Slack thread and refuses unknown or unconfigured channels"
 - **Environment:** fake fetcher.
 - **Known gaps:** automations' `channel:<id>` delivery is not on `main` yet; the integration is one call to `sendToChannel`.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-3A — A Matrix message from an allowed sender is paired, answered and threaded
 
@@ -50,7 +50,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-matrix.test.ts` › "matrix: an allowed sender is paired, then answered in the same room as a reply"
 - **Environment:** real gateway entry point (`handleSurfaceMessage`), fake homeserver over HTTP, stub OpenAI-compatible model.
 - **Known gaps:** end-to-end encrypted rooms are out of scope: encrypted events (`m.room.encrypted`) are ignored and the doctor says so.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-3B — Matrix ignores senders outside the allowlist and only joins invites from allowed users
 
@@ -60,7 +60,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-matrix.test.ts` › "matrix: senders and invites outside the allowlist are ignored"
 - **Environment:** fake homeserver.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-3C — A redelivered Matrix event is answered once (durable ingress)
 
@@ -70,7 +70,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-matrix.test.ts` › "matrix: a redelivered event after a restart is answered once"
 - **Environment:** fake homeserver; SQLite ingress store in a temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-3D — Approvals on a channel without buttons are a numbered choice
 
@@ -80,7 +80,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-matrix.test.ts` › "matrix: a numbered reply approves a gated flow run once"
 - **Environment:** fake homeserver; real flow runtime and approval store.
 - **Known gaps:** the numbered choice is bound to the one sender it was issued to; other people in the room cannot answer it.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-4A — Email from an allowed sender is answered in the same thread
 
@@ -90,7 +90,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-email.test.ts` › "email: an allowed sender's mail is answered in the same thread over SMTP"
 - **Environment:** real gateway entry point; fake IMAP (with IDLE) and SMTP over TCP; stub model.
 - **Known gaps:** HTML-only mail is reduced to text by stripping tags; attachments in inbound mail are ignored.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-4B — Email ignores strangers, auto-replies and its own mail
 
@@ -100,7 +100,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-email.test.ts` › "email: strangers, auto-replies and own mail are ignored"
 - **Environment:** fake IMAP/SMTP.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-4C — Replies in one email thread share one conversation
 
@@ -110,7 +110,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/gateway/test/channel-email.test.ts` › "email: a reply in the thread keeps the same conversation and reference chain"
 - **Environment:** fake IMAP/SMTP.
 - **Known gaps:** a thread whose root was never seen by this gateway is keyed by its first `References` entry.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-5A — Setup stores env-var references, and the live doctor proves the connection
 
@@ -120,4 +120,4 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Test:** `packages/cli/test/channels-sdk.test.ts` › "channels setup matrix and email store env references and doctor --live proves the connection"
 - **Environment:** real CLI process; fake servers.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.

@@ -48,7 +48,7 @@ import {
 } from "./enterprise-runtime.js";
 import { surfaceReplyToTelegramSend, telegramCallbackQueryId, telegramUpdateToSurfaceMessage } from "./adapters/telegram.js";
 import type { TelegramSendMessagePayload } from "./adapters/telegram.js";
-import { slackDeliveryId, slackEventToSurfaceMessage, slackSignatureIsValid, surfaceReplyToSlackPost } from "./adapters/slack.js";
+import { slackDeliveryId, slackEventToSurfaceMessage, surfaceReplyToSlackPost } from "./adapters/slack.js";
 import { DISCORD_PONG, discordInteractionToInbound, discordSignatureIsValid, surfaceReplyToDiscordInteractionResponse } from "./adapters/discord.js";
 import { runWhatsAppConnection } from "./adapters/whatsapp.js";
 import { surfaceReplyToWhatsAppSend, whatsAppMessageIds, whatsAppVerifyChallenge, whatsAppWebhookToSurfaceMessages } from "./adapters/whatsapp-cloud.js";
@@ -58,6 +58,10 @@ import { createGoogleChatRequestVerifier } from "./google-chat-verifier.js";
 import { resolveGchatFrappeIdentity } from "./gchat-frappe-identity.js";
 import { surfaceReplyToTeamsActivity, teamsActivityToSurfaceMessage, teamsHmacIsValid } from "./adapters/teams.js";
 import { createOutboundQueue, createSlackDraftSink, createTelegramDraftSink } from "./streaming.js";
+import { ChannelVerificationError } from "./channel-sdk.js";
+import type { ChannelAdapter } from "./channel-sdk.js";
+import { parseSlackBody, slackChannel } from "./channels/slack.js";
+import { telegramChannel } from "./channels/telegram.js";
 import type { OutboundQueue } from "./streaming.js";
 import {
   createGatewayIngressFingerprint,
@@ -2681,10 +2685,7 @@ async function handleTelegramWebhook(body: string, context: AdapterContext): Pro
   if (!botToken) throw new Error("Telegram adapter not configured. Add telegram.botToken to .muster/gateway.json.");
   const secretToken = context.gateway.telegram?.secretToken;
   if (secretToken && !context.platformVerified) {
-    const presented = context.headers["x-telegram-bot-api-secret-token"];
-    if (!headerEquals(typeof presented === "string" ? presented : undefined, secretToken)) {
-      throw new GatewayHttpError(401, "Telegram secret token mismatch.");
-    }
+    await verifyWithChannelSdk(telegramChannel, body, context.headers, context.gateway);
   } else if (!secretToken && !context.platformVerified) {
     warnUnauthenticatedOnce("telegram", context.log);
   }
@@ -3021,15 +3022,7 @@ async function handleSlackWebhook(body: string, context: AdapterContext): Promis
   if (!botToken) throw new Error("Slack adapter not configured. Add slack.botToken to .muster/gateway.json.");
   const signingSecret = context.gateway.slack?.signingSecret;
   if (signingSecret && !context.platformVerified) {
-    const signature = context.headers["x-slack-signature"];
-    const timestamp = context.headers["x-slack-request-timestamp"];
-    const valid = slackSignatureIsValid(
-      typeof timestamp === "string" ? timestamp : undefined,
-      body,
-      typeof signature === "string" ? signature : undefined,
-      signingSecret,
-    );
-    if (!valid) throw new GatewayHttpError(401, "Slack signature verification failed.");
+    await verifyWithChannelSdk(slackChannel, body, context.headers, context.gateway);
   } else if (!signingSecret) {
     warnUnauthenticatedOnce("slack", context.log);
   }
@@ -3042,12 +3035,21 @@ async function handleSlackWebhook(body: string, context: AdapterContext): Promis
 }
 
 function parseSlackWebhookBody(body: string): unknown {
+  return parseSlackBody(body);
+}
+
+/** Run an SDK adapter's inbound verification, mapping its rejection onto the HTTP error. */
+async function verifyWithChannelSdk(
+  adapter: ChannelAdapter,
+  body: string,
+  headers: AdapterContext["headers"],
+  gateway: GatewayConfig,
+): Promise<void> {
   try {
-    return JSON.parse(body);
-  } catch {
-    const fields = Object.fromEntries(new URLSearchParams(body));
-    if (typeof fields.payload === "string") return JSON.parse(fields.payload);
-    return fields;
+    await adapter.verifyInbound?.({ body, headers, gateway });
+  } catch (error) {
+    if (error instanceof ChannelVerificationError) throw new GatewayHttpError(error.status, error.message);
+    throw error;
   }
 }
 
@@ -3576,19 +3578,13 @@ const adapterRoutes: Record<string, AdapterHandler> = {
 };
 
 function adapterDeliveryKey(adapterId: string, body: string): string | undefined {
+  if (adapterId === "telegram") return telegramChannel.deliveryKey?.(body);
+  if (adapterId === "slack") return slackChannel.deliveryKey?.(body);
   let payload: unknown;
   try {
-    payload = adapterId === "slack" ? parseSlackWebhookBody(body) : JSON.parse(body);
+    payload = JSON.parse(body);
   } catch {
     return undefined;
-  }
-  if (adapterId === "telegram") {
-    const updateId = typeof payload === "object" && payload !== null ? (payload as { update_id?: unknown }).update_id : undefined;
-    return typeof updateId === "number" ? `telegram:${updateId}` : undefined;
-  }
-  if (adapterId === "slack") {
-    const id = slackDeliveryId(payload);
-    return id ? `slack:${id}` : undefined;
   }
   if (adapterId === "discord") {
     const id = typeof payload === "object" && payload !== null ? (payload as { id?: unknown }).id : undefined;
@@ -3665,22 +3661,8 @@ async function verifyAdapterPlatformRequest(
   headers: AdapterContext["headers"],
   options: GatewayServerOptions,
 ): Promise<void> {
-  if (adapterId === "telegram" && options.gateway.telegram?.secretToken) {
-    const presented = headers["x-telegram-bot-api-secret-token"];
-    if (!headerEquals(typeof presented === "string" ? presented : undefined, options.gateway.telegram.secretToken)) {
-      throw new GatewayHttpError(401, "Telegram secret token mismatch.");
-    }
-  }
-  if (adapterId === "slack" && options.gateway.slack?.signingSecret) {
-    const signature = headers["x-slack-signature"];
-    const timestamp = headers["x-slack-request-timestamp"];
-    if (!slackSignatureIsValid(
-      typeof timestamp === "string" ? timestamp : undefined,
-      body,
-      typeof signature === "string" ? signature : undefined,
-      options.gateway.slack.signingSecret,
-    )) throw new GatewayHttpError(401, "Slack signature verification failed.");
-  }
+  if (adapterId === "telegram") await verifyWithChannelSdk(telegramChannel, body, headers, options.gateway);
+  if (adapterId === "slack") await verifyWithChannelSdk(slackChannel, body, headers, options.gateway);
   if (adapterId === "discord" && options.gateway.discord?.publicKey) {
     const signature = headers["x-signature-ed25519"];
     const timestamp = headers["x-signature-timestamp"];
@@ -3816,7 +3798,7 @@ async function notifyBackgroundFailure(adapterId: string, body: string, context:
   }
 }
 
-async function completeAdapterIngress(
+export async function completeAdapterIngress(
   ingress: DurableGatewayIngress,
   ownership: GatewayIngressOwnership,
   finalState: "delivered" | "unknown" = "delivered",
@@ -5083,9 +5065,9 @@ async function route(
 function adapterHasPlatformAuth(adapterId: string, gateway: GatewayConfig): boolean {
   switch (adapterId) {
     case "telegram":
-      return Boolean(gateway.telegram?.secretToken);
+      return telegramChannel.hasPlatformAuth?.(gateway) ?? false;
     case "slack":
-      return Boolean(gateway.slack?.signingSecret);
+      return slackChannel.hasPlatformAuth?.(gateway) ?? false;
     case "discord":
       return Boolean(gateway.discord?.publicKey);
     case "gchat":

@@ -196,9 +196,61 @@ export interface GatewayConfig {
     };
   };
   readonly teams?: { readonly hmacSecret?: string };
+  /** Channels built on the channel SDK (channel-sdk.ts). Secrets are env-var names, never values. */
+  readonly channels?: GatewayChannelsConfig;
   readonly devices?: {
     readonly entries?: Record<string, GatewayDeviceRecord>;
   };
+}
+
+/** Settings every SDK channel shares. The shared ingest path enforces them. */
+export interface GatewayChannelCommonConfig {
+  /**
+   * Senders admitted to the pairing step. Exact ids, "*" for everyone, or a
+   * "*suffix" wildcard such as "*@example.com". Missing or empty admits nobody.
+   */
+  readonly allowFrom?: readonly string[];
+}
+
+export interface GatewayMatrixChannelConfig extends GatewayChannelCommonConfig {
+  /** Client-server API base, e.g. https://matrix.example.org */
+  readonly homeserverUrl: string;
+  /** The bot account, e.g. @muster:example.org */
+  readonly userId: string;
+  /** Name of the environment variable holding the access token. */
+  readonly accessTokenEnv: string;
+  /** Join rooms when an allowed sender invites the bot. Defaults to true. */
+  readonly autoJoin?: boolean;
+  /** /sync long-poll timeout. Defaults to 30 000 ms. */
+  readonly syncTimeoutMs?: number;
+}
+
+export interface GatewayMailServerConfig {
+  readonly host: string;
+  readonly port: number;
+  /** "tls" = implicit TLS, "starttls" = upgrade after connect, "none" = plaintext (local testing only). */
+  readonly security: "tls" | "starttls" | "none";
+  readonly user: string;
+  /** Name of the environment variable holding the password or app password. */
+  readonly passwordEnv: string;
+}
+
+export interface GatewayEmailChannelConfig extends GatewayChannelCommonConfig {
+  /** The address Muster reads and answers as. */
+  readonly address: string;
+  readonly displayName?: string;
+  readonly imap: GatewayMailServerConfig & { readonly mailbox?: string };
+  readonly smtp: GatewayMailServerConfig;
+  /** Poll interval when IMAP IDLE is unavailable. Defaults to 60 000 ms. */
+  readonly pollIntervalMs?: number;
+  /** Maximum time one IMAP IDLE waits before re-checking. Defaults to 25 minutes. */
+  readonly idleTimeoutMs?: number;
+}
+
+export interface GatewayChannelsConfig {
+  readonly matrix?: GatewayMatrixChannelConfig;
+  readonly email?: GatewayEmailChannelConfig;
+  readonly [channelId: string]: GatewayChannelCommonConfig | undefined;
 }
 
 export interface GatewayDeviceRecord {

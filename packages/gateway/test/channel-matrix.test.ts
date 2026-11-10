@@ -50,7 +50,7 @@ async function setup(prefix: string): Promise<{
   return { cwd, gateway, matrix, llm };
 }
 
-function startWorker(input: { cwd: string; gateway: GatewayConfig; llmUrl: string; registry?: FlowToolRegistry }): { readonly stop: () => Promise<void> } {
+function startWorker(input: { cwd: string; gateway: GatewayConfig; llmUrl: string; registry?: FlowToolRegistry; logs?: string[] }): { readonly stop: () => Promise<void> } {
   const controller = new AbortController();
   const done = runChannelWorker({
     channelId: "matrix",
@@ -60,7 +60,7 @@ function startWorker(input: { cwd: string; gateway: GatewayConfig; llmUrl: strin
     env: ENV,
     registry: input.registry,
     signal: controller.signal,
-    log: () => undefined,
+    log: (line) => input.logs?.push(line),
   });
   return {
     stop: async () => {
@@ -154,8 +154,10 @@ test("matrix: a redelivered event after a restart is answered once", async () =>
     await worker.stop();
     // Simulate a crash after answering but before the cursor was saved.
     await writeFile(channelCursorPath(cwd, "matrix"), cursorBefore, "utf8");
-    worker = startWorker({ cwd, gateway, llmUrl: llm.url });
+    const logs: string[] = [];
+    worker = startWorker({ cwd, gateway, llmUrl: llm.url, logs });
     await matrix.waitForSyncs(3);
+    assert.ok(logs.some((line) => line.includes(`delivery matrix:${event} already replay`)), logs.join("\n"));
     const replies = matrix.sent.filter((sent) => {
       const relates = sent.content["m.relates_to"] as { "m.in_reply_to"?: { event_id?: string } } | undefined;
       return relates?.["m.in_reply_to"]?.event_id === event;

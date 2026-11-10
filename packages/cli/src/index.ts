@@ -318,6 +318,7 @@ import {
   pollSlackSocket,
   pollTelegram,
   pollWhatsApp,
+  runChannelWorker,
   saveGatewayConfig,
   slackEventToSurfaceMessage,
   startGatewayServer,
@@ -328,6 +329,7 @@ import {
   whatsAppWebhookToSurfaceMessages
 } from "@musterhq/gateway";
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
+import { sdkChannelsCommand } from "./sdk-channels-command.js";
 import { renderSettingsList, SettingsPanel, type SettingsChange } from "./settings-panel.js";
 import { allowedSettingValues, formatSettingValue, requireSetting, resetSetting as resetSettingValue, resolveSetting, resolveSettings, setSetting, settingsPaths, settingValues, validateSettingsFiles, type SettingScope } from "@musterhq/core";
 import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
@@ -719,7 +721,7 @@ Usage:
   muster flow runs | show <run-id> | approve <run-id> | reject <run-id>
   muster gateway init
   muster gateway status              # readiness without printing bearer tokens
-  muster gateway start [--port 7460] [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp]
+  muster gateway start [--port 7460] [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp] [--with-matrix] [--with-email]
   muster gateway daemon start|stop|status|restart [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp]
   muster gateway webhook telegram --public-url https://your-domain.example
   muster gateway poll                 # local Telegram long-poll fallback; daemonize with gateway daemon start --with-telegram-poll
@@ -12179,6 +12181,13 @@ async function gatewayCommand(commandArgs: string[]): Promise<void> {
         }));
         console.log("slack_socket=background_in_process");
       }
+      for (const sdkChannel of ["matrix", "email"] as const) {
+        if (!commandArgs.includes(`--with-${sdkChannel}`)) continue;
+        workers.push(runChannelWorker({ channelId: sdkChannel, config, gateway, registry, enterprise, cwd: process.cwd(), signal: controller.signal, log: (line) => console.log(line) }).catch((error) => {
+          console.error(`${sdkChannel} worker failed: ${error instanceof Error ? error.message : String(error)}`);
+        }));
+        console.log(`${sdkChannel}=background_in_process`);
+      }
       if (commandArgs.includes("--with-whatsapp")) {
         workers.push(pollWhatsApp({ config, gateway, registry, enterprise, frappeOAuth, cwd: process.cwd(), signal: controller.signal, log: (line) => console.log(line) }).catch((error) => {
           console.error(`whatsapp connection failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -12343,6 +12352,8 @@ async function gatewayDaemonCommand(args: string[]): Promise<void> {
     if (args.includes("--with-telegram-poll")) childArgs.push("--with-telegram-poll");
     if (args.includes("--with-slack-socket")) childArgs.push("--with-slack-socket");
     if (args.includes("--with-whatsapp")) childArgs.push("--with-whatsapp");
+    if (args.includes("--with-matrix")) childArgs.push("--with-matrix");
+    if (args.includes("--with-email")) childArgs.push("--with-email");
     const out = openSync(logPath, "a", 0o600);
     const child = spawn(process.execPath, childArgs, {
       cwd: process.cwd(),
@@ -12516,6 +12527,8 @@ const CHANNEL_SETUP_SPECS: readonly ChannelSetupSpec[] = [
 
 async function channelsCommand(commandArgs: string[]): Promise<void> {
   const [action, channel] = commandArgs;
+  // Matrix and email live only on the channel SDK.
+  if (await sdkChannelsCommand(commandArgs)) return;
   if (action === "list" || action === undefined) {
     printChannelCatalog();
     return;
@@ -12634,6 +12647,8 @@ function printChannelCatalog(): void {
     const auth = spec.requiredEnvFlags.length ? spec.requiredEnvFlags.join(",") : spec.optionalEnvFlags?.length ? spec.optionalEnvFlags.join(",") : "gateway token";
     console.log(`${spec.id}\t${spec.label}\t${auth}\tmuster channels ready ${spec.id}`);
   }
+  console.log("matrix\tMatrix\tMATRIX_ACCESS_TOKEN (env)\tmuster channels setup matrix");
+  console.log("email\tEmail (IMAP/SMTP)\tMUSTER_EMAIL_PASSWORD (env)\tmuster channels setup email");
 }
 
 function printChannelStatus(spec: ChannelSetupSpec, config: GatewayConfig): void {
