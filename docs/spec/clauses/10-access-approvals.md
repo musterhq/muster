@@ -61,3 +61,13 @@
 - **Environment:** fake `claude` binary.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-10-1F — The approval card shows every line of a multi-line command
+
+- **Precondition:** chat in `ask`; a turn asks to run `/bin/zsh -lc 'printf hi > hello.txt\nls'` (two commands on two lines).
+- **Action:** the card appears; the user answers it.
+- **Expected result:** while pending, the card's title row reads `Run printf hi > hello.txt …?` and below it every line of the command is shown in full (`printf hi > hello.txt`, `ls`), so the user sees all of what they approve. Once answered, the card collapses to the title row and the decision.
+- **Test:** `packages/cli/test/access-approvals.test.ts` › "a pending approval card shows every line of a multi-line command"
+- **Environment:** card renderer.
+- **Known gaps:** past 60 lines the card shows the first 60 and a count of the rest.
+- **Evidence:** UNVERIFIED
