@@ -82,3 +82,10 @@ test("runtime names match everywhere and a session reopens on the runtime and mo
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-09-2B (docs/spec/clauses/09-status-bar.md#mus-spec-09-2b--a-chat-names-its-runtime-one-way-and-a-session-reopens-on-its-runtime)
+test("Claude Code's short model names read the same in the header and the status bar", async () => {
+  const { formatModelStatus, modelProvider } = await import("../src/model-catalog.js");
+  for (const alias of ["sonnet", "opus", "haiku", "fable"]) assert.equal(modelProvider(alias), "claude", alias);
+  assert.equal(formatModelStatus("sonnet", "high"), "sonnet", "no Codex effort tier on a Claude model");
+});
