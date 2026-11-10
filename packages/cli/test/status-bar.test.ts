@@ -78,3 +78,24 @@ test("after a resize the bar is rebuilt for the new width and the summary row ke
   assert.ok(summary.length > 1);
   assert.ok(summary.slice(1).every((row) => row.startsWith("  ")), summary.join("\n"));
 });
+
+// Spec: MUS-SPEC-09-2A (docs/spec/clauses/09-status-bar.md#mus-spec-09-2a--the-full-header-stays-inside-its-box)
+test("the full header panel keeps every row inside its box", async () => {
+  const { fullHeaderLayout, renderFullHeaderPanel } = await import("../src/chat-tui.js");
+  const layout = fullHeaderLayout(108);
+  const rows = renderFullHeaderPanel({
+    layout,
+    title: "Muster Agent · 2026-11-10",
+    left: ["MUSTER", "agent harness", " ", "gpt-6.1-terra", "/private/tmp/qa-set", "Session: qa-8b-with-a-long-name", "0 here · 3 total"],
+    middle: ["Available Tools", "workspace: read, edit, shell, git"],
+    right: ["Commands", "/help commands and shortcuts"],
+    footer: "gpt-6.1-terra · codex · native · speed fast · scopes user:dhairya · 8 tool groups · 0 skills · 0 plugins · 0 mcp · /help",
+  }).map(plain);
+  for (const row of rows) assert.equal(row.length, 108, `row fits the box: ${row}`);
+  assert.match(rows[0]!, /^╭─+ Muster Agent · 2026-11-10 ─+╮$/, "the title sits in the top border");
+  assert.ok(!rows.some((row) => row.startsWith("│─")), "no second border inside the box");
+  const footer = rows.at(-2)!;
+  assert.ok(footer.endsWith(" │"), footer);
+  assert.match(footer, /…/);
+  assert.ok(rows.some((row) => row.includes("Session: qa-8b-with-a-long-name")), "the session name is not cut at this width");
+});
