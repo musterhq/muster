@@ -736,10 +736,15 @@ function scheduleIdleClose(session: CachedSession): void {
       scheduleIdleClose(session);
       return;
     }
-    if (session.pendingRuns === 0 && Date.now() - session.lastUsedAt >= idleMs && SESSION_CACHE.get(session.cacheKey) === session) {
+    if (SESSION_CACHE.get(session.cacheKey) !== session || session.pendingRuns > 0) return;
+    if (Date.now() - session.lastUsedAt >= idleMs) {
       closeCachedSession(session.cacheKey, session);
+      return;
     }
-  }, idleMs);
+    // Timers may fire a moment early (or the session was used meanwhile):
+    // wait out the rest instead of never closing.
+    scheduleIdleClose(session);
+  }, Math.max(1, idleMs - (Date.now() - session.lastUsedAt)));
   session.idleTimer.unref?.();
 }
 

@@ -34,6 +34,7 @@ test("buildClaudeCodeArgs creates a non-interactive Claude Code invocation", () 
     "low",
     "--allowedTools",
     "Bash(git status),Read",
+    "--",
     "Review this repo"
   ]);
 });
@@ -49,6 +50,7 @@ test("buildClaudeCodeArgs passes per-run plugin dirs before the user prompt", ()
     "/tmp/muster-skills-a",
     "--plugin-dir",
     "/tmp/muster-skills-b",
+    "--",
   ]);
 });
 
