@@ -21,3 +21,13 @@ Muster's embedded pi runtime gets coding tools that match the turn's sandbox, an
 - **Environment:** as above.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-05-1C — A missing pi key names the provider and the next step
+
+- **Precondition:** runtime `pi` with no API key in the environment for any pi provider (or for the chosen provider, e.g. `anthropic`).
+- **Action:** a turn runs; pi fails with "No API key found for the selected model." (or "… for anthropic.") followed by its own `/login` help.
+- **Expected result:** the turn's error says which key is missing and how to fix it in Muster: the env var(s) to set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, … or the chosen provider's own), and `muster pi models` to see which providers are available; pi's `/login` advice (not a Muster command) is dropped. Other errors pass through unchanged.
+- **Test:** `packages/core/test/pi-runtime-tools.test.ts` › "a missing pi key names the provider, its env var and the next step"
+- **Environment:** pure function.
+- **Known gaps:** the env var map covers pi's common providers; others get the generic hint.
+- **Evidence:** UNVERIFIED
