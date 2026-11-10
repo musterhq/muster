@@ -162,3 +162,21 @@ test("skill_view over MCP returns an installed bundle's skill", { timeout: 120_0
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-04-1C (docs/spec/clauses/04-mcp-serve.md#mus-spec-04-1c--memory-tools-default-to-the-user-scope)
+test("memory tools default to the user's scope when a client passes none", { timeout: 90_000 }, async () => {
+  const cwd = await workspace();
+  const client = await connect(cwd);
+  try {
+    await client.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    const user = `user:${process.env.USER || process.env.USERNAME || "local"}`;
+    const written = await client.request("tools/call", { name: "memory_write", arguments: { summary: "Lunch is at noon on Fridays", scopes: [user] } });
+    assert.notEqual((written.result as { isError?: boolean }).isError, true, text(written));
+    const found = await client.request("tools/call", { name: "memory_search", arguments: { query: "lunch" } });
+    assert.notEqual((found.result as { isError?: boolean }).isError, true, text(found));
+    assert.match(text(found), /Lunch is at noon/);
+  } finally {
+    client.close();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

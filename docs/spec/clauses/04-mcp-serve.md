@@ -21,3 +21,13 @@
 - **Environment:** the real CLI as a child process.
 - **Known gaps:** the `ask` policy needs an approval round-trip; until then it refuses.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-04-1C — Memory tools default to the user scope
+
+- **Precondition:** `muster mcp serve` in a workspace; a memory written to `user:<login>`.
+- **Action:** an external client calls `memory_search {query: "lunch"}` without `scopes`.
+- **Expected result:** the search runs in the user's scope (`user:$USER`), as it does inside chat, and finds the memory; no "Memory tools require at least one scope" error.
+- **Test:** `packages/cli/test/mcp-serve.test.ts` › "memory tools default to the user's scope when a client passes none"
+- **Environment:** real `muster mcp serve` process over stdio, temp workspace.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
