@@ -130,6 +130,12 @@ export function modelDisplayLabel(model: string | undefined): string {
   return [...liveCodexModels, ...CODEX_MODELS, ...CLAUDE_MODELS].find((item) => item.value === model)?.label ?? model;
 }
 
+/** The runtime as the user knows it: the default `native` runtime is Codex's app-server, so it is `codex`. */
+export function runtimeDisplayName(runtimeId: string | undefined): string {
+  if (!runtimeId || runtimeId === "native") return "codex";
+  return runtimeId;
+}
+
 export function effortDisplayLabel(value: EffortValue | undefined): string {
   return EFFORT_OPTIONS.find((item) => item.value === value)?.label ?? "Medium";
 }

@@ -2,6 +2,7 @@
 import { printBanner, renderBanner } from "./banner.js";
 import { alignHelpRows, buildCompactHeaderLines, CHAT_SHORTCUTS, cardRow, fullHeaderLayout, promptBackAfterHookBlock, renderFullHeaderPanel, createMusterAutocompleteProvider, formatStatusBar, readGitStatus, createNarrationPainter, formatAssistantBlock, formatCostChip, formatStatusLine, formatToolLine, formatUserLine, formatWorkingIndicator, formatTurnStatusLine, routeEngineLine, runMusterChatTui, TurnTimer, type BoardModeController, type MusterChatSink, type MusterCompletionCatalog, type PickerOption, type ReasoningMode } from "./chat-tui.js";
 import { markTurnUndone, rewindTurnLabel, startLiveDiffFeed, undoLastTurnRows } from "./live-diff.js";
+import { readChatSessionRoute, sessionRouteToRestore, writeChatSessionRoute } from "./chat-session-route.js";
 import { LiveFileTurnAccumulator, renderLiveFilePlain } from "./live-file-view.js";
 import {
   BACKEND_CARD_PROVIDERS,
@@ -43,6 +44,7 @@ import {
   readCodexComposerDefaults,
   readCodexModelProviders,
   rememberLiveCodexModels,
+  runtimeDisplayName,
   splitGatewayModel,
   type EffortValue,
   type GatewayModelChoice,
@@ -1478,6 +1480,13 @@ async function chat(commandArgs: string[]): Promise<void> {
     resumeThreadId: readFlag(commandArgs, "--codex-thread"),
     importedFromCodex: Boolean(readFlag(commandArgs, "--codex-thread")),
   };
+  // Reopening a session starts on the runtime and model it last ran on, unless a flag says otherwise.
+  const remembered = sessionRouteToRestore(state, readChatSessionRoute(state.sessionName));
+  if (remembered) {
+    state.runtime = remembered.runtime;
+    state.provider = remembered.provider;
+    state.model = remembered.model;
+  }
   const prompt = stripFlags(commandArgs, ["--session", "--name", "--runtime", "--provider", "--model", "--scope", "--recall-limit", "--timeout-ms", "--continue", "--tools", "--complete", "--limit", "--codex-thread", "--access"]).filter((arg) => !["--commands", "--shortcuts", "--list", "--sessions", "--history", "--fast", "--session-speed", "--skip-onboarding", "--no-onboarding", "--live-diff", "--no-live-diff", "--describe"].includes(arg)).join(" ").trim();
   if (commandArgs.includes("--list") || commandArgs.includes("--sessions")) {
     printChatSessions(readNumberFlag(commandArgs, "--limit") ?? 15, commandArgs.includes("--all"));
@@ -2074,7 +2083,7 @@ async function printChatHeader(state: ChatState): Promise<void> {
     `${color("plugins:", "accent")} ${pluginCount ? `${pluginCount} configured` : "none configured"}`,
     `${color("mcp:", "accent")} ${mcpNames.length ? truncate(mcpNames.join(", "), rightWidth - 5) : "no servers"}`,
   ];
-  const footer = `${model} · ${providerId} · ${runtimeId} · speed ${state.speedMode ?? "fast"} · scopes ${formatChatScopes(scopes)} · ${formatCompactNumber(8)} tool groups · ${formatCompactNumber(skills.length)} skills · ${formatCompactNumber(pluginCount)} plugins · ${formatCompactNumber(mcpNames.length)} mcp · /help`;
+  const footer = `${model} · ${providerId} · ${runtimeDisplayName(runtimeId)} · speed ${state.speedMode ?? "fast"} · scopes ${formatChatScopes(scopes)} · ${formatCompactNumber(8)} tool groups · ${formatCompactNumber(skills.length)} skills · ${formatCompactNumber(pluginCount)} plugins · ${formatCompactNumber(mcpNames.length)} mcp · /help`;
   for (const row of renderFullHeaderPanel({ layout, title: `Muster Agent · ${new Date().toISOString().slice(0, 10)}`, left: leftLines, middle: middleLines, right: rightLines, footer })) console.log(row);
   console.log("");
 }
@@ -2250,7 +2259,7 @@ async function buildCompactChatHeaderLines(state: ChatState): Promise<string[]> 
     scopes: formatChatScopes(activeChatScopes(state)),
     model: formatModelStatus(state.model ?? firstRuntimeModel(runtime) ?? provider?.defaultModel, state.effortOverride ?? state.configuredEffort),
     provider: providerId,
-    runtime: runtimeId,
+    runtime: runtimeDisplayName(runtimeId),
     speed: state.speedMode ?? "fast",
   });
 }
@@ -3298,6 +3307,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
     ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
   }].slice(-50);
   persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
+  writeChatSessionRoute(state.sessionName, { runtime: state.runtime, provider: state.provider, model: state.model });
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
   if (outcome.context) state.lastContext = outcome.context;
@@ -4309,7 +4319,7 @@ async function printChatStatus(state: ChatState): Promise<void> {
     const fallbacks = config.routing.fallbacks ?? [];
     printChatPanel("Status", [
       `${color("conversation".padEnd(12), "accent")} ${state.sessionName}`,
-      `${color("runtime".padEnd(12), "accent")} ${runtime}`,
+      `${color("runtime".padEnd(12), "accent")} ${runtimeDisplayName(runtime)}`,
       `${color("provider".padEnd(12), "accent")} ${provider?.id ?? providerId ?? "-"}`,
       `${color("model".padEnd(12), "accent")} ${model ?? "-"}`,
       `${color("speed".padEnd(12), "accent")} ${state.speedMode ?? "fast"}${(state.speedMode ?? "fast") === "fast" ? " (warm native, light context)" : " (full memory + skills)"}`,
@@ -4436,7 +4446,12 @@ async function switchChatModel(args: string, state: ChatState): Promise<void> {
 async function openComposerPicker(state: ChatState): Promise<void> {
   await initializeChatComposerState(state);
   const backends = await detectBackends();
-  if (backends.codex === "authenticated") await loadLiveCodexModels();
+  if (backends.codex === "authenticated") {
+    await loadLiveCodexModels();
+    // Codex's own model names are known now: rebuild the header so it names
+    // the model the way the status bar does.
+    await refreshChatTuiHeader(state);
+  }
   const pickerState = {
     catalog: buildComposerCatalog({ codex: backends.codex === "authenticated", claude: backends.claude === "installed" }),
     activeModel: state.model ?? DEFAULT_CODEX_MODEL,
@@ -5530,12 +5545,12 @@ async function chatCommandCurrentValues(state: ChatState): Promise<Record<string
   const effort = effortDisplayLabel(state.effortOverride ?? state.configuredEffort ?? "medium");
   const claude = activeChatProvider(state) === "claude";
   return {
-    ...(model ? { model: claude ? model : `${model} · ${effort}` } : {}),
+    ...(model ? { model: formatModelStatus(model, state.effortOverride ?? state.configuredEffort ?? "medium") } : {}),
     "live-diff": liveDiffEnabled(state) ? "on" : "off",
     access: state.accessMode ?? "auto-edit",
     reasoning: `${claude ? "extended thinking" : effort} · summaries ${state.reasoningMode === "full" ? "full" : "brief"}`,
     speed: state.speedMode ?? "fast",
-    runtime: runtimeId,
+    runtime: runtimeDisplayName(runtimeId),
     ...(providerId ? { provider: providerId } : {}),
   };
 }
