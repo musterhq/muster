@@ -402,11 +402,6 @@ export async function startLiveDiffFeed(options: LiveDiffFeedOptions): Promise<L
 const WARN_RGB = "229;192;123";
 
 /**
- * The rows `/undo` prints. `patches` are the observer events of the most recent
- * turn that changed files; `untrackedReason` is set when the latest turn ran
- * without the observer, so an empty patch list cannot be read as "no changes".
- */
-/**
  * After /undo, the turn that owned `patches` keeps no changes for /rewind to
  * restore (they are already restored) and says so in the rewind picker.
  */
@@ -421,6 +416,11 @@ export function rewindTurnLabel(turn: { readonly prompt: string; readonly patche
   return `${prompt}${turn.patches.length ? ` · ${new Set(turn.patches.map((patch) => patch.path)).size} file(s)` : ""}`;
 }
 
+/**
+ * The rows `/undo` prints. `patches` are the observer events of the most recent
+ * turn that changed files; `untrackedReason` is set when the latest turn ran
+ * without the observer, so an empty patch list cannot be read as "no changes".
+ */
 export async function undoLastTurnRows(
   input: { readonly patches?: readonly WorkspacePatchEvent[]; readonly untrackedReason?: string; readonly alreadyUndone?: boolean },
   options: { readonly color?: boolean } = {},

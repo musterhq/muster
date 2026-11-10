@@ -243,6 +243,8 @@ export interface RunOptions {
   readonly onReasoningDelta?: (text: string) => void;
   /** Tool activity (commands, MCP calls, searches) while the turn runs; file edits come from the workspace observer. */
   readonly onToolEvent?: (event: AgentToolEvent) => void;
+  /** The caller paints file changes as diff cards (live diff running), so runtimes skip successful file-edit tool cells. */
+  readonly fileEditCards?: boolean;
   /**
    * A `[model_providers.<id>]` from the Codex config (e.g. an OpenAI-compatible
    * gateway) that Codex turns should use instead of the default provider.
@@ -578,6 +580,7 @@ const runClaudeCodeBackend: CliBackendRunner = async (route, prompts, options, c
       ...(mcpFile ? { mcpConfig: mcpFile.path } : {}),
       ...(options.onDelta ? { onDelta: options.onDelta } : {}),
       ...(options.onToolEvent ? { onToolEvent: options.onToolEvent } : {}),
+      ...(options.fileEditCards ? { fileEditCards: true } : {}),
       // No explicit mode means the chat default, auto-edit (spec 10-1E).
       permissionMode: claudePermissionModeForAccess(options.accessMode ?? "auto-edit"),
     });

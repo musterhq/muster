@@ -10,7 +10,7 @@ When `muster chat` runs on the Claude Code runtime (including Claude models reac
 - **Test:** `packages/core/test/claude-stream.test.ts` › "claude turns report tool calls, stream text and record real usage"
 - **Environment:** fake `claude` binary printing stream-json.
 - **Known gaps:** Claude Code's own permission prompts are not routed to Muster yet.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, `/runtime claude-code` in a folder without git: `⏺ Tool(Write note.txt)` with its result cut to the width; in a git folder only `⏺ Create(note.txt)`. Red→green: claude-stream.test.ts 4/4.
 
 ## MUS-SPEC-06-1B — A Claude binary without stream-json still answers
 
@@ -20,7 +20,7 @@ When `muster chat` runs on the Claude Code runtime (including Claude models reac
 - **Test:** `packages/core/test/claude-stream.test.ts` › "a claude that prints plain text still answers"
 - **Environment:** fake `claude` binary.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, `/runtime claude-code` in a folder without git: `⏺ Tool(Write note.txt)` with its result cut to the width; in a git folder only `⏺ Create(note.txt)`. Red→green: claude-stream.test.ts 4/4.
 
 ## MUS-SPEC-06-1C — A file write is shown once, as its diff card
 
@@ -40,4 +40,4 @@ When `muster chat` runs on the Claude Code runtime (including Claude models reac
 - **Test:** `packages/core/test/claude-stream.test.ts` › "without diff cards a claude file write keeps its own cell"
 - **Environment:** fake `claude` printing stream-json, no network.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-10, `/runtime claude-code` in a folder without git: `⏺ Tool(Write note.txt)` with its result cut to the width; in a git folder only `⏺ Create(note.txt)`. Red→green: claude-stream.test.ts 4/4.

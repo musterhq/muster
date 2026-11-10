@@ -3259,6 +3259,8 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
       onToolEvent: painter ? (event) => painter.tool(event) : undefined,
+      // Diff cards stand in for file-edit cells only while live diff runs.
+      fileEditCards: liveDiff.active,
       prompt: agentId ? `Agent route: ${agentId}\n\n${prompt}` : prompt,
       turnContext: state.pendingContinuityContext,
       // The managed-runtime plan branch is the ONLY one that honors an explicit
