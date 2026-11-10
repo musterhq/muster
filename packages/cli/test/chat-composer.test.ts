@@ -227,3 +227,49 @@ test("muster chat --shortcuts prints the keys in aligned columns", { timeout: 60
   const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
   assert.ok(starts.every((start) => start > 0 && start === starts[0]), `descriptions start in one column:\n${stdout}`);
 });
+
+async function chatCommandReplies(commands: readonly string[]): Promise<Map<string, string>> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { resolve, join } = await import("node:path");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const run = promisify(execFile);
+  const cli = resolve(import.meta.dirname, "..", "src", "index.ts");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-replies-"));
+  const env = { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1", MUSTER_ONBOARDING_HOME: join(cwd, ".test-home") };
+  const replies = new Map<string, string>();
+  try {
+    await run("tsx", [cli, "init"], { cwd, env });
+    for (const command of commands) {
+      const { stdout } = await run("tsx", [cli, "chat", "--session", "replies", command], { cwd, env, timeout: 60_000 });
+      replies.set(command, stdout);
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+  return replies;
+}
+
+// Spec: MUS-SPEC-02-3A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3a--command-replies-are-plain-sentences-not-debug-keyvalue-pairs)
+test("chat command replies are plain sentences", { timeout: 240_000 }, async () => {
+  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex", "/model gpt-5.5", "/access ask", "/reasoning full", "/new s2", "/reset"]);
+  const debug = /provider_handles_cleared|\bruntime=|\bprovider=|\bmodel=|Model=|\baccess=|reasoning_density=|session=/;
+  for (const [command, out] of replies) assert.doesNotMatch(out, debug, `${command}:\n${out}`);
+  assert.match(replies.get("/runtime claude-code")!, /^Runtime: Claude Code · model sonnet$/m);
+  assert.match(replies.get("/runtime codex")!, /^Runtime: Codex · model \S+$/m);
+  assert.match(replies.get("/model gpt-5.5")!, /^Model: \S.* · this session$/m);
+  assert.match(replies.get("/access ask")!, /^Access: ask · asks before /m);
+  assert.match(replies.get("/reasoning full")!, /^Reasoning summaries: full$/m);
+  assert.match(replies.get("/new s2")!, /^New session s2\.$/m);
+  assert.match(replies.get("/reset")!, /^Conversation reset; the next turn starts a fresh provider thread\.$/m);
+});
+
+// Spec: MUS-SPEC-02-3B (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3b--switching-runtime-does-not-pre-fill-the-composer)
+test("switching runtime leaves the composer empty and hints at /model", { timeout: 240_000 }, async () => {
+  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex"]);
+  for (const [command, out] of replies) {
+    assert.doesNotMatch(out, /Next: \/model/, `${command} must not pre-fill /model:\n${out}`);
+    assert.match(out, /^Type \/model to pick a different model\.$/m, `${command}:\n${out}`);
+  }
+});

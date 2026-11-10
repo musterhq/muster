@@ -91,3 +91,23 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** pure list and row formatter.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10: `/shortcuts` lists 11 keys and `/help` descriptions start in one column. The CLI test went red on the panel printer collapsing padding, then green.
+
+## MUS-SPEC-02-3A — Command replies are plain sentences, not debug `key=value` pairs
+
+- **Precondition:** a chat session (`muster chat --session <name> "<command>"` or the TUI).
+- **Action:** run `/runtime claude-code`, `/runtime codex`, `/model gpt-5.5`, `/access ask`, `/reasoning full`, `/new s2` and `/reset`.
+- **Expected result:** each reply reads as a sentence with labels, e.g. `Runtime: Claude Code · model sonnet`, `Model: 5.5 · this session`, `Access: ask · asks before…`, `Reasoning summaries: full`, `New session s2.`, `Conversation reset; the next turn starts a fresh provider thread.`; no reply contains `provider_handles_cleared`, `runtime=`, `provider=`, `model=`, `Model=`, `access=` or `reasoning_density=`.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "chat command replies are plain sentences"
+- **Environment:** real CLI through tsx in a scratch folder, NO_COLOR; no provider is called.
+- **Known gaps:** machine-readable subcommands outside chat (`muster runtime`, `muster run`, panels such as the `/runtime` list) keep their `key=value` output for scripts.
+- **Evidence:** UNVERIFIED
+
+## MUS-SPEC-02-3B — Switching runtime does not pre-fill the composer
+
+- **Precondition:** chat TUI on Codex.
+- **Action:** run `/runtime claude-code` (also `/runtime codex`, `/runtime pi`, `/provider <id>`).
+- **Expected result:** the reply names the runtime and model and adds a dim hint `Type /model to pick a different model.`; the composer stays empty (no `/model` typed for the user, no `Next: /model` line).
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "switching runtime leaves the composer empty and hints at /model"
+- **Environment:** real CLI through tsx (the non-TUI path prints `Next: /model` exactly when the TUI would pre-fill it), NO_COLOR.
+- **Known gaps:** bare listing commands (`/runtime`, `/mcp`, `/plugins`) still pre-fill their own command to open the picker; that is the picker flow, not a switch.
+- **Evidence:** UNVERIFIED
