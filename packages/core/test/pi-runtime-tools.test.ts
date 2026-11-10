@@ -103,3 +103,10 @@ test("a missing pi key names the provider, its env var and the next step", async
   assert.match(anthropic, /ANTHROPIC_API_KEY/);
   assert.equal(explainPiError("rate limited"), "rate limited");
 });
+
+// Spec: MUS-SPEC-05-1C (docs/spec/clauses/05-pi-runtime-tools.md#mus-spec-05-1c--a-missing-pi-key-names-the-provider-and-the-next-step)
+test("switching to pi warns up front when no pi provider has a key", async () => {
+  const { piNoKeyWarning } = await import("../src/pi.js");
+  assert.match(piNoKeyWarning([{ available: false }, { available: false }]) ?? "", /no API key.*ANTHROPIC_API_KEY/);
+  assert.equal(piNoKeyWarning([{ available: false }, { available: true }]), undefined);
+});
