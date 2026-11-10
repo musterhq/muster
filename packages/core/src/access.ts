@@ -68,3 +68,26 @@ export function codexApprovalRequest(method: string, params: Record<string, unkn
   }
   return undefined;
 }
+
+const GIT_SAFE_SUBCOMMANDS = new Set(["add", "commit", "stash", "checkout", "switch", "branch", "restore", "reset", "mv", "rm", "tag", "merge", "rebase", "cherry-pick", "revert", "status", "diff", "log", "show", "init", "worktree", "apply", "am", "notes", "fetch", "pull"]);
+
+/**
+ * Auto-edit's one escalation: git that stays on this machine (Codex keeps
+ * `.git` read-only in the workspace sandbox, so a commit needs approval).
+ * Every `&&`/`;`/`|` segment must be a local git subcommand; `git push` and
+ * anything else is not.
+ */
+export function isWorkspaceGitCommand(command: string, cwd: string | undefined, workspace: string): boolean {
+  if (cwd && !(cwd === workspace || cwd.startsWith(`${workspace}/`))) return false;
+  const quoted = command.trim().match(/^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/);
+  const body = quoted ? quoted[2]! : command;
+  if (/[`$<>]|\$\(/.test(body)) return false;
+  const segments = body.split(/&&|;|\|\||\n/).map((segment) => segment.trim()).filter(Boolean);
+  if (!segments.length) return false;
+  return segments.every((segment) => {
+    const words = segment.split(/\s+/);
+    if (words[0] !== "git") return false;
+    const sub = words.slice(1).find((word) => !word.startsWith("-"));
+    return Boolean(sub && GIT_SAFE_SUBCOMMANDS.has(sub));
+  });
+}

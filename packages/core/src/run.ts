@@ -1,6 +1,6 @@
 import type { McpServerConfig } from "./mcp.js";
 import { withConfigHooks } from "./config-hooks.js";
-import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
+import { claudePermissionModeForAccess, codexApprovalRequest, codexSandboxForAccess, isWorkspaceGitCommand, type AccessMode, type ApprovalDecision, type ApprovalRequest } from "./access.js";
 import { codexThreadMcpConfig, resolveRuntimeMcpServers, writeClaudeMcpConfig } from "./mcp-runtime.js";
 import type { AgentToolEvent } from "./tool-events.js";
 import { execFile } from "node:child_process";
@@ -712,8 +712,10 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
           ...(Object.keys(codexMcpThreadConfig).length ? { threadConfig: codexMcpThreadConfig } : {}),
           // Approvals are on in ask mode, and whenever a tool.before policy
           // hook exists: the hook answers every request, the user only in ask.
-          ...(options.accessMode === "ask" || policyGate ? { approvalPolicy: "untrusted" as const } : {}),
-          ...(options.accessMode === "ask" || options.onApprovalRequest || policyGate
+          // auto-edit asks "on request": Codex only asks to step outside the
+          // sandbox, and Muster approves local git (commits) itself.
+          ...(options.accessMode === "ask" || policyGate ? { approvalPolicy: "untrusted" as const } : options.accessMode === "auto-edit" ? { approvalPolicy: "on-request" as const } : {}),
+          ...(options.accessMode === "ask" || options.accessMode === "auto-edit" || options.onApprovalRequest || policyGate
             ? {
                 onRequest: async (method: string, params: Record<string, unknown>) => {
                   const request = codexApprovalRequest(method, params);
@@ -724,7 +726,12 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
                       try { options.onPolicyBlock?.(request, { ...(verdict.blockedBy ? { hookId: verdict.blockedBy } : {}), ...(verdict.reason ? { reason: verdict.reason } : {}) }); } catch { /* display only */ }
                       return { decision: "decline" };
                     }
+                    // With a policy gate Codex asks about every command, not just
+                    // escalations; passing the policy is the approval (except in ask).
                     if (options.accessMode !== "ask") return { decision: "accept" };
+                  }
+                  if (options.accessMode === "auto-edit") {
+                    return { decision: request.kind === "command" && isWorkspaceGitCommand(request.title, request.cwd, workspaceDir) ? "accept" : "decline" };
                   }
                   const decision = options.onApprovalRequest ? await options.onApprovalRequest(request).catch(() => "decline" as const) : "decline";
                   return { decision };
