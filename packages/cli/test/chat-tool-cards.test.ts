@@ -154,3 +154,16 @@ test("command titles drop the wrapper's quoting and use the terminal width", () 
   assert.ok(text.includes(`⏺ Bash(${long})`), "a 168-character command fits a 200-column terminal");
   await finish();
 }));
+
+// Spec: MUS-SPEC-01-3B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-3b--a-long-result-line-is-cut-to-the-width-with-an-ellipsis)
+test("a long tool result line is cut to the terminal width with an ellipsis", () => withNoColor(async () => {
+  const { renderTranscriptLine, cardRow, formatToolEndLines } = await import("../src/chat-tui.js");
+  const output = "File created successfully at: /private/tmp/qafix-claude/note.txt (file state is current in your context — no need to Read it back)";
+  const event = { phase: "end" as const, id: "r1", kind: "tool" as const, title: "Read notes", output };
+  const collapsed = formatToolEndLines(event, 6, { expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80));
+  assert.equal(collapsed.length, 2, "head row plus ONE output row");
+  assert.ok(collapsed.every((row) => row.length <= 80), collapsed.join("\n"));
+  assert.match(collapsed[1]!, /File created successfully at: .*…\s*$/);
+  const expanded = formatToolEndLines(event, 6, { expanded: true, expandable: true }).flatMap((row) => renderTranscriptLine(cardRow(row), 80, 80));
+  assert.ok(expanded.join(" ").replace(/\s+/g, " ").includes("no need to Read it back"), "ctrl+o shows the whole line, wrapped");
+}));

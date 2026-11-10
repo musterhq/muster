@@ -161,3 +161,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure `unwrapShellCommand`; chat harness with a painter given a 200-column width; NO_COLOR.
 - **Known gaps:** a title is measured when the cell is painted; resizing later does not re-measure it.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-01-3B — A long result line is cut to the width with an ellipsis
+
+- **Precondition:** a tool cell whose output is one 128-character line ("File created successfully at: … no need to Read it back)").
+- **Action:** render the cell at 80 columns, collapsed and then expanded (Ctrl+O).
+- **Expected result:** collapsed, the output takes one row, cut to the width and ending in `…`; no row is wider than the terminal. Expanded, the full line is shown, wrapped.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "a long tool result line is cut to the terminal width with an ellipsis"
+- **Environment:** pure renderer (`formatToolEndLines` → `renderTranscriptLine`), NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
