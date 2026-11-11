@@ -200,4 +200,4 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "MCP cells show the arguments and summarise a JSON result"
 - **Environment:** `codexItemToToolEvent` on recorded item shapes; chat harness with the narration painter; NO_COLOR.
 - **Known gaps:** Claude Code and pi MCP calls carry no arguments into the cell yet.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, Codex turn calling Muster's own server: `⏺ MCP(muster.memory_write · scopes: ["user:dhairya"], summary: "Polish team lunch is on Friday at Saffr…)` / `⎿ done · 7ms` / `id: "mem_91d34fa3-…"` / `memory: {"id":…,"kind":"fact",…` (before: `MCP(muster.memory_write)` and the raw tail `"redactionState": "none",` / `"links": []`, S/31-memwrite). Capture: `screens/polish/qa33-after-mcp-cell.ansi`. Red→green: chat-tool-cards.test.ts.

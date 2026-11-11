@@ -965,7 +965,7 @@ function toolCellName(event: AgentToolEvent): string {
 
 /** One row, bounded: multi-line commands show their first line plus an ellipsis. */
 function toolCellTitle(event: AgentToolEvent, max = 96): string {
-  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.title;
+  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.args ? `${event.title} · ${event.args}` : event.title;
   const lines = raw.split(/\r?\n/).filter((line) => line.trim());
   let title = (lines[0] ?? raw).trim();
   if (lines.length > 1) title += " …";
@@ -1020,6 +1020,18 @@ export function formatToolEndLines(
   // Codex reports 0 for commands it did not time; "0ms" reads as a lie.
   if (event.durationMs !== undefined && event.durationMs > 0) segments.push(formatDuration(event.durationMs));
   const head = `  ${dim(`${RESULT_ELBOW} ${segments.join(" · ")}`)}`;
+  // A JSON result reads as its fields, not as the last lines of pretty-printed JSON.
+  const summary = event.kind === "mcp" && !view.expanded ? jsonResultSummary(event.output) : undefined;
+  if (summary) {
+    const clip = view.expandable ? CLIP_MARK : "";
+    const shown = summary.slice(0, Math.min(maxLines, 5));
+    const more = summary.length - shown.length;
+    return [
+      head,
+      ...shown.map((row) => `${clip}    ${dim(row)}`),
+      ...(more > 0 ? [`    ${dim(`… +${more} more ${more === 1 ? "field" : "fields"}${view.expandable ? " (ctrl+o to expand)" : ""}`)}`] : []),
+    ];
+  }
   const rows = (event.output ?? "").replace(/\s+$/, "").split(/\r?\n/).filter((row, index, all) => row.trim() || index < all.length - 1);
   const output = rows.length === 1 && !rows[0]!.trim() ? [] : rows;
   const lines = [head];
@@ -1034,6 +1046,23 @@ export function formatToolEndLines(
   for (const row of output.slice(hidden)) lines.push(`${clip}    ${dim(stripAnsi(row).slice(0, view.expanded ? 2000 : 200))}`);
   if (view.expanded && view.expandable && output.length > maxLines) lines.push(`    ${dim("ctrl+o to collapse")}`);
   return lines;
+}
+
+/** One `key: value` row per top-level field of a JSON object (one row per item of an array); undefined for non-JSON text. */
+export function jsonResultSummary(output: string | undefined): string[] | undefined {
+  const trimmed = output?.trim();
+  if (!trimmed || !/^[[{]/.test(trimmed)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  const one = (value: unknown): string => JSON.stringify(value) ?? String(value);
+  if (Array.isArray(parsed)) return parsed.length ? parsed.map(one) : ["[] (no items)"];
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  return entries.length ? entries.map(([key, value]) => `${key}: ${one(value)}`) : ["{} (empty)"];
 }
 
 /** Reasoning summaries render violet + italic so they never read as the answer. */
