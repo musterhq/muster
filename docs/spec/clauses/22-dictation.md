@@ -16,7 +16,7 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "ctrl+r records and inserts the transcript into the composer without sending"
 - **Environment:** harness sink, fake `rec` and whisper on PATH.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed. Live on macOS: `muster chat` in tmux with the real whisper-cli (`ggml-small.en.bin`) and a stand-in `rec` that plays a `say` clip (no microphone prompt): Ctrl+R showed `● Recording 0:02 ▁▁▁ · ctrl+r stop · esc cancel`, Ctrl+R again inserted `please Add a unit test for the date passer.` into the composer and nothing was sent.
 
 ## MUS-SPEC-22-1B — Esc cancels a recording and discards the audio
 
@@ -26,7 +26,7 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "esc cancels a recording without transcribing"
 - **Environment:** as 22-1A.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-22-1C — Dictation without speech-to-text or a recorder says how to set it up
 
@@ -39,7 +39,7 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "dictation without stt or a recorder explains the setup"
 - **Environment:** harness sink, a PATH without the tools.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-22-1D — A recording stops itself at the limit
 
@@ -49,7 +49,7 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "a recording stops at the dictation limit and is still transcribed"
 - **Environment:** as 22-1A.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-22-1E — Dictation works while a turn runs (steer by voice)
 
@@ -59,7 +59,7 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "dictated text can steer a running turn"
 - **Environment:** harness sink with a fake running turn.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-22-2A — `/shortcuts`, `/help` and the receipt know about dictation
 
@@ -71,4 +71,4 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "dictation is listed in shortcuts and leaves a voice receipt"
 - **Environment:** as 22-1A.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
