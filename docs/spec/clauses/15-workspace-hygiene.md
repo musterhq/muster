@@ -31,3 +31,16 @@ Muster keeps per-workspace state in `.muster/`. In a git repository it must not 
 - **Environment:** temp folder; real CLI.
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-15-3B — `muster --help` is one short page; the full list is one command away
+
+- **Precondition:** any folder.
+- **Action:** `muster --help`; `muster help plugins`; `muster help all`.
+- **Expected result:**
+  - `--help` fits in 40 lines, grouped as Start / Work / Extend / Reach / More. It names `muster help <command>` and `muster help all`.
+  - `help plugins` prints only the `muster plugins …` usage lines.
+  - `help all` prints the full command list, which is what `--help` printed before.
+- **Test:** `packages/cli/test/cli.test.ts` › "help is one short grouped page with help <command> and help all"
+- **Environment:** real CLI.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
