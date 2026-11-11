@@ -32,7 +32,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "inspect describes a code plugin's permissions without importing it"
 - **Environment:** temp dirs.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: `muster plugins inspect /tmp/plugin-live/weather` printed `kind=code`, each permission in words and `runs_plugin_code=no`.
 
 ## MUS-SPEC-23-1B — A code plugin's tool runs in its own process and reaches every runtime
 
@@ -48,7 +48,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "a code plugin's tool is served over Muster's MCP server from an isolated host process"
 - **Environment:** a fake HTTP server; an in-process MCP client.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: through `muster mcp serve`, `weather_now {city: Pune}` returned `{"city":"Pune","tempC":31}` from a local server.
 
 ## MUS-SPEC-23-1C — Permissions are enforced at registration and at call time
 
@@ -62,7 +62,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/core/test/plugin-host.test.ts` › "undeclared hooks, hosts and env vars are refused with receipts"
 - **Environment:** a host child process; a fake HTTP server that records any connection.
 - **Known gaps:** a plugin can still open raw sockets through `node:net`. The host blocks `node:net`, `node:child_process`, `node:worker_threads` and `node:fs` writes outside the workspace by loading the plugin under a Node permission policy (`--permission` with `--allow-fs-read`/`--allow-fs-write` scoped to the plugin dir and the workspace). This is noted as defence in depth, not a sandbox. A plugin can write its own lines to the protocol channel (fd 3); the parent accepts only `ready`, `denied`, `fetch` requests and replies to requests it sent and has not yet answered, ignores the rest and counts them in a `plugin.protocol_ignored` receipt, so forged lines can only affect that plugin's own results.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: `weather_leak` got `ctx.fetch refused: example.com is not declared in the plugin's permissions (add "net:example.com")`.
 
 ## MUS-SPEC-23-1D — Hooks from a plugin can block, with the plugin named
 
@@ -76,7 +76,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/core/test/plugin-host.test.ts` › "a plugin tool.before hook blocks a command and the block names the plugin"
 - **Environment:** fake app-server, host child.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-23-1E — Chat commands from a plugin appear in the slash menu
 
@@ -86,7 +86,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "a plugin command is listed in the slash menu and runs without a model turn"
 - **Environment:** harness sink.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: in `muster chat`, `/fore` listed `/forecast <city>  Current forecast for a city (weather)`; `/forecast Pune` printed `Forecast for Pune: 31°C, clear` with no model turn.
 
 ## MUS-SPEC-23-2A — Disable and remove unwind every registration with no restart
 
@@ -99,7 +99,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "disable unwinds tools, hooks and commands through the ledger and remove deletes the plugin"
 - **Environment:** temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: `plugins disable weather` → `enabled=no`; `plugins remove weather` removed the files and the list entry; no plugin process was left.
 
 ## MUS-SPEC-23-2B — A crashing or hanging plugin never takes the chat down
 
@@ -112,7 +112,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/core/test/plugin-host.test.ts` › "a crashing plugin is restarted with a cap and a hanging tool times out"
 - **Environment:** host child.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed.
 
 ## MUS-SPEC-23-3A — Install pins, shows permissions and honours the kill list
 
@@ -128,7 +128,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "install pins the commit, lists permissions and refuses kill-listed plugins at install and load"
 - **Environment:** local git repo; fake hub index.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: `plugins install … --yes` printed each permission, `digest=sha256:cd6efc5f…`, and `it runs in its own process with only the permissions above`.
 
 ## MUS-SPEC-23-3C — Install works in a folder Muster has not seen yet
 
@@ -138,7 +138,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "install works in a folder without .muster and inspect still writes nothing"
 - **Environment:** temp dirs.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed. Live: the first `install` in a fresh folder failed with `ENOENT … .muster/config.json` before this fix; after it, install, list, disable and remove all worked there.
 
 ## MUS-SPEC-23-3B — `muster plugins validate` is the catalog gate
 
@@ -153,7 +153,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Test:** `packages/cli/test/plugin-api.test.ts` › "validate names each defect and passes a good plugin"
 - **Environment:** temp dirs.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/plugin-api`: core `test/plugin-host.test.ts` 6/6, CLI `test/plugin-api.test.ts` with plugin-bundles, chat-dictation and ux-guards 34/34, at concurrency 1; `qa run pty_tui` passed.
 
 ## Next slice (not in this clause)
 - More registrars: `ctx.channel()` (a ChannelAdapter from spec 18), `ctx.speech()` (an STT/TTS provider from spec 21), `ctx.memoryProvider()`, `ctx.schedule()`.
