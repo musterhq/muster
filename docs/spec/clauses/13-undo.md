@@ -50,4 +50,4 @@
 - **Test:** `packages/cli/test/live-diff-render.test.ts` › "undo names created files removed and deleted files restored"
 - **Environment:** real git repo, the workspace observer recording one turn, `undoLastTurnRows` without colour.
 - **Known gaps:** a rename is reported as reverted.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, tmux, built CLI, `/tmp/polish-rw`, a Codex turn that created `notes2.txt` and appended to `a.txt`, then `/undo`: `↺ Undid 2 files` / `⎿ a.txt (reverted +1 −0)` / `⎿ notes2.txt (removed)`, and `notes2.txt` was gone (before: `notes2.txt (reverted +1 −0)`). Capture: `screens/polish/qa35-after-undo.ansi`. Red→green: live-diff-render.test.ts.

@@ -13,6 +13,8 @@ export interface UndoFileResult {
   readonly path: string;
   readonly additions: number;
   readonly deletions: number;
+  /** removed: the turn created the file; restored: the turn deleted it; reverted: the turn edited it. */
+  readonly effect: "removed" | "restored" | "reverted";
 }
 
 export interface UndoResult {
@@ -77,7 +79,11 @@ export async function undoWorkspacePatches(events: readonly WorkspacePatchEvent[
       const stat = countDiffLines(event.diff!);
       return { additions: sum.additions + stat.additions, deletions: sum.deletions + stat.deletions };
     }, { additions: 0, deletions: 0 });
-    restored.push({ path, ...totals });
+    const first = list[0]!;
+    const effect = first.changeKind === "add" || (first.beforeHash === null && first.changeKind !== "rename")
+      ? "removed"
+      : last.changeKind === "delete" ? "restored" : "reverted";
+    restored.push({ path, ...totals, effect });
   }
   return { restored, skipped };
 }

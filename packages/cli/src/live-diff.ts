@@ -473,7 +473,7 @@ export async function undoLastTurnRows(
   const elbow = tint(RESULT_ELBOW, MUTED_RGB, paint);
   return [
     `${tint("↺", result.restored.length ? ADD_RGB : WARN_RGB, paint)} Undid ${result.restored.length} ${result.restored.length === 1 ? "file" : "files"}${result.skipped.length ? `, skipped ${result.skipped.length}` : ""}`,
-    ...result.restored.map((file) => `  ${elbow} ${file.path} ${tint(`(reverted +${file.additions} −${file.deletions})`, MUTED_RGB, paint)}`),
+    ...result.restored.map((file) => `  ${elbow} ${file.path} ${tint(file.effect === "reverted" ? `(reverted +${file.additions} −${file.deletions})` : `(${file.effect})`, MUTED_RGB, paint)}`),
     ...result.skipped.map((file) => `  ${elbow} ${file.path} ${tint(`left alone: ${file.reason}`, WARN_RGB, paint)}`),
   ];
 }
