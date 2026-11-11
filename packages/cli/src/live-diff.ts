@@ -26,6 +26,7 @@
  *    output. `finish()` only flushes the tail and totals.
  */
 
+import { cutAtWord } from "./output.js";
 import {
   createWorkspaceObserver,
   matchesIgnore,
@@ -433,14 +434,7 @@ export function rewindPickerOptions(
 
 /** A prompt quoted in one line: whole when it fits, else cut at the last word with `…`. */
 export function rewindPromptPreview(prompt: string, max = 60): string {
-  const text = prompt.replace(/\s+/g, " ").trim();
-  if (text.length <= max) return text;
-  let cut = text.slice(0, max - 1);
-  if (text[max - 1] !== " ") {
-    const space = cut.lastIndexOf(" ");
-    if (space > max / 2) cut = cut.slice(0, space);
-  }
-  return `${cut.trimEnd()}…`;
+  return cutAtWord(prompt, max);
 }
 
 export function rewindTurnLabel(turn: { readonly prompt: string; readonly patches: readonly WorkspacePatchEvent[]; readonly undone?: boolean }): string {

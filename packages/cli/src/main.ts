@@ -15,7 +15,7 @@ import {
   type MissionTaskRunResult,
   type OrchestrationDeps,
 } from "./chat-orchestration.js";
-import { commandUsageLines, trimDanglingCodeFence } from "./output.js";
+import { commandUsageLines, cutAtWord, trimDanglingCodeFence } from "./output.js";
 import {
   buildCapabilityOverlayOptions,
   composerTextForCapabilityAction,
@@ -7912,9 +7912,9 @@ async function printPluginBundleInspection(source: string): Promise<void> {
     }
   }
   if (!report.servers.length) console.log("mcp_servers=none");
-  for (const skill of report.skills) console.log(`skill=${skill.name} path=${skill.path} description="${skill.description.slice(0, 80)}"`);
+  for (const skill of report.skills) console.log(`skill=${skill.name} path=${skill.path} description="${cutAtWord(skill.description, 80)}"`);
   if (!report.skills.length) console.log("skills=none");
-  for (const command of report.commands) console.log(`command=${command.name} path=${command.path}${command.description ? ` description="${command.description.slice(0, 80)}"` : ""}`);
+  for (const command of report.commands) console.log(`command=${command.name} path=${command.path}${command.description ? ` description="${cutAtWord(command.description, 80)}"` : ""}`);
   for (const part of report.ignored) console.log(`ignored=${part.part} reason="${part.reason}"`);
   for (const warning of report.warnings) console.log(`warning="${warning}"`);
   console.log("runs_plugin_code=no");

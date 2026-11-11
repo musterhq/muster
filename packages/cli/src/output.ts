@@ -32,3 +32,15 @@ export function commandUsageLines(helpText: string, name: string): readonly stri
   const pattern = new RegExp(`^\\s+muster ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
   return helpText.split("\n").filter((line) => pattern.test(line));
 }
+
+/** One line of at most `max` characters: whole when it fits, else cut at the last word and ended with `…`. */
+export function cutAtWord(value: string, max: number): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  let cut = text.slice(0, max - 1);
+  if (text[max - 1] !== " ") {
+    const space = cut.lastIndexOf(" ");
+    if (space > max / 2) cut = cut.slice(0, space);
+  }
+  return `${cut.trimEnd()}…`;
+}

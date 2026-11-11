@@ -106,4 +106,4 @@ An installed bundle is a copy of the source in the profile's plugin directory (`
 - **Test:** `packages/cli/test/plugin-bundles.test.ts` › "inspect does not flag an interpreter running a bundled script and cuts descriptions at a word"
 - **Environment:** real CLI through tsx, temp bundle folders, no plugin code run.
 - **Known gaps:** an interpreter given only inline code (`node -e …`) is still flagged.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, built CLI, `/tmp/polish-plug`: `mcp_server=kit__local transport=stdio command=node args="…/plugins/kit/server.mjs"` (no flag; before: `flags=command-outside-bundle`), `mcp_server=kit__remote … command=npx … flags=command-outside-bundle`, `skill=doctype … description="Use when the user asks to create or update a Frappe DocType, such as adding…"` (before: cut at 80 with no mark). plugin-bundles.test.ts's weather-kit assertion was flipped deliberately. Red→green: plugin-bundles.test.ts.

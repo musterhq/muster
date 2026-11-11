@@ -144,7 +144,8 @@ test("inspect lists servers, skills and ignored parts of an Agent Plugins v1 bun
     assert.match(out, /bundle=weather-kit format=agent-plugins-v1 version=1\.0\.0/);
     assert.match(out, /mcp_server=weather-kit__forecast transport=stdio command=node /);
     assert.match(out, /mcp_server=weather-kit__forecast .*env_keys=WEATHER_API_KEY,LITERAL_TOKEN/);
-    assert.match(out, /mcp_server=weather-kit__forecast .*flags=command-outside-bundle/);
+    // `node ${PLUGIN_ROOT}/server.mjs` runs a bundled script: not flagged (QA-34, spec 11-2A).
+    assert.doesNotMatch(out, /mcp_server=weather-kit__forecast .*command-outside-bundle/);
     assert.match(out, /mcp_server=weather-kit__docs transport=http url=https:\/\/docs\.weather\.example\/mcp .*header_keys=X-Api-Key .*flags=remote-url/);
     assert.match(out, /skill=forecast-helper /);
     // Prompt commands are read cold and offered as slash commands (spec 20).

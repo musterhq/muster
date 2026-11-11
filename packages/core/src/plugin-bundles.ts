@@ -576,7 +576,13 @@ function normalizeBundleServer(
   if (isRecord(raw.env)) for (const [key, value] of Object.entries(raw.env)) if (typeof value === "string") env[key] = expandRoot(value);
   // Codex `env_vars`: names to forward from the user's environment — kept as references.
   for (const key of stringList(raw.env_vars)) if (!(key in env)) env[key] = `\${${key}}`;
-  const commandInside = usesRoot(raw.command) || raw.command.startsWith("./") || raw.command.startsWith("../") || (isAbsolute(raw.command) && isWithin(context.root, raw.command));
+  const insideBundle = (value: string): boolean => usesRoot(value)
+    || ((value.startsWith("./") || value.startsWith("../")) && isWithin(context.root, resolve(sourceBase, value)))
+    || (isAbsolute(value) && isWithin(context.root, value));
+  // A bare interpreter (`node`, `python3`, …) whose script is a bundle file runs bundle code, not code from elsewhere.
+  const script = stringList(raw.args).find((arg) => !arg.startsWith("-"));
+  const bundledScript = BUNDLE_INTERPRETERS.has(raw.command) && script !== undefined && insideBundle(script);
+  const commandInside = insideBundle(raw.command) || bundledScript;
   if (!commandInside) flags.push("command-outside-bundle");
   return {
     name,
@@ -595,6 +601,8 @@ function normalizeBundleServer(
     },
   };
 }
+
+const BUNDLE_INTERPRETERS = new Set(["node", "python", "python3", "bun", "deno", "sh", "bash"]);
 
 function pluginIdFrom(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
