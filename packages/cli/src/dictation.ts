@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, open, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findExecutable, transcribe } from "@musterhq/core";
+import { findExecutable, sttEnabled, transcribe } from "@musterhq/core";
 import type { VoiceConfig, VoiceEnv } from "@musterhq/core";
 
 /**
@@ -194,14 +194,21 @@ export class Dictation {
       this.endCycle();
       return;
     }
-    const dir = await mkdtemp(join(tmpdir(), "muster-dictation-"));
-    const wav = join(dir, "dictation.wav");
-    const recorder = resolveRecorder(voice, wav, env, this.options.platform);
-    if (!recorder) {
-      await rm(dir, { recursive: true, force: true });
+    // Nothing is spawned and no file is made until both halves exist.
+    if (!sttEnabled(voice)) {
+      this.host.note("Dictation needs speech-to-text: run muster voice doctor");
       this.endCycle();
       return;
     }
+    const platform = this.options.platform ?? process.platform;
+    if (!resolveRecorder(voice, "", env, platform)) {
+      this.host.note(`Dictation needs a recorder: ${platform === "darwin" ? "brew install sox" : "install sox (apt install sox)"}`);
+      this.endCycle();
+      return;
+    }
+    const dir = await mkdtemp(join(tmpdir(), "muster-dictation-"));
+    const wav = join(dir, "dictation.wav");
+    const recorder = resolveRecorder(voice, wav, env, platform)!;
     const session: Session = { dir, wav, voice, env, startedAt: this.now(), levels: [], stderr: "" };
     this.session = session;
     const child = spawn(recorder.binary, [...recorder.args], {

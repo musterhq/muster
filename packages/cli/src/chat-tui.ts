@@ -1552,6 +1552,7 @@ export const CHAT_SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
   ["Ctrl+Q / Alt+Enter", "queue the message to run after the current turn"],
   ["Alt+↑", "pull the last queued message back to edit"],
   ["Esc", "stop the running turn (queued messages come back to edit)"],
+  ["Ctrl+R", "dictate a prompt (speech-to-text)"],
   ["Ctrl+C", "stop the turn or clear the draft; press twice to quit"],
   ["Ctrl+O", "expand or collapse tool output"],
   ["Ctrl+D", "toggle the current turn's full-file live view"],
@@ -1663,6 +1664,10 @@ export function renderQueuedBand(queued: readonly string[], width: number): stri
 /** Ctrl+R: start or stop dictation (spec 22). Nothing else in chat uses it. */
 export function isDictationKey(data: string): boolean {
   return data === "\x12" || matchesKey(data, "ctrl+r");
+}
+
+export function isDictateCommand(text: string): boolean {
+  return text.trim().toLowerCase() === "/dictate";
 }
 
 function isEnterKey(data: string): boolean {
@@ -2656,6 +2661,12 @@ class MusterChatScreen implements Component, MusterChatSink {
   async submit(text: string, onSubmit: (text: string, sink: MusterChatSink) => Promise<boolean>): Promise<void> {
     const value = text.trim();
     if (!value || this.stopped) return;
+    // /dictate is Ctrl+R for terminals that take Ctrl+R; it is never a turn.
+    if (isDictateCommand(value) && this.dictation) {
+      this.dictation.toggle();
+      this.tui.requestRender(true);
+      return;
+    }
     // Defect #5: /exit is routed by the TUI itself. Routing it through the
     // command handler worked only in the plain REPL — in TUI mode the farewell
     // landed in a transcript that the teardown then erased.
@@ -2982,6 +2993,10 @@ class HarnessSink implements MusterChatSink {
   async submit(text: string): Promise<boolean> {
     const value = text.trim();
     if (!value) return true;
+    if (isDictateCommand(value) && this.dictation) {
+      this.dictation.toggle();
+      return true;
+    }
     if (this.turnRunning && !isExitCommand(value)) {
       this.editor.addToHistory(value);
       await this.followUps.route(value, "steer", (line) => this.appendLine(line));
