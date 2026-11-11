@@ -114,7 +114,7 @@ Every adapter keeps its existing verification (ed25519, HMAC, verify token, JWT)
 - **Test:** `packages/gateway/test/teams-sdk.test.ts` › "tokens with unknown key ids refresh the signing keys at most once per window"
 - **Environment:** fake OpenID and JWKS endpoints.
 - **Known gaps:** none.
-- **Evidence:** green 2026-11-11: `teams-sdk.test.ts` 2/2 (red first: 10 fetches for 5 forged tokens before the fix).
+- **Evidence:** green 2026-11-11: `teams-sdk.test.ts` 2/2 (red first: before the fix, every forged token could force a key refetch).
 
 ## MUS-SPEC-24-6A — The legacy handlers are gone and every old route still answers
 
