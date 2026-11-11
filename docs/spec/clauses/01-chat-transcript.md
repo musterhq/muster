@@ -201,3 +201,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** `codexItemToToolEvent` on recorded item shapes; chat harness with the narration painter; NO_COLOR.
 - **Known gaps:** Claude Code and pi MCP calls carry no arguments into the cell yet.
 - **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, Codex turn calling Muster's own server: `⏺ MCP(muster.memory_write · scopes: ["user:dhairya"], summary: "Polish team lunch is on Friday at Saffr…)` / `⎿ done · 7ms` / `id: "mem_91d34fa3-…"` / `memory: {"id":…,"kind":"fact",…` (before: `MCP(muster.memory_write)` and the raw tail `"redactionState": "none",` / `"links": []`, S/31-memwrite). Capture: `screens/polish/qa33-after-mcp-cell.ansi`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-9A — `--history` shows local times with a zone, and each message keeps its own time
+
+- **Precondition:** a session with a turn sent at 12:52:30 local time (07:22:30 UTC, zone Asia/Kolkata) whose answer was stored at 12:52:44.
+- **Action:** `muster chat --session <name> --history` (also `/history`).
+- **Expected result:** the user row reads `user      12:52:30 GMT+5:30` and the assistant row `assistant 12:52:44 GMT+5:30`: local time with a zone marker, a date in front when the message is not from today; the user's message is stored with the time the turn started, not the time the answer arrived.
+- **Test:** `packages/cli/test/chat-tui.test.ts` › "history times are local with a zone and the prompt keeps the turn's start time"
+- **Environment:** pure `formatLocalTimestamp` with fixed zones and clock; a session store in a temp folder.
+- **Known gaps:** messages stored before this change keep the answer's time for the prompt.
+- **Evidence:** UNVERIFIED
