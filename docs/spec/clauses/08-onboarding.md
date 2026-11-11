@@ -81,3 +81,13 @@
 - **Environment:** `detectProviders` with a temp CODEX_HOME; `verifyRoute` with `MUSTER_CODEX_COMMAND` pointing at a fake codex.
 - **Known gaps:** without a profile or a same-host env model, Muster cannot know the gateway's model names, so it verifies with Codex's default and explains the fix.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-08-4B — A route skipped with `k` is gone from the summary, and the finish screen enables only what was picked
+
+- **Precondition:** detection finds Codex, Claude Code and an Anthropic-compatible proxy, all pre-selected; purpose "Build with code"; no integration picked.
+- **Action:** Codex fails verification; press `k` (skip) on the results, then Enter through senses, channels and memory to the finish screen.
+- **Expected result:** the finish screen neither lists Codex nor counts it: `Ready 4/4` (chat, Claude Code, proxy, memory). "Will write" enables no plugin or MCP server the user did not pick: no `github` (GitHub was never picked on the senses step), no `codex` / `codex-native-tools` (the Codex route was skipped); `developer-tools` (from the purpose) and `claude-code` stay. A failed route the user leaves with Enter instead of `k` is still listed with its fix (08-4A).
+- **Test:** `packages/cli/test/onboarding-v2.test.ts` › "a route skipped with k leaves the summary and the finish screen enables only picks"
+- **Environment:** injected `detect` and `verify`, no network.
+- **Known gaps:** Codex's own verification time (19.9 s in the QA pass) is the CLI's cold start and is not shortened here.
+- **Evidence:** UNVERIFIED

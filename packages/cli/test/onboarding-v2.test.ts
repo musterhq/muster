@@ -466,3 +466,32 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, o
   });
   assert.ok(verified.length > 0, "--verify without --step still verifies the model step");
 });
+
+// Spec: MUS-SPEC-08-4B (docs/spec/clauses/08-onboarding.md#mus-spec-08-4b--a-route-skipped-with-k-is-gone-from-the-summary-and-the-finish-screen-enables-only-what-was-picked)
+test("a route skipped with k leaves the summary and the finish screen enables only picks", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-onb-v2-skip-"));
+  const input = fakeTtyInput();
+  const view = fakeTtyOutput();
+  const running = runMusterOnboardingTui(["--no-chat", "--no-color"], { cwd, input, output: view.output, detect: async () => laptopDetection(), verify: codexFailsProxyReplies });
+  await settle();
+  await press(input, " "); // purpose: Build with code
+  await press(input, ENTER);
+  await press(input, ENTER); // priorities
+  await press(input, ENTER, 150); // model → verify
+  assert.match(view.lastFrame(), /✗ Codex/);
+  await press(input, "k"); // skip the failed route
+  await press(input, ENTER); // senses (nothing picked)
+  await press(input, ENTER); // channels
+  await press(input, ENTER); // memory → finish
+  const screen = view.lastFrame();
+  assert.match(screen, /Ready 4\/4/, screen);
+  assert.doesNotMatch(screen, /[✗?] Codex\b/, "a skipped route is not listed");
+  const enabled = screen.match(/plugins enabled: ([^│\n]*)/)?.[1] ?? "";
+  assert.match(enabled, /developer-tools/);
+  assert.match(enabled, /claude-code/);
+  assert.doesNotMatch(enabled, /github|codex/, enabled);
+  assert.doesNotMatch(screen, /MCP servers: .*github/, "no GitHub MCP server was picked");
+  await press(input, "q");
+  await press(input, "y");
+  await running;
+});
