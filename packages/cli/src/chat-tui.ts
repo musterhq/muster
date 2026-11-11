@@ -29,6 +29,7 @@ import { LiveFileOverlay, LiveFileTurnAccumulator, renderLiveFilePlain } from ".
 import { BoardScreen, parseSgrMouseSequence, stripMouseSequences, type SgrMouseEvent } from "./board-screen.js";
 import { openFileWithEditorGuard, TaskView } from "./task-view.js";
 import { SettingsPanel, type SettingsChange } from "./settings-panel.js";
+import { Dictation, dictationInsertText, type DictationOptions } from "./dictation.js";
 import {
   bandRow,
   bandUserRow,
@@ -184,6 +185,8 @@ export interface RunMusterChatTuiOptions extends MusterAutocompleteOptions {
   readonly board?: BoardModeController;
   /** Called once the screen is live; the returned function runs at teardown (e.g. the automations ticker). */
   readonly onReady?: (sink: MusterChatSink) => (() => void) | void;
+  /** Ctrl+R push-to-talk into the composer (spec 22). */
+  readonly dictation?: DictationOptions;
 }
 
 export interface MusterChatHarness {
@@ -198,6 +201,8 @@ export interface MusterChatHarness {
   exited(): boolean;
   /** The single status row the spinner owns; never part of the transcript. */
   status(): string;
+  /** Resolves when the current dictation has been inserted, cancelled or failed. */
+  dictationDone(): Promise<void>;
 }
 
 export function formatWorkingIndicator(agentId: string | undefined, frame: number): string {
@@ -1655,6 +1660,27 @@ export function renderQueuedBand(queued: readonly string[], width: number): stri
   return rows;
 }
 
+/** Ctrl+R: start or stop dictation (spec 22). Nothing else in chat uses it. */
+export function isDictationKey(data: string): boolean {
+  return data === "\x12" || matchesKey(data, "ctrl+r");
+}
+
+function isEnterKey(data: string): boolean {
+  return matchesKey(data, "enter") || matchesKey(data, "return");
+}
+
+/** Put dictated text at the composer cursor; the cursor ends after it. */
+export function insertDictatedText(editor: Editor, text: string): void {
+  const cursor = editor.getCursor();
+  const before = (editor.getLines()[cursor.line] ?? "").slice(0, cursor.col);
+  editor.insertTextAtCursor(dictationInsertText(before, text));
+}
+
+/** The row above the composer while dictation records or transcribes. */
+function renderDictationRow(row: string, width: number): string[] {
+  return row ? [truncateToWidth(row, width, "")] : [];
+}
+
 export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   readonly onSubmit?: (text: string, sink: MusterChatSink) => Promise<boolean>;
   readonly onInterrupt?: () => boolean | Promise<boolean>;
@@ -1662,6 +1688,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   readonly initialLines?: readonly string[];
   readonly onDecisionKey?: (data: string, sink: MusterChatSink) => boolean;
   readonly onReady?: (sink: MusterChatSink) => (() => void) | void;
+  readonly dictation?: DictationOptions;
   readonly width?: number;
   readonly rows?: number;
 }): MusterChatHarness {
@@ -1669,6 +1696,14 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
   const editor = createMusterChatEditor(tui);
   const sink = new HarnessSink(editor, options.onSubmit, options.onInterrupt, options.initialLines, options.onSteer, options.rows ?? 40);
   options.onReady?.(sink);
+  const dictation = options.dictation
+    ? new Dictation(options.dictation, {
+      setRow: (row) => { sink.dictationRow = row; },
+      insert: (text) => insertDictatedText(editor, text),
+      note: (line) => sink.appendLine(dim(`  ${line}`)),
+    })
+    : undefined;
+  sink.dictation = dictation;
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
   editor.onSubmit = (text) => {
     void sink.submit(text);
@@ -1681,6 +1716,14 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
         return;
       }
       if (sink.approvals.key(data)) return;
+      if (dictation && isDictationKey(data)) {
+        dictation.toggle();
+        return;
+      }
+      if (dictation?.recording && isEnterKey(data)) {
+        void dictation.stop();
+        return;
+      }
       if (options.onDecisionKey?.(data, sink)) return;
       if (data === "\x0f") {
         sink.toggleExpanded();
@@ -1749,6 +1792,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
       if (sink.settings) return sink.settings.render(width);
       return [
         ...sink.transcriptLines,
+        ...renderDictationRow(sink.dictationRow, width),
         ...renderQueuedBand(sink.followUps.queued, width),
         ...renderMusterComposer(editor, width),
         ...(sink.footer ? [truncateToWidth(sink.footer, width, "")] : []),
@@ -1768,6 +1812,9 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
     },
     status() {
       return sink.statusRow;
+    },
+    dictationDone() {
+      return dictation?.done() ?? Promise.resolve();
     },
   };
 }
@@ -1964,6 +2011,17 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
   const tui = new TUI(terminal, true);
   const editor = createMusterChatEditor(tui);
   const screen = new MusterChatScreen(tui, editor, options.statusLine, options.headerLines ?? [], options.initialLines ?? [], options.onInterrupt, options.onSteer);
+  const dictation = options.dictation
+    ? new Dictation(options.dictation, {
+      setRow: (row) => screen.setDictationRow(row),
+      insert: (text) => {
+        insertDictatedText(editor, text);
+        tui.requestRender(true);
+      },
+      note: (line) => screen.appendLine(dim(`  ${line}`)),
+    })
+    : undefined;
+  screen.dictation = dictation;
   const boardMode = options.board ? new BoardModeHost(tui, terminal, screen, editor, options.board) : undefined;
   screen.onOpenBoard = (force) => boardMode?.open(force) ?? Promise.resolve(false);
   editor.setAutocompleteProvider(createMusterAutocompleteProvider(options));
@@ -1995,6 +2053,15 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
     if (matchesKey(stripped, "pageDown") && screen.scrollPage(-1)) return { consume: true };
     if (matchesKey(stripped, "f3")) {
       void screen.openBoard(false);
+      return { consume: true };
+    }
+    if (dictation && isDictationKey(data)) {
+      dictation.toggle();
+      tui.requestRender(true);
+      return { consume: true };
+    }
+    if (dictation?.recording && isEnterKey(data)) {
+      void dictation.stop();
       return { consume: true };
     }
     if (options.onDecisionKey?.(data, screen)) {
@@ -2277,6 +2344,8 @@ class MusterChatScreen implements Component, MusterChatSink {
   private liveDiffOverlay: LiveFileOverlay | undefined;
   private liveDiffHandle: OverlayHandle | undefined;
   private suppressRawLiveDiffEscape = false;
+  private dictationRow = "";
+  dictation: Dictation | undefined;
   readonly followUps: RunningTurnInput;
   exited = false;
   onStop?: () => void;
@@ -2365,6 +2434,13 @@ class MusterChatScreen implements Component, MusterChatSink {
   setHeaderLines(lines: readonly string[]): void {
     this.headerLines = lines;
     this.tui.requestRender(true);
+  }
+
+  setDictationRow(row: string): void {
+    if (row === this.dictationRow) return;
+    const resized = !row !== !this.dictationRow;
+    this.dictationRow = row;
+    this.tui.requestRender(resized);
   }
 
   setStatus(status: string): void {
@@ -2647,6 +2723,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     const frameWidth = Math.max(40, Math.min(width, 240));
     if (this.footerStaleFor?.(frameWidth)) void this.refreshFooter?.(frameWidth);
     const composer = [
+      ...renderDictationRow(this.dictationRow, frameWidth),
       ...renderQueuedBand(this.followUps.queued, frameWidth),
       ...renderMusterComposer(this.editor, frameWidth),
       ...(this.footer ? [truncateToWidth(this.footer, frameWidth, "")] : []),
@@ -2771,6 +2848,8 @@ class HarnessSink implements MusterChatSink {
   }
   exited = false;
   statusRow = "";
+  dictationRow = "";
+  dictation: Dictation | undefined;
   private turnRunning = false;
   private interruptRequested = false;
   private liveDiffTurn = new LiveFileTurnAccumulator();

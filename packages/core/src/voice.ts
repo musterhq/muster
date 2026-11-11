@@ -68,6 +68,15 @@ export interface VoiceConfig {
   readonly maxReplyChars?: number;
   /** ffmpeg binary (default `ffmpeg` on PATH). */
   readonly ffmpeg?: string;
+  /** Chat dictation (docs/spec/clauses/22-dictation.md). */
+  readonly dictation?: VoiceDictationConfig;
+}
+
+export interface VoiceDictationConfig {
+  /** A recording stops itself after this many seconds (default 120). */
+  readonly maxSeconds?: number;
+  /** Input device: sox AUDIODEV, ffmpeg avfoundation index/name or pulse source (default: the system default). */
+  readonly input?: string;
 }
 
 export const VOICE_DEFAULTS = {
