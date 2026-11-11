@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
+  approvePairing,
+  channelRegistryTable,
+  channelWebhookAdapter,
   ChannelVerificationError,
   defaultChannelRegistry,
   initGatewayConfig,
+  requestPairing,
   sendToChannel,
   slackEventToSurfaceMessage,
   startGatewayServer,
@@ -36,7 +41,8 @@ function captureFetcher(respond: (url: string, index: number) => unknown): { rea
 // Spec: MUS-SPEC-18-1A
 test("the default registry lists telegram, slack, matrix and email with their capabilities", () => {
   const registry = defaultChannelRegistry();
-  assert.deepEqual(registry.list().map((adapter) => adapter.id).sort(), ["email", "matrix", "slack", "telegram"]);
+  // Spec 24-1A extends the registry; these four must stay registered.
+  for (const id of ["email", "matrix", "slack", "telegram"]) assert.ok(registry.get(id), id);
   const telegram = registry.get("telegram")!;
   const slack = registry.get("slack")!;
   const matrix = registry.get("matrix")!;
@@ -150,4 +156,127 @@ test("sendToChannel posts into a Slack thread and refuses unknown or unconfigure
   assert.deepEqual(result.messageIds, ["171.9"]);
   await assert.rejects(sendToChannel("nope", "x", "hi", { gateway, fetcher, cwd }), /Unknown channel: nope/);
   await assert.rejects(sendToChannel("matrix", "!r:x", "hi", { gateway, fetcher, cwd }), /muster channels setup matrix/);
+});
+
+// Spec: MUS-SPEC-24-1A (docs/spec/clauses/24-channels-sdk-2.md#mus-spec-24-1a--the-registry-lists-all-eight-channels-with-honest-capabilities)
+test("the registry lists every channel with its real capabilities", async () => {
+  const registry = defaultChannelRegistry();
+  assert.deepEqual(
+    registry.list().map((adapter) => adapter.id).sort(),
+    ["discord", "email", "googlechat", "matrix", "slack", "teams", "telegram", "whatsapp", "whatsapp-cloud"],
+  );
+  const capability = (id: string) => registry.get(id)!.capabilities;
+  for (const id of ["discord", "slack", "teams", "googlechat", "whatsapp-cloud"]) assert.equal(capability(id).buttons, true, `${id} declares buttons`);
+  assert.equal(capability("whatsapp").buttons, false, "personal WhatsApp uses numbered choices");
+  assert.equal(capability("discord").maxTextLength, 2000);
+  assert.equal(capability("whatsapp").maxTextLength, 4096);
+  assert.equal(capability("whatsapp-cloud").maxTextLength, 4096);
+  assert.equal(capability("googlechat").maxTextLength, 4096);
+  assert.equal(capability("teams").maxTextLength, 28000);
+  const numbered = registry.get("whatsapp")!.renderApproval({
+    request: { runId: "r1", gateId: "g1", show: "deploy", options: ["approve", "reject"] },
+    actions: { approve: "a", reject: "b" },
+  });
+  assert.equal(numbered.buttons, undefined);
+  assert.match(numbered.text, /Reply 1 to approve or 2 to reject\.$/);
+
+  const cwd = await mkdtemp(join(tmpdir(), "muster-channel-sdk-table-"));
+  const init = await initGatewayConfig(cwd);
+  const gateway: GatewayConfig = {
+    ...init.config,
+    discord: { botTokenEnv: "DISCORD_BOT_TOKEN" },
+    teams: { appId: "app-1", appPasswordEnv: "TEAMS_APP_PASSWORD" },
+  };
+  const table = channelRegistryTable(registry, gateway);
+  const lines = table.trimEnd().split("\n");
+  assert.match(lines[0], /^channel\tlabel\tbuttons\tedit\tmax_text\tstatus$/);
+  assert.equal(lines.length, 10);
+  assert.match(table, /^discord\tDiscord\tyes\tyes\t2000\tconfigured$/m);
+  assert.match(table, /^teams\tMicrosoft Teams\tyes\tno\t28000\tconfigured$/m);
+  assert.match(table, /^whatsapp\tWhatsApp \(linked device\)\tno\tno\t4096\tnot configured$/m);
+  assert.match(table, /^googlechat\tGoogle Chat\tyes\tno\t4096\tnot configured$/m);
+});
+
+// Spec: MUS-SPEC-24-6A (docs/spec/clauses/24-channels-sdk-2.md#mus-spec-24-6a--the-legacy-handlers-are-gone-and-every-old-route-still-answers)
+test("old adapter routes are served by the sdk runner with unchanged responses", async () => {
+  const source = await readFile(fileURLToPath(new URL("../src/server.ts", import.meta.url)), "utf8");
+  for (const legacy of ["handleDiscordWebhook", "handleWhatsAppWebhook", "handleTeamsWebhook", "handleGchatWebhook"]) {
+    assert.equal(source.includes(legacy), false, `${legacy} is gone from server.ts`);
+  }
+  for (const [route, channel] of [["discord", "discord"], ["whatsapp-cloud", "whatsapp-cloud"], ["teams", "teams"], ["gchat", "googlechat"], ["googlechat", "googlechat"]]) {
+    assert.equal(channelWebhookAdapter(route)?.id, channel, `/v1/adapters/${route} is served by the ${channel} SDK adapter`);
+  }
+
+  const cwd = await mkdtemp(join(tmpdir(), "muster-channel-sdk-routes-"));
+  const llm = await startStubModel("routed by the sdk");
+  const init = await initGatewayConfig(cwd);
+  const teamsSecret = Buffer.from("teams-secret-6a").toString("base64");
+  const gateway: GatewayConfig = {
+    ...init.config,
+    discord: { botToken: "discord-6a" },
+    "whatsapp-cloud": { accessToken: "EAAG-6a", verifyToken: "verify-6a", phoneNumberId: "6600000001" },
+    gchat: { verificationToken: "gchat-6a" },
+    teams: { hmacSecret: teamsSecret },
+  };
+  const { calls, fetcher } = captureFetcher(() => ({ messages: [{ id: "wamid.6A-OUT" }] }));
+  const running = await startGatewayServer({ config: stubModelConfig(llm.url), gateway, cwd, fetcher }, 0);
+  const pairs: Array<[string, string]> = [
+    ["discord:6600", "6601"],
+    ["whatsapp-cloud:6600000001", "15556600001"],
+    ["gchat:app", "users/6a-1"],
+    ["teams:tenant-6a", "29:6a-user"],
+  ];
+  for (const [surface, sender] of pairs) await requestPairing(surface, sender, cwd).then((pending) => approvePairing(pending.code, cwd));
+  const post = (route: string, body: string, headers: Record<string, string> = { authorization: "Bearer test-token-unused" }) =>
+    fetch(`http://127.0.0.1:${running.port}/v1/adapters/${route}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+  const bearer = { authorization: `Bearer ${gateway.token}` };
+  try {
+    const ping = await post("discord", JSON.stringify({ id: "6a-ping", type: 1 }), bearer);
+    assert.equal(ping.status, 200);
+    assert.deepEqual(await ping.json(), { type: 1 });
+    const command = await post("discord", JSON.stringify({
+      id: "6a-command-1", type: 2, guild_id: "6600", channel_id: "6a-channel",
+      member: { user: { id: "6601" } }, data: { name: "muster", options: [{ name: "prompt", type: 3, value: "status?" }] },
+    }), bearer);
+    assert.equal(command.status, 200);
+    assert.deepEqual(await command.json(), { type: 4, data: { content: "routed by the sdk" } });
+    const unknownDiscord = await post("discord", JSON.stringify({ id: "6a-component", type: 3, channel_id: "c", member: { user: { id: "6601" } }, data: { custom_id: "nothing" } }), bearer);
+    assert.equal(unknownDiscord.status, 200);
+    assert.equal((await unknownDiscord.json() as { ok: boolean }).ok, true);
+
+    const whatsapp = await post("whatsapp-cloud", JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [{ field: "messages", value: { metadata: { phone_number_id: "6600000001" }, messages: [{ from: "15556600001", id: "wamid.6A-1", type: "text", text: { body: "hi" } }] } }] }],
+    }), bearer);
+    assert.equal(whatsapp.status, 200);
+    assert.deepEqual(await whatsapp.json(), { ok: true, accepted: true });
+    await running.waitForIdle();
+    assert.equal(calls.filter((call) => call.url === "https://graph.facebook.com/v19.0/6600000001/messages").length, 1);
+
+    for (const [index, route] of ["gchat", "googlechat"].entries()) {
+      const event = {
+        type: "MESSAGE", token: "gchat-6a", space: { name: "spaces/SIXA" },
+        message: { name: `spaces/SIXA/messages/6a-${index}`, sender: { name: "users/6a-1", type: "HUMAN" }, text: "hi", thread: { name: "spaces/SIXA/threads/T6A" } },
+        user: { name: "users/6a-1", type: "HUMAN" },
+      };
+      const reply = await post(route, JSON.stringify(event), {});
+      assert.equal(reply.status, 200, route);
+      assert.deepEqual(await reply.json(), { text: "routed by the sdk", thread: { name: "spaces/SIXA/threads/T6A" } });
+      assert.equal((await post(route, JSON.stringify({ ...event, token: "forged" }), {})).status, 401);
+    }
+
+    const activity = JSON.stringify({
+      type: "message", id: "6a-activity-1", from: { id: "29:6a-user" }, conversation: { id: "19:6a@thread.skype" },
+      text: "<at>Muster</at> hi", channelData: { tenant: { id: "tenant-6a" } },
+    });
+    const teams = await post("teams", activity, { authorization: `HMAC ${createHmac("sha256", Buffer.from(teamsSecret, "base64")).update(activity, "utf8").digest("base64")}` });
+    assert.equal(teams.status, 200);
+    assert.deepEqual(await teams.json(), { type: "message", text: "routed by the sdk" });
+    const unsigned = await post("teams", activity, {});
+    assert.equal(unsigned.status, 401);
+    assert.deepEqual(await unsigned.json(), { error: "Teams HMAC signature mismatch." });
+  } finally {
+    await running.close();
+    await llm.close();
+  }
 });

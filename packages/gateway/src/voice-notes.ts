@@ -44,7 +44,9 @@ export interface VoiceInboundDeps {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly log?: (line: string) => void;
   /** Platform download for attachments that carry a url (from the channel adapter). */
-  readonly download?: (attachment: SurfaceAttachment) => Promise<Uint8Array>;
+  readonly download?: (attachment: SurfaceAttachment, options: { readonly maxBytes: number }) => Promise<Uint8Array>;
+  /** The channel's own policy already admitted the sender (no per-sender pairing). */
+  readonly preAuthorized?: boolean;
 }
 
 const AUDIO_EXT = /\.(ogg|oga|opus|mp3|m4a|aac|wav|webm|flac|aiff?|amr)$/i;
@@ -77,7 +79,7 @@ export async function prepareVoiceInbound(message: SurfaceMessage, deps: VoiceIn
   const audio = (message.attachments ?? []).filter(isAudioAttachment);
   if (!audio.length) return { kind: "pass", message };
   // Strangers get the pairing challenge; nothing is downloaded or transcribed for them.
-  if (!await resolvePairing(message.surfaceId, message.senderId, deps.cwd)) {
+  if (!deps.preAuthorized && !await resolvePairing(message.surfaceId, message.senderId, deps.cwd)) {
     return { kind: "pass", message: message.text.trim() ? message : { ...message, text: "[voice note]" } };
   }
   const voice = deps.config.voice;
@@ -99,9 +101,11 @@ export async function prepareVoiceInbound(message: SurfaceMessage, deps: VoiceIn
       let bytes: Uint8Array;
       try {
         if (attachment.bytes) bytes = Buffer.from(attachment.bytes, "base64");
-        else if (attachment.url && deps.download) bytes = await deps.download(attachment);
+        else if (attachment.url && deps.download) bytes = await deps.download(attachment, { maxBytes });
         else return { kind: "refuse", text: "I couldn't fetch that voice note from this channel." };
       } catch (error) {
+        // A platform size reported before download is refused like the envelope's own size.
+        if (error instanceof VoiceLimitError) return { kind: "refuse", text: error.message };
         deps.log?.(`voice: download failed: ${error instanceof Error ? error.message : String(error)}`);
         return { kind: "refuse", text: "I couldn't download that voice note. Please try again." };
       }

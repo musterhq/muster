@@ -344,6 +344,9 @@ import {
   pollTelegram,
   pollWhatsApp,
   runChannelWorker,
+  runDiscordGateway,
+  channelRegistryTable,
+  defaultChannelRegistry,
   saveGatewayConfig,
   slackEventToSurfaceMessage,
   startGatewayServer,
@@ -744,7 +747,7 @@ Usage:
   muster flow runs | show <run-id> | approve <run-id> | reject <run-id>
   muster gateway init
   muster gateway status              # readiness without printing bearer tokens
-  muster gateway start [--port 7460] [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp] [--with-matrix] [--with-email]
+  muster gateway start [--port 7460] [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp] [--with-discord] [--with-matrix] [--with-email]
   muster gateway daemon start|stop|status|restart [--with-telegram-poll] [--with-slack-socket] [--with-whatsapp]
   muster gateway webhook telegram --public-url https://your-domain.example
   muster gateway poll                 # local Telegram long-poll fallback; daemonize with gateway daemon start --with-telegram-poll
@@ -12549,7 +12552,7 @@ async function gatewayCommand(commandArgs: string[]): Promise<void> {
     const workers: Promise<void>[] = [];
     try {
       running = await startGatewayServer({ config, gateway, registry, enterprise, frappeOAuth, cwd: process.cwd(), log: (line) => console.log(line) }, port);
-      console.log("routes: GET /v1/health | POST /v1/messages | POST /v1/flows/<run>/approve|reject | POST /v1/adapters/telegram|slack|discord|whatsapp-cloud|gchat|teams");
+      console.log("routes: GET /v1/health | POST /v1/messages | POST /v1/flows/<run>/approve|reject | POST /v1/adapters/telegram|slack|discord|whatsapp-cloud|gchat|googlechat|teams");
       if (commandArgs.includes("--with-telegram-poll")) {
         workers.push(pollTelegram({ config, gateway, registry, enterprise, frappeOAuth, cwd: process.cwd(), signal: controller.signal, log: (line) => console.log(line) }).catch((error) => {
           console.error(`telegram poll failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -12568,6 +12571,12 @@ async function gatewayCommand(commandArgs: string[]): Promise<void> {
           console.error(`${sdkChannel} worker failed: ${error instanceof Error ? error.message : String(error)}`);
         }));
         console.log(`${sdkChannel}=background_in_process`);
+      }
+      if (commandArgs.includes("--with-discord")) {
+        workers.push(runDiscordGateway({ config, gateway, registry, enterprise, cwd: process.cwd(), signal: controller.signal, log: (line) => console.log(line) }).catch((error) => {
+          console.error(`discord gateway failed: ${error instanceof Error ? error.message : String(error)}`);
+        }));
+        console.log("discord_gateway=background_in_process");
       }
       if (commandArgs.includes("--with-whatsapp")) {
         workers.push(pollWhatsApp({ config, gateway, registry, enterprise, frappeOAuth, cwd: process.cwd(), signal: controller.signal, log: (line) => console.log(line) }).catch((error) => {
@@ -12733,6 +12742,7 @@ async function gatewayDaemonCommand(args: string[]): Promise<void> {
     if (args.includes("--with-telegram-poll")) childArgs.push("--with-telegram-poll");
     if (args.includes("--with-slack-socket")) childArgs.push("--with-slack-socket");
     if (args.includes("--with-whatsapp")) childArgs.push("--with-whatsapp");
+    if (args.includes("--with-discord")) childArgs.push("--with-discord");
     if (args.includes("--with-matrix")) childArgs.push("--with-matrix");
     if (args.includes("--with-email")) childArgs.push("--with-email");
     const out = openSync(logPath, "a", 0o600);
@@ -12912,6 +12922,9 @@ async function channelsCommand(commandArgs: string[]): Promise<void> {
   if (await sdkChannelsCommand(commandArgs)) return;
   if (action === "list" || action === undefined) {
     printChannelCatalog();
+    const registryGateway = await loadGatewayConfig().catch(() => emptyGatewayConfig());
+    console.log("");
+    process.stdout.write(channelRegistryTable(defaultChannelRegistry(), registryGateway));
     return;
   }
   if (action === "status") {

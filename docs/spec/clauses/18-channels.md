@@ -9,7 +9,7 @@ Every chat channel implements one `ChannelAdapter` (`packages/gateway/src/channe
 - **Expected result:** `telegram`, `slack`, `matrix` and `email` are registered; Telegram and Slack declare buttons and edit; Matrix declares edit but no buttons; email declares neither; each declares a positive text limit (Telegram 4096).
 - **Test:** `packages/gateway/test/channel-sdk.test.ts` › "the default registry lists telegram, slack, matrix and email with their capabilities"
 - **Environment:** in-process.
-- **Known gaps:** Discord, WhatsApp, Google Chat and Teams still run only on their legacy handlers in `server.ts`.
+- **Known gaps:** none. Discord, WhatsApp (Cloud and personal), Google Chat and Teams moved onto the SDK in spec 24 (`24-channels-sdk-2.md`).
 - **Evidence:** green 2026-11-10 on `feat/channel-sdk`: `npx tsx --test --test-concurrency=1` — gateway 11/11, CLI 1/1; live fake-server run in `~/.muster-work/review/screens/channels/`.
 
 ## MUS-SPEC-18-1B — Telegram and Slack on the SDK behave exactly as before
