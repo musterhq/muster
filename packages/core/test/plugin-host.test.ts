@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { attachPluginHooks, clearCodexAppServerSessions, createHookBus, createPluginHost, defaultConfig, describePolicyBlock, executeRun, readCodePluginManifest, type CodePluginManifest, type MusterConfig } from "../src/index.js";
+import { attachPluginHooks, clearCodexAppServerSessions, createHookBus, createPluginHost, createPluginRuntime, createToolRegistry, installPluginBundle, listPluginBundles, saveConfig, defaultConfig, describePolicyBlock, executeRun, readCodePluginManifest, type CodePluginManifest, type MusterConfig } from "../src/index.js";
 
 /** A local HTTP server that records every TCP connection it sees. */
 async function recordingServer(handler?: (url: string) => { status?: number; body: string; location?: string }): Promise<{ server: Server; port: number; connections: () => number; close: () => Promise<void> }> {
@@ -429,5 +429,57 @@ export async function register(ctx) {
     }
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-23-2B (docs/spec/clauses/23-plugin-api.md#mus-spec-23-2b--a-crashing-or-hanging-plugin-never-takes-the-chat-down)
+test("a crashing plugin is restarted with a cap and a hanging tool times out", { timeout: 90_000 }, async () => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "muster-plughost-crash-")));
+  try {
+    const source = join(cwd, "src-weather");
+    await writePlugin(source, { id: "weather", version: "1.0.0", entry: "index.mjs", permissions: ["tools"], timeoutMs: 1_000 }, {
+      "index.mjs": `
+export async function register(ctx) {
+  ctx.tool({ name: "crash", description: "exits", inputSchema: { type: "object" }, async handler() { process.exit(1); } });
+  ctx.tool({ name: "hang", description: "never answers", inputSchema: { type: "object" }, handler: () => new Promise(() => {}) });
+  ctx.tool({ name: "pid", description: "its pid", inputSchema: { type: "object" }, async handler() { return process.pid; } });
+}
+`,
+    });
+    await saveConfig(defaultConfig(), cwd);
+    await installPluginBundle(source, { cwd });
+    const registry = createToolRegistry();
+    const runtime = createPluginRuntime({ cwd, registry, owner: "test" });
+    try {
+      await runtime.refresh();
+      const pidOf = async () => ((await registry.execute("pid", {}, { cwd })) as { data: number }).data;
+      const first = await pidOf();
+      assert.notEqual(first, process.pid);
+
+      const crashed = await registry.execute("crash", {}, { cwd });
+      assert.deepEqual(crashed, { ok: false, error: "plugin weather crashed (exit 1); restarted" });
+      const second = await pidOf();
+      assert.notEqual(second, first, "a new host process");
+
+      const startedAt = Date.now();
+      const hung = await registry.execute("hang", {}, { cwd });
+      const elapsed = Date.now() - startedAt;
+      assert.deepEqual(hung, { ok: false, error: "plugin weather: tool hang timed out after 1000ms; restarted" });
+      assert.ok(elapsed >= 950 && elapsed < 5_000, `timed out at the budget (${elapsed}ms)`);
+      assert.notEqual(await pidOf(), second, "the hung host was replaced");
+
+      // Third restart in 60 s is the last; the fourth failure marks it failed.
+      assert.match((await registry.execute("crash", {}, { cwd }) as { error: string }).error, /crashed \(exit 1\); restarted$/);
+      assert.match((await registry.execute("crash", {}, { cwd }) as { error: string }).error, /crashed \(exit 1\); marked failed$/);
+      await runtime.refresh();
+      assert.deepEqual(runtime.toolNames(), [], "a failed plugin's tools are unwound");
+      const entry = (await listPluginBundles(cwd)).find((item) => item.id === "weather");
+      assert.match(entry?.code?.failed?.reason ?? "", /restarted 3 times in 60s/);
+      assert.ok(process.pid && process.exitCode === undefined, "this process kept running");
+    } finally {
+      await runtime.stop();
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
   }
 });
