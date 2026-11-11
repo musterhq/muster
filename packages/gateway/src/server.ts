@@ -49,17 +49,15 @@ import {
 import { surfaceReplyToTelegramSend, telegramCallbackQueryId, telegramUpdateToSurfaceMessage } from "./adapters/telegram.js";
 import type { TelegramSendMessagePayload } from "./adapters/telegram.js";
 import { slackDeliveryId, slackEventToSurfaceMessage, surfaceReplyToSlackPost } from "./adapters/slack.js";
-import { DISCORD_PONG, discordInteractionToInbound, discordSignatureIsValid, surfaceReplyToDiscordInteractionResponse } from "./adapters/discord.js";
 import { runWhatsAppConnection } from "./adapters/whatsapp.js";
-import { surfaceReplyToWhatsAppSend, whatsAppMessageIds, whatsAppVerifyChallenge, whatsAppWebhookToSurfaceMessages } from "./adapters/whatsapp-cloud.js";
-import { gchatActor, gchatDeliveryId, gchatEventToken, gchatEventToSurfaceMessage, surfaceReplyToGchatResponse } from "./adapters/gchat.js";
+import { whatsAppVerifyChallenge } from "./adapters/whatsapp-cloud.js";
 import type { GchatRequestVerifier } from "./adapters/gchat.js";
 import { createGoogleChatRequestVerifier } from "./google-chat-verifier.js";
-import { resolveGchatFrappeIdentity } from "./gchat-frappe-identity.js";
-import { surfaceReplyToTeamsActivity, teamsActivityToSurfaceMessage, teamsHmacIsValid } from "./adapters/teams.js";
 import { createOutboundQueue, createSlackDraftSink, createTelegramDraftSink } from "./streaming.js";
-import { ChannelVerificationError } from "./channel-sdk.js";
-import type { ChannelAdapter } from "./channel-sdk.js";
+import { ChannelDeliveryRejectedError, ChannelVerificationError } from "./channel-sdk.js";
+import type { ChannelAdapter, ChannelContext } from "./channel-sdk.js";
+import { channelWebhookAdapter, deliverPreparedChannelReplies, serveChannelWebhook, verifyChannelWebhook, webhookPeer } from "./channel-runner.js";
+import type { ApprovalDeps } from "./channel-runner.js";
 import { parseSlackBody, slackChannel } from "./channels/slack.js";
 import { telegramChannel } from "./channels/telegram.js";
 import { deliverSpokenReply, prepareVoiceInbound, voiceEchoLine, withVoiceEcho } from "./voice-notes.js";
@@ -75,6 +73,7 @@ import { createApprovalActionCodec, pendingApprovalFromRaw, renderPresentationTe
 import { SqliteApprovalActionStore } from "./approval-store.js";
 import {
   DurableGatewayIngressSpool,
+  isGatewayAsyncAdapterId,
   spoolOwnerIsDeadOnThisHost,
   type GatewayAsyncAdapterId,
   type GatewayIngressSpoolEntry,
@@ -3428,240 +3427,60 @@ export async function pollWhatsApp(options: WhatsAppSocketOptions): Promise<void
   }
 }
 
-/**
- * Discord interactions webhook: PING (type 1) is answered with PONG (type 1)
- * for endpoint verification; slash commands run through the governed entry
- * point and the reply goes back synchronously as the interaction response
- * (approvals render as button components). When discord.publicKey is
- * configured, the X-Signature-Ed25519/X-Signature-Timestamp headers are
- * verified against the RAW body (before any JSON parsing) and a mismatch is
- * rejected with 401, as Discord's endpoint validation requires.
- */
-async function handleDiscordWebhook(body: string, context: AdapterContext): Promise<unknown> {
-  if (!context.gateway.discord?.botToken) {
-    throw new Error("Discord adapter not configured. Add discord.botToken to .muster/gateway.json.");
-  }
-  const publicKey = context.gateway.discord.publicKey;
-  if (publicKey && !context.platformVerified) {
-    const signature = context.headers["x-signature-ed25519"];
-    const timestamp = context.headers["x-signature-timestamp"];
-    const valid = discordSignatureIsValid(
-      body,
-      typeof signature === "string" ? signature : undefined,
-      typeof timestamp === "string" ? timestamp : undefined,
-      publicKey,
-    );
-    if (!valid) throw new GatewayHttpError(401, "Discord ed25519 signature verification failed.");
-  }
-  const deliveryKey = adapterDeliveryKey("discord", body);
-  const cached = deliveryLookup(deliveryKey);
-  if (cached !== undefined) return cached;
-  const inbound = discordInteractionToInbound(JSON.parse(body), { approvalActions: context.approvalActions });
-  if (inbound.kind === "pong") return DISCORD_PONG;
-  if (inbound.kind === "ignored") return { ok: true, ignored: inbound.reason };
-  const reply = await handleSurfaceMessage(inbound.message, context);
-  const result = surfaceReplyToDiscordInteractionResponse(reply, { approvalAction: approvalRenderContext(reply, inbound.message, context) });
-  if (!isPairingChallenge(reply)) deliveryStore(deliveryKey, result);
-  return result;
-}
-
-/**
- * WhatsApp Cloud API webhook: notification batches in (entry[].changes[]),
- * outbound replies via POST graph.facebook.com/<ver>/<phoneNumberId>/messages.
- * The GET hub.challenge verification handshake is handled separately in route().
- */
-async function handleWhatsAppWebhook(body: string, context: AdapterContext): Promise<unknown> {
-  const whatsapp = context.gateway["whatsapp-cloud"];
-  if (!whatsapp?.accessToken || !whatsapp.phoneNumberId) {
-    throw new Error("WhatsApp Cloud API adapter not configured. Add whatsapp-cloud.{accessToken,verifyToken,phoneNumberId} to .muster/gateway.json.");
-  }
-  if (whatsapp.appSecret && !context.platformVerified) {
-    const signature = context.headers["x-hub-signature-256"];
-    if (!whatsAppSignatureIsValid(body, typeof signature === "string" ? signature : undefined, whatsapp.appSecret)) {
-      throw new GatewayHttpError(401, "WhatsApp signature verification failed.");
-    }
-  }
-  const deliveryKey = adapterDeliveryKey("whatsapp-cloud", body);
-  const cached = deliveryLookup(deliveryKey);
-  if (cached !== undefined) return cached;
-  const messages = whatsAppWebhookToSurfaceMessages(JSON.parse(body), { approvalActions: context.approvalActions });
-  if (messages.length === 0) return { ok: true, ignored: "no text messages in notification" };
-  let hasPairingChallenge = false;
-  const prepared: GatewayPreparedDelivery[] = [];
-  for (const message of messages) {
-    const reply = await handleSurfaceMessage(message, context);
-    if (isPairingChallenge(reply)) hasPairingChallenge = true;
-    prepared.push({ message, reply });
-  }
-  if (context.durableDelivery) {
-    await context.durableDelivery.checkpoint(prepared);
-    await context.durableDelivery.begin();
-  }
-  for (const { message, reply } of prepared) {
-    const payload = surfaceReplyToWhatsAppSend(reply, message.conversationId, { approvalAction: approvalRenderContext(reply, message, context) });
-    const version = whatsapp.apiVersion ?? "v19.0";
-    const response = await context.fetcher(`https://graph.facebook.com/${version}/${whatsapp.phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${whatsapp.accessToken}` },
-      body: JSON.stringify(payload),
-    });
-    const responseBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    if (!response.ok || responseBody.error) {
-      throw new DefinitivePlatformDeliveryError(`WhatsApp did not acknowledge the final reply: HTTP ${response.status}${responseBody.error?.message ? ` ${responseBody.error.message}` : ""}`);
-    }
-  }
-  if (context.durableDelivery) await context.durableDelivery.delivered();
-  const result = { ok: true };
-  if (!hasPairingChallenge) deliveryStore(deliveryKey, result);
-  return result;
-}
-
-/**
- * Google Chat webhook: MESSAGE events run through the governed entry point;
- * the reply is returned synchronously (Chat renders the response body), with
- * cardsV2 buttons for approvals. If gchat.verificationToken is configured the
- * legacy event token is checked.
- */
-async function handleGchatWebhook(body: string, context: AdapterContext): Promise<unknown> {
-  if (!context.gateway.gchat) {
-    throw new Error("Google Chat adapter not configured. Add a gchat section to .muster/gateway.json.");
-  }
-  const payload = JSON.parse(body);
-  const modern = context.gateway.gchat.verification;
-  if (modern?.mode === "bearer" && !context.platformVerified) {
-    if (!context.gchatVerifier) throw new GatewayHttpError(401, "Google Chat bearer verification is configured but no verifier is available.");
-    const authorization = context.headers.authorization;
-    const valid = await context.gchatVerifier.verify({
-      authorization: typeof authorization === "string" ? authorization : undefined,
-      rawBody: body,
-      payload,
-      audience: modern.audience,
-    });
-    if (!valid) throw new GatewayHttpError(401, "Google Chat bearer verification failed.");
-  } else if (!context.platformVerified) {
-    const expectedToken = context.gateway.gchat.verificationToken;
-    if (expectedToken && gchatEventToken(payload) !== expectedToken) {
-      throw new GatewayHttpError(401, "Google Chat verification token mismatch.");
-    }
-  }
-  const eventId = gchatDeliveryId(payload);
-  const deliveryKey = eventId ? `gchat:${eventId}` : undefined;
-  const cached = deliveryLookup(deliveryKey);
-  if (cached !== undefined) return cached;
-  const inbound = gchatEventToSurfaceMessage(payload, { commands: context.gateway.gchat.commands, approvalActions: context.approvalActions });
-  if (inbound.kind === "ignored") return { ok: true, ignored: inbound.reason };
-  let trustedFrappe: TrustedFrappeContext | undefined;
-  const identityConfig = context.gateway.gchat.frappeIdentity;
-  if (identityConfig) {
-    const actor = gchatActor(payload);
-    const existing = await resolvePairing(inbound.message.surfaceId, inbound.message.senderId, context.cwd);
-    const cacheTtlMs = Math.max(0, Math.min(5 * 60_000, Math.trunc(identityConfig.cacheTtlMs ?? 60_000)));
-    const identityIsFresh = existing?.identity?.provider === "frappe"
-      && Number.isFinite(Date.parse(existing.identity.resolvedAt))
-      && Date.now() - Date.parse(existing.identity.resolvedAt) <= cacheTtlMs;
-    if (!identityIsFresh) {
-      const resolved = await resolveGchatFrappeIdentity(actor, identityConfig, context.fetcher);
-      if (!resolved.ok) {
-        if (resolved.detail) context.log(`[gchat] Frappe identity resolution failed: ${resolved.detail}`);
-        return surfaceReplyToGchatResponse({ text: resolved.reason }, inbound.message.replyTo);
-      }
-      await upsertTrustedFrappePairing(
-        inbound.message.surfaceId,
-        inbound.message.senderId,
-        resolved.identity,
-        context.cwd,
-      );
-    }
-    trustedFrappe = {
-      pageType: "Google Chat",
-      summary: "The sender identity was resolved by Frappe. No business record rows were attached to this turn.",
-    };
-  }
-  const reply = await handleSurfaceMessage(inbound.message, { ...context, ...(trustedFrappe ? { trustedFrappe } : {}) });
-  const result = surfaceReplyToGchatResponse(reply, inbound.message.replyTo, { approvalAction: approvalRenderContext(reply, inbound.message, context) });
-  if (!isPairingChallenge(reply)) deliveryStore(deliveryKey, result);
-  return result;
-}
-
-/**
- * Teams outgoing webhook: message activities run through the governed entry
- * point; the reply is returned synchronously (text, or an Adaptive Card for
- * approvals). If teams.hmacSecret is configured the Authorization HMAC is
- * validated against the raw body.
- */
-async function handleTeamsWebhook(body: string, context: AdapterContext): Promise<unknown> {
-  if (!context.gateway.teams) {
-    throw new Error("Teams adapter not configured. Add a teams section to .muster/gateway.json.");
-  }
-  const secret = context.gateway.teams.hmacSecret;
-  if (secret && !context.platformVerified) {
-    const header = context.headers.authorization;
-    if (!teamsHmacIsValid(body, typeof header === "string" ? header : undefined, secret)) {
-      throw new GatewayHttpError(401, "Teams HMAC signature mismatch.");
-    }
-  }
-  const deliveryKey = adapterDeliveryKey("teams", body);
-  const cached = deliveryLookup(deliveryKey);
-  if (cached !== undefined) return cached;
-  const inbound = teamsActivityToSurfaceMessage(JSON.parse(body), { approvalActions: context.approvalActions });
-  if (inbound.kind === "ignored") return { ok: true, ignored: inbound.reason };
-  const reply = await handleSurfaceMessage(inbound.message, context);
-  const result = surfaceReplyToTeamsActivity(reply, { approvalAction: approvalRenderContext(reply, inbound.message, context) });
-  if (!isPairingChallenge(reply)) deliveryStore(deliveryKey, result);
-  return result;
-}
-
 type AdapterHandler = (body: string, context: AdapterContext) => Promise<unknown>;
 
-const adapterRoutes: Record<string, AdapterHandler> = {
-  telegram: handleTelegramWebhook,
-  slack: handleSlackWebhook,
-  discord: handleDiscordWebhook,
-  "whatsapp-cloud": handleWhatsAppWebhook,
-  gchat: handleGchatWebhook,
-  teams: handleTeamsWebhook,
-};
+/** Telegram and Slack keep their streaming handlers; every other route is served by its SDK adapter. */
+function adapterHandler(adapterId: string): AdapterHandler | undefined {
+  if (adapterId === "telegram") return handleTelegramWebhook;
+  if (adapterId === "slack") return handleSlackWebhook;
+  const adapter = channelWebhookAdapter(adapterId);
+  return adapter ? (body, context) => serveSdkChannelWebhook(adapter, body, context) : undefined;
+}
+
+/** The canonical route id (the durable-ingress scope) for /v1/adapters/<route>. */
+function canonicalAdapterRoute(route: string): string {
+  return channelWebhookAdapter(route)?.webhook?.routes[0] ?? route;
+}
+
+function sdkChannelContext(context: AdapterContext): ChannelContext {
+  return { gateway: context.gateway, cwd: context.cwd, fetcher: context.fetcher, log: context.log, env: process.env };
+}
+
+function sdkApprovalDeps(context: AdapterContext): ApprovalDeps | undefined {
+  return context.approvalActions
+    ? { codec: context.approvalActions, ttlSeconds: Math.min(3600, Math.max(60, context.gateway.approvals?.ttlSeconds ?? 600)) }
+    : undefined;
+}
+
+function serveSdkChannelWebhook(adapter: ChannelAdapter, body: string, context: AdapterContext): Promise<unknown> {
+  return serveChannelWebhook(adapter, body, {
+    context: sdkChannelContext(context),
+    config: context.config,
+    headers: context.headers,
+    platformVerified: context.platformVerified === true,
+    approvals: sdkApprovalDeps(context),
+    bearerVerifier: context.gchatVerifier,
+    runTurn: (message, extra) => handleSurfaceMessage(message, { ...context, ...extra }),
+    replyCache: { lookup: deliveryLookup, store: deliveryStore },
+    durable: context.durableDelivery,
+  }).catch((error: unknown) => {
+    if (error instanceof ChannelVerificationError) throw new GatewayHttpError(error.status, error.message);
+    throw error;
+  });
+}
 
 function adapterDeliveryKey(adapterId: string, body: string): string | undefined {
   if (adapterId === "telegram") return telegramChannel.deliveryKey?.(body);
   if (adapterId === "slack") return slackChannel.deliveryKey?.(body);
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    return undefined;
-  }
-  if (adapterId === "discord") {
-    const id = typeof payload === "object" && payload !== null ? (payload as { id?: unknown }).id : undefined;
-    return typeof id === "string" && id ? `discord:${id}` : undefined;
-  }
-  if (adapterId === "whatsapp-cloud") {
-    const ids = whatsAppMessageIds(payload);
-    return ids.length ? `whatsapp-cloud:${ids.join(",")}` : undefined;
-  }
-  if (adapterId === "gchat") {
-    const message = typeof payload === "object" && payload !== null ? (payload as { message?: { name?: unknown } }).message : undefined;
-    return typeof message?.name === "string" && message.name ? `gchat:${message.name}` : undefined;
-  }
-  if (adapterId === "teams") {
-    const id = typeof payload === "object" && payload !== null ? (payload as { id?: unknown }).id : undefined;
-    return typeof id === "string" && id ? `teams:${id}` : undefined;
-  }
-  return undefined;
+  return channelWebhookAdapter(adapterId)?.deliveryKey?.(body);
 }
 
 function adapterInFlightAcknowledgement(adapterId: string): unknown {
-  if (adapterId === "discord") return { type: 5 };
-  if (adapterId === "gchat") return { text: "This request is already processing." };
-  if (adapterId === "teams") return { type: "message", text: "This request is already processing." };
-  return { ok: true, accepted: true };
+  return channelWebhookAdapter(adapterId)?.webhook?.busyResponse?.("in-flight") ?? { ok: true, accepted: true };
 }
 
 function adapterReplayAcknowledgement(adapterId: string): unknown {
-  if (adapterId === "discord") return { type: 5 };
-  if (adapterId === "gchat") return { text: "This request was already handled." };
-  if (adapterId === "teams") return { type: "message", text: "This request was already handled." };
-  return { ok: true, replayed: true };
+  return channelWebhookAdapter(adapterId)?.webhook?.busyResponse?.("replay") ?? { ok: true, replayed: true };
 }
 
 function effectiveAdapterContext(
@@ -3708,53 +3527,38 @@ async function verifyAdapterPlatformRequest(
 ): Promise<void> {
   if (adapterId === "telegram") await verifyWithChannelSdk(telegramChannel, body, headers, options.gateway);
   if (adapterId === "slack") await verifyWithChannelSdk(slackChannel, body, headers, options.gateway);
-  if (adapterId === "discord" && options.gateway.discord?.publicKey) {
-    const signature = headers["x-signature-ed25519"];
-    const timestamp = headers["x-signature-timestamp"];
-    if (!discordSignatureIsValid(body, typeof signature === "string" ? signature : undefined, typeof timestamp === "string" ? timestamp : undefined, options.gateway.discord.publicKey)) {
-      throw new GatewayHttpError(401, "Discord ed25519 signature verification failed.");
-    }
-  }
-  if (adapterId === "whatsapp-cloud" && options.gateway["whatsapp-cloud"]?.appSecret) {
-    const signature = headers["x-hub-signature-256"];
-    if (!whatsAppSignatureIsValid(body, typeof signature === "string" ? signature : undefined, options.gateway["whatsapp-cloud"].appSecret)) {
-      throw new GatewayHttpError(401, "WhatsApp signature verification failed.");
-    }
-  }
-  if (adapterId === "teams" && options.gateway.teams?.hmacSecret) {
-    const authorization = headers.authorization;
-    if (!teamsHmacIsValid(body, typeof authorization === "string" ? authorization : undefined, options.gateway.teams.hmacSecret)) {
-      throw new GatewayHttpError(401, "Teams HMAC signature mismatch.");
-    }
-  }
-  if (adapterId === "gchat" && options.gateway.gchat) {
-    const payload = JSON.parse(body);
-    if (options.gateway.gchat.verification?.mode === "bearer") {
-      const verifier = options.gchatVerifier;
-      const authorization = headers.authorization;
-      if (!verifier || !await verifier.verify({
-        authorization: typeof authorization === "string" ? authorization : undefined,
-        rawBody: body,
-        payload,
-        audience: options.gateway.gchat.verification.audience,
-      })) throw new GatewayHttpError(401, "Google Chat bearer verification failed.");
-    } else if (options.gateway.gchat.verificationToken && gchatEventToken(payload) !== options.gateway.gchat.verificationToken) {
-      throw new GatewayHttpError(401, "Google Chat verification token mismatch.");
+  const sdk = adapterId === "telegram" || adapterId === "slack" ? undefined : channelWebhookAdapter(adapterId);
+  if (sdk) {
+    try {
+      await verifyChannelWebhook(sdk, { body, headers, gateway: options.gateway, fetcher: options.fetcher ?? fetch, env: process.env, bearerVerifier: options.gchatVerifier });
+    } catch (error) {
+      if (error instanceof ChannelVerificationError) throw new GatewayHttpError(error.status, error.message);
+      throw error;
     }
   }
 }
 
-function adapterRunsAfterAcknowledgement(adapterId: string, body: string, ingress: GatewayIngressIdentity | undefined): boolean {
-  if (!ingress || !["telegram", "slack", "whatsapp-cloud"].includes(adapterId)) return false;
+/** The immediate answer for adapters that acknowledge first and reply later; undefined runs in the request. */
+function adapterAcknowledgement(adapterId: string, body: string, ingress: GatewayIngressIdentity | undefined, gateway: GatewayConfig): { readonly status: number; readonly body: unknown } | undefined {
+  if (!ingress) return undefined;
+  if (adapterId === "telegram") return { status: 200, body: { ok: true, accepted: true } };
   if (adapterId === "slack") {
     const payload = parseSlackWebhookBody(body) as { type?: unknown };
-    if (payload?.type === "url_verification") return false;
+    return payload?.type === "url_verification" ? undefined : { status: 200, body: { ok: true, accepted: true } };
   }
-  return true;
+  const adapter = channelWebhookAdapter(adapterId);
+  if (!adapter?.webhook?.acknowledge) return undefined;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  return adapter.webhook.acknowledge(gateway, payload);
 }
 
 function isAsyncAdapterId(adapterId: string): adapterId is GatewayAsyncAdapterId {
-  return adapterId === "telegram" || adapterId === "slack" || adapterId === "whatsapp-cloud";
+  return isGatewayAsyncAdapterId(adapterId);
 }
 
 class PostDeliveryPersistenceError extends Error {
@@ -3764,7 +3568,7 @@ class PostDeliveryPersistenceError extends Error {
   }
 }
 
-class DefinitivePlatformDeliveryError extends Error {
+class DefinitivePlatformDeliveryError extends ChannelDeliveryRejectedError {
   constructor(message: string) {
     super(message);
     this.name = "DefinitivePlatformDeliveryError";
@@ -3831,16 +3635,11 @@ async function notifyBackgroundFailure(adapterId: string, body: string, context:
     }
     return;
   }
-  if (adapterId === "whatsapp-cloud" && context.gateway["whatsapp-cloud"]?.accessToken && context.gateway["whatsapp-cloud"].phoneNumberId) {
-    const message = whatsAppWebhookToSurfaceMessages(JSON.parse(body))[0];
-    if (!message) return;
-    const version = context.gateway["whatsapp-cloud"].apiVersion ?? "v19.0";
-    await context.fetcher(`https://graph.facebook.com/${version}/${context.gateway["whatsapp-cloud"].phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${context.gateway["whatsapp-cloud"].accessToken}` },
-      body: JSON.stringify(surfaceReplyToWhatsAppSend({ text }, message.conversationId)),
-    });
-  }
+  const adapter = channelWebhookAdapter(adapterId);
+  if (!adapter?.webhook) return;
+  const inbound = adapter.webhook.parse(JSON.parse(body), { gateway: context.gateway });
+  const message = inbound.kind === "messages" ? inbound.messages[0] : undefined;
+  if (message) await adapter.send(webhookPeer(message), { text }, sdkChannelContext(context));
 }
 
 export async function completeAdapterIngress(
@@ -3972,7 +3771,7 @@ async function runAcceptedDurableAdapter(input: {
   readonly spool: DurableGatewayIngressSpool;
   readonly context: AdapterContext;
 }): Promise<unknown> {
-  const handler = adapterRoutes[input.adapterId];
+  const handler = adapterHandler(input.adapterId);
   if (!handler) throw new Error(`No adapter handler is registered for ${input.adapterId}.`);
   const controller = createDurableAdapterDeliveryController(input.ingress, input.spool, input.ownership);
   const context = { ...input.context, durableDelivery: controller.hooks };
@@ -3984,7 +3783,7 @@ async function runAcceptedDurableAdapter(input: {
       await input.spool.remove(input.ownership);
       return result;
     } catch (error) {
-      if (error instanceof DefinitivePlatformDeliveryError && controller.attempted() && !controller.delivered()) {
+      if (error instanceof ChannelDeliveryRejectedError && controller.attempted() && !controller.delivered()) {
         await controller.rejectDelivery();
         throw error;
       }
@@ -4038,7 +3837,7 @@ async function resumeClaimedDurableAdapter(input: {
       await completeAdapterIngress(input.ingress, input.ownership, "delivered");
       await input.spool.remove(input.ownership);
     } catch (error) {
-      if (error instanceof DefinitivePlatformDeliveryError) {
+      if (error instanceof ChannelDeliveryRejectedError) {
         await input.spool.markDeliveryRejected(input.ownership);
         await input.ingress.fail(input.ownership);
         throw error;
@@ -4100,24 +3899,9 @@ async function deliverPreparedAdapter(
     }
     return;
   }
-  const whatsapp = context.gateway["whatsapp-cloud"];
-  if (!whatsapp?.accessToken || !whatsapp.phoneNumberId) {
-    throw new Error("WhatsApp credentials are unavailable during durable delivery recovery.");
-  }
-  for (const { message, reply } of preparedDeliveries) {
-    const version = whatsapp.apiVersion ?? "v19.0";
-    const response = await context.fetcher(`https://graph.facebook.com/${version}/${whatsapp.phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${whatsapp.accessToken}` },
-      body: JSON.stringify(surfaceReplyToWhatsAppSend(reply, message.conversationId, {
-        approvalAction: approvalRenderContext(reply, message, context),
-      })),
-    });
-    const responseBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    if (!response.ok || responseBody.error) {
-      throw new DefinitivePlatformDeliveryError(`WhatsApp did not acknowledge the recovered reply: HTTP ${response.status}${responseBody.error?.message ? ` ${responseBody.error.message}` : ""}`);
-    }
-  }
+  const adapter = channelWebhookAdapter(adapterId);
+  if (!adapter) throw new Error(`No channel adapter can deliver recovered ${adapterId} replies.`);
+  await deliverPreparedChannelReplies(adapter, preparedDeliveries, sdkChannelContext(context), sdkApprovalDeps(context));
 }
 
 async function recoverIngressSpool(
@@ -4137,7 +3921,7 @@ async function recoverIngressSpool(
         log(`gateway ingress spool ${originalEntry.adapterId} is unknown-after-send; preserved for operator reconciliation`);
         continue;
       }
-      const handler = adapterRoutes[originalEntry.adapterId];
+      const handler = adapterHandler(originalEntry.adapterId);
       if (!handler) {
         log(`gateway ingress spool has no handler for ${originalEntry.adapterId}; preserving payload`);
         continue;
@@ -4203,7 +3987,7 @@ async function recoverIngressSpool(
             await spool.remove(ownership);
             log(`gateway ingress spool delivered checkpointed ${entry.adapterId} result without rerunning the provider`);
           } catch (error) {
-            if (error instanceof DefinitivePlatformDeliveryError) {
+            if (error instanceof ChannelDeliveryRejectedError) {
               await spool.markDeliveryRejected(ownership);
               await ingress.fail(ownership);
               throw error;
@@ -4224,7 +4008,7 @@ async function recoverIngressSpool(
           await spool.remove(ownership);
           log(`gateway ingress spool recovered ${entry.adapterId} payload`);
         } catch (error) {
-          if (error instanceof DefinitivePlatformDeliveryError && controller.attempted() && !controller.delivered()) {
+          if (error instanceof ChannelDeliveryRejectedError && controller.attempted() && !controller.delivered()) {
             await controller.rejectDelivery();
             throw error;
           }
@@ -4486,8 +4270,8 @@ async function route(
 
   const adapterMatch = url.pathname.match(/^\/v1\/adapters\/([a-z0-9-]+)$/);
   if (request.method === "POST" && adapterMatch) {
-    const adapterId = adapterMatch[1];
-    const handler = adapterRoutes[adapterId];
+    const adapterId = canonicalAdapterRoute(adapterMatch[1]);
+    const handler = adapterHandler(adapterId);
     if (!handler) {
       sendJson(response, 404, { error: `Unknown adapter: ${adapterId}` });
       return;
@@ -4532,7 +4316,8 @@ async function route(
       }
       if (!existingSpoolEntry) await options.ingress.transition({ ...ingressOwnership, to: "running" });
     }
-    const runAfterAcknowledgement = adapterRunsAfterAcknowledgement(adapterId, body, ingressIdentity);
+    const acknowledgement = adapterAcknowledgement(adapterId, body, ingressIdentity, options.gateway);
+    const runAfterAcknowledgement = acknowledgement !== undefined;
     let spooled = false;
     let controller: DurableAdapterDeliveryController | undefined;
     if (runAfterAcknowledgement && ingressOwnership && options.ingress && options.ingressSpool && isAsyncAdapterId(adapterId) && !existingSpoolEntry) {
@@ -4573,7 +4358,7 @@ async function route(
           if (spooled && ingressOwnership && options.ingressSpool) await options.ingressSpool.remove(ingressOwnership);
           return result;
         } catch (error) {
-          if (error instanceof DefinitivePlatformDeliveryError && controller?.attempted() && !controller.delivered()) {
+          if (error instanceof ChannelDeliveryRejectedError && controller?.attempted() && !controller.delivered()) {
             await controller.rejectDelivery();
             throw error;
           }
@@ -4590,8 +4375,8 @@ async function route(
         ? withIngressLease(options.ingress, ingressOwnership, ingressLeaseExpiresAt, work)
         : work();
     };
-    if (runAfterAcknowledgement) {
-      sendJson(response, 200, { ok: true, accepted: true });
+    if (acknowledgement) {
+      sendJson(response, acknowledgement.status, acknowledgement.body);
       // Claim and spool are durable at this point. Defer execution by one
       // event-loop turn so platform acknowledgements are not held behind the
       // first synchronous SQLite transition in the background workflow.
@@ -5108,28 +4893,9 @@ async function route(
 }
 
 function adapterHasPlatformAuth(adapterId: string, gateway: GatewayConfig): boolean {
-  switch (adapterId) {
-    case "telegram":
-      return telegramChannel.hasPlatformAuth?.(gateway) ?? false;
-    case "slack":
-      return slackChannel.hasPlatformAuth?.(gateway) ?? false;
-    case "discord":
-      return Boolean(gateway.discord?.publicKey);
-    case "gchat":
-      return Boolean(gateway.gchat?.verificationToken || googleChatAudienceIsValid(gateway.gchat?.verification?.audience));
-    case "teams":
-      return Boolean(gateway.teams?.hmacSecret);
-    case "whatsapp-cloud":
-      return Boolean(gateway["whatsapp-cloud"]?.appSecret);
-    default:
-      return false;
-  }
-}
-
-function whatsAppSignatureIsValid(body: string, header: string | undefined, appSecret: string): boolean {
-  if (!header?.startsWith("sha256=")) return false;
-  const expected = `sha256=${createHmac("sha256", appSecret).update(body).digest("hex")}`;
-  return headerEquals(header, expected);
+  if (adapterId === "telegram") return telegramChannel.hasPlatformAuth?.(gateway) ?? false;
+  if (adapterId === "slack") return slackChannel.hasPlatformAuth?.(gateway) ?? false;
+  return channelWebhookAdapter(adapterId)?.hasPlatformAuth?.(gateway) ?? false;
 }
 
 export function startGatewayServer(options: GatewayServerOptions, port = 0): Promise<RunningGateway> {

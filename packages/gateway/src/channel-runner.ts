@@ -6,20 +6,23 @@ import { dataDir } from "@musterhq/core";
 import type { FlowToolRegistry, MusterConfig } from "@musterhq/core";
 import { SqliteApprovalActionStore } from "./approval-store.js";
 import {
+  ChannelVerificationError,
   chunkText,
   defaultPairingText,
   senderAllowed,
 } from "./channel-sdk.js";
-import type { ChannelAdapter, ChannelContext, ChannelInbound, ChannelPeer, ChannelRegistry } from "./channel-sdk.js";
+import type { ChannelAdapter, ChannelContext, ChannelInbound, ChannelInboundRequest, ChannelPeer, ChannelRegistry } from "./channel-sdk.js";
 import { defaultChannelRegistry } from "./channels/index.js";
 import { createGatewayIngressFingerprint, DurableGatewayIngress } from "./durable-ingress.js";
 import type { GatewayIngressOwnership } from "./durable-ingress.js";
 import { isPairingChallenge } from "./envelope.js";
 import type { PairingChallenge, SurfaceMessage, SurfaceReply } from "./envelope.js";
+import type { TrustedFrappeContext } from "./frappe-ingress.js";
 import { openSqliteGatewayEnterpriseRuntime } from "./enterprise-runtime.js";
 import type { GatewayEnterpriseRuntime } from "./enterprise-runtime.js";
 import { loadGatewayConfig } from "./gateway-config.js";
 import type { GatewayConfig } from "./gateway-config.js";
+import type { PairedSender } from "./pairing.js";
 import {
   createApprovalActionCodec,
   pendingApprovalSurfaceFields,
@@ -48,7 +51,7 @@ export interface ChannelRuntimeOptions {
   readonly signal?: AbortSignal;
 }
 
-interface ApprovalDeps {
+export interface ApprovalDeps {
   readonly codec: ApprovalActionCodec;
   readonly ttlSeconds: number;
 }
@@ -134,7 +137,7 @@ function approvalActionContext(reply: SurfaceReply, surfaceId: string, peer: Cha
   };
 }
 
-function approvalDeps(gateway: GatewayConfig, store: SqliteApprovalActionStore): ApprovalDeps {
+export function approvalDeps(gateway: GatewayConfig, store: SqliteApprovalActionStore): ApprovalDeps {
   return {
     codec: createApprovalActionCodec({
       // Same derivation as the webhook routes and pollTelegram, so tokens verify everywhere.
@@ -265,7 +268,7 @@ export interface ChannelWorkerOptions extends ChannelRuntimeOptions {
   readonly maxIterations?: number;
 }
 
-interface IngestDeps {
+export interface IngestDeps {
   readonly adapter: ChannelAdapter;
   readonly context: ChannelContext;
   readonly config: MusterConfig;
@@ -292,11 +295,22 @@ async function applyNumberedChoice(message: SurfaceMessage, deps: IngestDeps): P
   return fields ? { ...message, text: fields.text, raw: fields.raw } : message;
 }
 
+/** The adapter's own policy admitted the sender (e.g. an allowlisted WhatsApp group): pair implicitly. */
+function preAuthorizedPairing(message: SurfaceMessage): PairedSender {
+  return {
+    pairingId: `pair_${message.surfaceId.split(":")[0]}_policy_${createHash("sha256").update(`${message.surfaceId}\0${message.senderId}`).digest("hex").slice(0, 12)}`,
+    surfaceId: message.surfaceId,
+    senderId: message.senderId,
+    approvedAt: new Date(0).toISOString(),
+  };
+}
+
 /** One inbound item through the shared path. Returns what happened, for logs and tests. */
 export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDeps): Promise<"ignored" | "replayed" | "handled"> {
   const { adapter, context } = deps;
   const allowFrom = context.gateway.channels?.[adapter.id]?.allowFrom;
-  if (!senderAllowed(allowFrom, item.message.senderId)) {
+  const allowlisted = adapter.admitByPairing && allowFrom === undefined ? true : senderAllowed(allowFrom, item.message.senderId);
+  if (!allowlisted) {
     context.log(`${adapter.id}: ignored a message from a sender outside allowFrom`);
     return "ignored";
   }
@@ -322,6 +336,7 @@ export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDep
       senderId: chosen.senderId,
       surfaceId: chosen.surfaceId,
       raw: item.message.raw,
+      ...(item.interaction !== undefined ? { interaction: item.interaction } : {}),
     };
     // Shared voice path: adapters only expose audio; transcription happens here.
     const voiceStep = await prepareVoiceInbound(chosen, {
@@ -329,7 +344,8 @@ export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDep
       cwd: context.cwd,
       env: process.env,
       log: context.log,
-      download: adapter.downloadAttachment ? (attachment) => adapter.downloadAttachment!(attachment, context) : undefined,
+      download: adapter.downloadAttachment ? (attachment, options) => adapter.downloadAttachment!(attachment, context, options) : undefined,
+      preAuthorized: item.preAuthorized,
     });
     if (voiceStep.kind === "refuse") {
       delivering = true;
@@ -347,6 +363,7 @@ export async function ingestChannelInbound(item: ChannelInbound, deps: IngestDep
       approvalActions: deps.approvals.codec,
       registry: deps.registry,
       fetcher: context.fetcher,
+      ...(item.preAuthorized ? { pairingOverride: preAuthorizedPairing(message) } : {}),
     });
     const reply = withVoiceEcho(answered, message);
     delivering = true;
@@ -394,20 +411,8 @@ export async function runChannelWorker(options: ChannelWorkerOptions): Promise<v
     env: options.env ?? process.env,
     signal: options.signal,
   };
-  const ownsEnterprise = options.enterprise === undefined;
-  const enterprise = options.enterprise ?? openSqliteGatewayEnterpriseRuntime(cwd);
-  const ingress = options.ingress ?? new DurableGatewayIngress(enterprise.idempotencyStore, { defaultLeaseMs: 15 * 60_000 });
-  const approvalStore = new SqliteApprovalActionStore(join(dataDir(cwd), "enterprise-control-plane.db"));
-  const deps: IngestDeps = {
-    adapter,
-    context,
-    config: options.config,
-    registry: options.registry,
-    enterprise,
-    ingress,
-    approvalStore,
-    approvals: approvalDeps(options.gateway, approvalStore),
-  };
+  const runtime = openChannelRuntime(adapter, context, options);
+  const { deps } = runtime;
   const poller = adapter.openPoller(context);
   let cursor = await loadCursor(cwd, adapter.id);
   let iterations = 0;
@@ -444,10 +449,46 @@ export async function runChannelWorker(options: ChannelWorkerOptions): Promise<v
     }
   } finally {
     await poller.close().catch(() => undefined);
-    approvalStore.close();
-    if (ownsEnterprise) await enterprise.close?.();
+    await runtime.close();
     log(`${adapter.id}: channel worker stopped`);
   }
+}
+
+export interface ChannelRuntime {
+  readonly deps: IngestDeps;
+  close(): Promise<void>;
+}
+
+/**
+ * Everything the shared ingest path needs for one push- or pull-based worker:
+ * enterprise runtime, durable ingress and the approval codec (same secret and
+ * store as the webhook routes, so tokens verify everywhere).
+ */
+export function openChannelRuntime(
+  adapter: ChannelAdapter,
+  context: ChannelContext,
+  options: Pick<ChannelWorkerOptions, "config" | "registry" | "enterprise" | "ingress">,
+): ChannelRuntime {
+  const ownsEnterprise = options.enterprise === undefined;
+  const enterprise = options.enterprise ?? openSqliteGatewayEnterpriseRuntime(context.cwd);
+  const ingress = options.ingress ?? new DurableGatewayIngress(enterprise.idempotencyStore, { defaultLeaseMs: 15 * 60_000 });
+  const approvalStore = new SqliteApprovalActionStore(join(dataDir(context.cwd), "enterprise-control-plane.db"));
+  return {
+    deps: {
+      adapter,
+      context,
+      config: options.config,
+      registry: options.registry,
+      enterprise,
+      ingress,
+      approvalStore,
+      approvals: approvalDeps(context.gateway, approvalStore),
+    },
+    async close() {
+      approvalStore.close();
+      if (ownsEnterprise) await enterprise.close?.();
+    },
+  };
 }
 
 // ---- Doctor -------------------------------------------------------------------------
@@ -468,4 +509,150 @@ export async function runChannelDoctor(channelId: string, options: ChannelRuntim
   }, { live: options.live === true });
   const status = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "ok";
   return { channelId, status, checks } as const;
+}
+
+// ---- Webhooks -----------------------------------------------------------------------
+
+/** The SDK adapter that serves POST /v1/adapters/<route>, if any. */
+export function channelWebhookAdapter(route: string, registry: ChannelRegistry = defaultChannelRegistry()): ChannelAdapter | undefined {
+  return registry.list().find((adapter) => adapter.webhook?.routes.includes(route));
+}
+
+/** Run an adapter's inbound verification. Throws ChannelVerificationError on rejection. */
+export async function verifyChannelWebhook(adapter: ChannelAdapter, request: ChannelInboundRequest): Promise<void> {
+  await adapter.verifyInbound?.(request);
+}
+
+export interface ChannelPreparedDelivery {
+  readonly message: SurfaceMessage;
+  readonly reply: SurfaceReply | PairingChallenge;
+}
+
+export interface ChannelWebhookDeps {
+  readonly context: ChannelContext;
+  readonly config: MusterConfig;
+  readonly headers: ChannelInboundRequest["headers"];
+  /** The HTTP route already verified the platform signature against the raw body. */
+  readonly platformVerified: boolean;
+  readonly approvals?: ApprovalDeps;
+  readonly bearerVerifier?: ChannelInboundRequest["bearerVerifier"];
+  /** One governed turn (the server's handleSurfaceMessage with its context). */
+  readonly runTurn: (message: SurfaceMessage, extra: { readonly trustedFrappe?: TrustedFrappeContext }) => Promise<SurfaceReply | PairingChallenge>;
+  /** In-process reply cache for platform retries. */
+  readonly replyCache?: { lookup(key: string | undefined): unknown; store(key: string | undefined, value: unknown): void };
+  /** Durable checkpoints when the request was acknowledged before the work finished. */
+  readonly durable?: {
+    checkpoint(prepared: readonly ChannelPreparedDelivery[]): Promise<void>;
+    begin(): Promise<void>;
+    delivered(): Promise<void>;
+  };
+}
+
+/** The reply peer for an inbound webhook message. */
+export function webhookPeer(message: SurfaceMessage): ChannelPeer {
+  return { conversationId: message.conversationId, replyTo: message.replyTo, senderId: message.senderId, surfaceId: message.surfaceId, raw: message.raw };
+}
+
+/**
+ * The shared webhook path behind /v1/adapters/<route>: verify → reply cache →
+ * parse → per message (channel step, voice, governed turn) → answer either in
+ * the HTTP response (syncReply) or through the adapter's outbound API.
+ */
+export async function serveChannelWebhook(adapter: ChannelAdapter, body: string, deps: ChannelWebhookDeps): Promise<unknown> {
+  const webhook = adapter.webhook;
+  if (!webhook) throw new Error(`Channel ${adapter.id} does not receive webhooks.`);
+  const { context } = deps;
+  if (!adapter.configured(context.gateway)) throw new Error(webhook.notConfigured);
+  if (!deps.platformVerified) {
+    await verifyChannelWebhook(adapter, {
+      body,
+      headers: deps.headers,
+      gateway: context.gateway,
+      fetcher: context.fetcher,
+      env: context.env,
+      bearerVerifier: deps.bearerVerifier,
+    });
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new ChannelVerificationError(400, `${adapter.label} webhook body is not JSON.`);
+  }
+  const cacheKey = webhook.cacheKey?.(payload) ?? adapter.deliveryKey?.(body);
+  const cached = deps.replyCache?.lookup(cacheKey);
+  if (cached !== undefined) return cached;
+  const inbound = webhook.parse(payload, { gateway: context.gateway, approvalActions: deps.approvals?.codec });
+  if (inbound.kind === "respond") return inbound.body;
+  if (inbound.kind === "ignored") return { ok: true, ignored: inbound.reason };
+
+  const prepared: ChannelPreparedDelivery[] = [];
+  for (const original of inbound.messages) {
+    const step = await webhook.beforeTurn?.(original, payload, context) ?? {};
+    if (step.respond) {
+      prepared.push({ message: original, reply: step.respond });
+      continue;
+    }
+    const voice = await prepareVoiceInbound(original, {
+      config: deps.config,
+      cwd: context.cwd,
+      env: process.env,
+      log: context.log,
+      download: adapter.downloadAttachment ? (attachment, options) => adapter.downloadAttachment!(attachment, context, options) : undefined,
+    });
+    if (voice.kind === "refuse") {
+      prepared.push({ message: original, reply: { text: voice.text } });
+      continue;
+    }
+    const answered = await deps.runTurn(voice.message, step.trustedFrappe ? { trustedFrappe: step.trustedFrappe } : {});
+    prepared.push({ message: voice.message, reply: withVoiceEcho(answered, voice.message) });
+  }
+  const hasPairingChallenge = prepared.some(({ reply }) => isPairingChallenge(reply));
+
+  if (prepared.length === 1 && webhook.syncReply) {
+    const [{ message, reply }] = prepared;
+    const approvalAction = isPairingChallenge(reply) ? undefined : approvalActionContext(reply, message.surfaceId, webhookPeer(message), deps.approvals);
+    const result = webhook.syncReply(reply, message, { gateway: context.gateway, approvalAction });
+    if (result !== undefined) {
+      if (!hasPairingChallenge) deps.replyCache?.store(cacheKey, result);
+      return result;
+    }
+  }
+
+  if (deps.durable) {
+    await deps.durable.checkpoint(prepared);
+    await deps.durable.begin();
+  }
+  await deliverPreparedChannelReplies(adapter, prepared, context, deps.approvals);
+  if (deps.durable) await deps.durable.delivered();
+  const result = { ok: true };
+  if (!hasPairingChallenge) deps.replyCache?.store(cacheKey, result);
+  for (const { message, reply } of prepared) {
+    await deliverSpokenReply({
+      config: deps.config,
+      cwd: context.cwd,
+      message,
+      reply,
+      log: context.log,
+      send: async (audio) => {
+        const peer = webhookPeer(message);
+        if (adapter.sendVoice) return adapter.sendVoice(peer, audio, context);
+        if (adapter.capabilities.media && adapter.sendMedia) return adapter.sendMedia(peer, { name: "voice-reply.ogg", mime: audio.mime, path: audio.path }, context);
+        throw new Error(`${adapter.id} cannot send audio`);
+      },
+    });
+  }
+  return result;
+}
+
+/** Send generated replies through the adapter's outbound API (also used by durable recovery). */
+export async function deliverPreparedChannelReplies(
+  adapter: ChannelAdapter,
+  prepared: readonly ChannelPreparedDelivery[],
+  context: ChannelContext,
+  approvals?: ApprovalDeps,
+): Promise<void> {
+  for (const { message, reply } of prepared) {
+    await deliverChannelReply(adapter, webhookPeer(message), reply, context, approvals);
+  }
 }

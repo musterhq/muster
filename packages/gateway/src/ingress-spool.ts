@@ -12,9 +12,14 @@ import {
 
 const MAX_SPOOLED_BODY_BYTES = 1_000_000;
 const MAX_PREPARED_BYTES = 2_000_000;
-const ASYNC_ADAPTERS = new Set(["telegram", "slack", "whatsapp-cloud"]);
+const ASYNC_ADAPTERS = new Set(["telegram", "slack", "whatsapp-cloud", "teams", "gchat"]);
 
-export type GatewayAsyncAdapterId = "telegram" | "slack" | "whatsapp-cloud";
+/** Adapters that may acknowledge a webhook before the turn finishes (spooled for crash recovery). */
+export type GatewayAsyncAdapterId = "telegram" | "slack" | "whatsapp-cloud" | "teams" | "gchat";
+
+export function isGatewayAsyncAdapterId(adapterId: string): adapterId is GatewayAsyncAdapterId {
+  return ASYNC_ADAPTERS.has(adapterId);
+}
 export type GatewayIngressSpoolState =
   | "accepted"
   | "execution-completed"
