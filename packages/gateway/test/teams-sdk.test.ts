@@ -179,6 +179,7 @@ test("tokens with unknown key ids refresh the signing keys at most once per wind
     const ok = await verifyBotFrameworkToken({ authorization: token(`forged-${index}`), appId: "app-1", serviceUrl: "https://smba.example.test/", fetcher, openIdConfigUrl: openId, now: now + index });
     assert.equal(ok, false);
   }
-  // First request: load the keys (2 fetches) and one forced refresh (2 more). Later unknown kids reuse the cache.
-  assert.equal(fetches, 4, `fetched ${fetches} times for 5 forged tokens`);
+  // The first request loads the keys (OpenID config + JWKS). They were just fetched, so no forced refresh follows,
+  // and later unknown kids reuse the cache: forged tokens cannot make the gateway hammer the key endpoints.
+  assert.equal(fetches, 2, `fetched ${fetches} times for 5 forged tokens`);
 });

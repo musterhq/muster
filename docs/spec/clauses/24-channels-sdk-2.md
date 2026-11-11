@@ -110,11 +110,11 @@ Every adapter keeps its existing verification (ed25519, HMAC, verify token, JWT)
 
 - **Precondition:** Teams in Bot Framework mode; tokens whose `kid` is not in Microsoft's key set (forged or stale).
 - **Action:** five such requests in a row.
-- **Expected result:** all five are rejected. The key set is loaded once and force-refreshed at most once per 5 minutes, so the requests cause 4 fetches (OpenID config and JWKS, twice), not 2 per request.
+- **Expected result:** all five are rejected. The key set is loaded once (OpenID config and JWKS: 2 fetches). An unknown `kid` forces a refetch only if the cached set is at least 5 minutes old, so forged tokens cannot make the gateway hammer the key endpoints. New keys are published before Microsoft uses them, so a recent fetch already has them.
 - **Test:** `packages/gateway/test/teams-sdk.test.ts` › "tokens with unknown key ids refresh the signing keys at most once per window"
 - **Environment:** fake OpenID and JWKS endpoints.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: `teams-sdk.test.ts` 2/2 (red first: 10 fetches for 5 forged tokens before the fix).
 
 ## MUS-SPEC-24-6A — The legacy handlers are gone and every old route still answers
 

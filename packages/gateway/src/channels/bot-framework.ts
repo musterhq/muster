@@ -15,12 +15,14 @@ export const BOT_FRAMEWORK_ISSUER = "https://api.botframework.com";
 const BOT_FRAMEWORK_SCOPE = "https://api.botframework.com/.default";
 const CLOCK_SKEW_SECONDS = 300;
 const KEY_CACHE_MS = 60 * 60_000;
+/** A forced refresh (unknown kid) happens at most this often per OpenID document. */
+const KEY_REFRESH_MIN_MS = 5 * 60_000;
 
 interface Jwk extends JsonWebKey {
   readonly kid?: string;
 }
 
-const keyCache = new Map<string, { readonly keys: readonly Jwk[]; readonly expiresAt: number }>();
+const keyCache = new Map<string, { readonly keys: readonly Jwk[]; readonly expiresAt: number; readonly fetchedAt: number }>();
 const tokenCache = new Map<string, { readonly token: string; readonly expiresAt: number }>();
 
 function segment<T>(value: string): T {
@@ -33,7 +35,8 @@ function sameServiceUrl(left: string, right: string): boolean {
 
 async function signingKeys(openIdConfigUrl: string, fetcher: typeof fetch, now: number, refresh: boolean): Promise<readonly Jwk[]> {
   const cached = keyCache.get(openIdConfigUrl);
-  if (cached && cached.expiresAt > now && !refresh) return cached.keys;
+  // Keys rotate rarely: a token with an unknown kid may force one refetch per window, never one per request.
+  if (cached && cached.expiresAt > now && (!refresh || now - cached.fetchedAt < KEY_REFRESH_MIN_MS)) return cached.keys;
   const config = await fetcher(openIdConfigUrl, { headers: { accept: "application/json" } });
   if (!config.ok) throw new Error(`Bot Framework OpenID configuration: HTTP ${config.status}`);
   const jwksUri = (await config.json() as { jwks_uri?: unknown }).jwks_uri;
@@ -42,7 +45,7 @@ async function signingKeys(openIdConfigUrl: string, fetcher: typeof fetch, now: 
   if (!jwks.ok) throw new Error(`Bot Framework JWKS: HTTP ${jwks.status}`);
   const keys = (await jwks.json() as { keys?: unknown }).keys;
   if (!Array.isArray(keys)) throw new Error("Bot Framework JWKS has no keys");
-  keyCache.set(openIdConfigUrl, { keys: keys as Jwk[], expiresAt: now + KEY_CACHE_MS });
+  keyCache.set(openIdConfigUrl, { keys: keys as Jwk[], expiresAt: now + KEY_CACHE_MS, fetchedAt: now });
   return keys as Jwk[];
 }
 
