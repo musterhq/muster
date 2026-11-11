@@ -7,11 +7,16 @@ import { test } from "node:test";
 import type { MusterConfig } from "@musterhq/core";
 import {
   approvePairing,
+  ChannelRegistry,
+  createWhatsAppChannel,
   gatewayConfigPath,
+  initGatewayConfig,
   loadGatewayConfig,
   requestPairing,
+  runChannelWorker,
   startGatewayServer,
 } from "../src/index.js";
+import type { GatewayConfig } from "../src/index.js";
 import { installFakeVoiceTools, readFakeVoiceCalls } from "../../core/test/fakes/voice-tools.js";
 import { createFakeGraphApi } from "./fakes/graph-api.js";
 import { startStubModel, stubModelConfig } from "./fakes/stub-model.js";
@@ -129,6 +134,111 @@ test("whatsapp cloud text and voice notes run through the shared runner; statuse
       if (previous[name] === undefined) delete process.env[name];
       else process.env[name] = previous[name];
     }
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+const OWNER = "15550003001@s.whatsapp.net";
+const ALICE = "15550003002@s.whatsapp.net";
+const BOT = "15550003000:4@s.whatsapp.net";
+const G1 = "120363000000002401@g.us";
+const G2 = "120363000000002402@g.us";
+
+/** Linked-device fake: a Baileys-shaped module whose socket the test drives. */
+function fakeBaileys(media: Readonly<Record<string, Uint8Array>>) {
+  const listeners = new Map<string, Array<(...args: any[]) => void>>();
+  const sent: Array<{ jid: string; text: string }> = [];
+  const downloads: string[] = [];
+  let opened!: () => void;
+  const open = new Promise<void>((resolvePromise) => { opened = resolvePromise; });
+  const sentWaiters: Array<{ count: number; resolve: () => void }> = [];
+  const emit = (event: string, payload: unknown) => { for (const listener of listeners.get(event) ?? []) listener(payload); };
+  const module = {
+    default: () => {
+      setImmediate(() => { emit("connection.update", { connection: "open" }); opened(); });
+      return {
+        ev: { on: (event: string, listener: (...args: any[]) => void) => { listeners.set(event, [...(listeners.get(event) ?? []), listener]); } },
+        user: { id: BOT },
+        async sendMessage(jid: string, content: { text: string }) {
+          sent.push({ jid, text: content.text });
+          for (const waiter of sentWaiters.filter((entry) => sent.length >= entry.count)) waiter.resolve();
+          return { key: { id: `out-${sent.length}` } };
+        },
+        async groupMetadata(jid: string) { return { subject: jid === G1 ? "Ops" : "Other" }; },
+        end() { emit("connection.update", { connection: "close" }); },
+      };
+    },
+    useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => undefined }),
+    async downloadMediaMessage(message: { key?: { id?: string } }) {
+      downloads.push(message.key?.id ?? "");
+      return Buffer.from(media[message.key?.id ?? ""] ?? new Uint8Array());
+    },
+  };
+  return {
+    module,
+    sent,
+    downloads,
+    open,
+    upsert: (messages: unknown[]) => emit("messages.upsert", { type: "notify", messages }),
+    waitForSent: (count: number) => (sent.length >= count ? Promise.resolve() : new Promise<void>((resolvePromise) => { sentWaiters.push({ count, resolve: resolvePromise }); })),
+  };
+}
+
+// Spec: MUS-SPEC-24-3B (docs/spec/clauses/24-channels-sdk-2.md#mus-spec-24-3b--personal-whatsapp-on-the-sdk-keeps-its-group-policy)
+test("personal whatsapp on the sdk answers DMs and allowed mentions only and transcribes voice notes", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-wa-personal-sdk-"));
+  const tools = await installFakeVoiceTools(join(cwd, ".fake"));
+  const previous = { PATH: process.env.PATH, FAKE_VOICE_LOG: process.env.FAKE_VOICE_LOG };
+  process.env.PATH = `${tools.bin}:${previous.PATH ?? ""}`;
+  process.env.FAKE_VOICE_LOG = tools.log;
+  const model = join(cwd, "ggml-tiny.en.bin");
+  await writeFile(model, "model");
+  const init = await initGatewayConfig(cwd);
+  const gateway: GatewayConfig = { ...init.config, whatsapp: { activation: "mention", groups: [G1], sessionDir: join(cwd, "wa-session") } };
+  await requestPairing("whatsapp:default", OWNER, cwd).then((pending) => approvePairing(pending.code, cwd));
+  const llm = await startStubModel("four");
+  const baileys = fakeBaileys({ "24-3b-voice": VOICE_BYTES });
+  const controller = new AbortController();
+  const worker = runChannelWorker({
+    channelId: "whatsapp",
+    channels: new ChannelRegistry([createWhatsAppChannel({ loadBaileys: async () => baileys.module as never })]),
+    config: { ...stubModelConfig(llm.url), voice: { stt: { provider: "whisper-cpp", model } } },
+    gateway,
+    cwd,
+    signal: controller.signal,
+    log: () => undefined,
+  });
+  try {
+    await baileys.open;
+    baileys.upsert([
+      { key: { id: "24-3b-dm", remoteJid: OWNER }, message: { conversation: "what is 2+2" } },
+      { key: { id: "24-3b-g1-mention", remoteJid: G1, participant: ALICE }, message: { extendedTextMessage: { text: "@Muster what is 2+2", contextInfo: { mentionedJid: [BOT] } } } },
+      { key: { id: "24-3b-g1-plain", remoteJid: G1, participant: ALICE }, message: { conversation: "just chatting" } },
+      { key: { id: "24-3b-g2-mention", remoteJid: G2, participant: ALICE }, message: { extendedTextMessage: { text: "@Muster hi", contextInfo: { mentionedJid: [BOT] } } } },
+      { key: { id: "24-3b-voice", remoteJid: OWNER }, message: { audioMessage: { mimetype: "audio/ogg; codecs=opus", seconds: 3, ptt: true, fileLength: VOICE_BYTES.length } } },
+    ]);
+    await baileys.waitForSent(3);
+    assert.deepEqual(baileys.sent.map((entry) => entry.jid), [OWNER, G1, OWNER]);
+    assert.equal(baileys.sent[0].text, "four");
+    assert.equal(baileys.sent[1].text, "four");
+    assert.equal(baileys.sent[2].text, "🎙 \"what is two plus two\"\n\nfour");
+    assert.deepEqual(baileys.downloads, ["24-3b-voice"]);
+    assert.deepEqual((await readFakeVoiceCalls(tools.log)).map((call) => call.tool), ["ffmpeg", "whisper-cli"]);
+    assert.equal(llm.prompts.length, 3, "the unmentioned G1 message and the G2 mention start no turn");
+
+    // A redelivered message is answered once (durable ingress keys on the message id).
+    baileys.upsert([{ key: { id: "24-3b-dm", remoteJid: OWNER }, message: { conversation: "what is 2+2" } }]);
+    baileys.upsert([{ key: { id: "24-3b-dm-2", remoteJid: OWNER }, message: { conversation: "and 3+3?" } }]);
+    await baileys.waitForSent(4);
+    assert.equal(llm.prompts.length, 4);
+    assert.match(llm.prompts[3], /and 3\+3\?/, "the redelivered message was not run again");
+  } finally {
+    controller.abort();
+    await worker;
+    await llm.close();
+    process.env.PATH = previous.PATH;
+    if (previous.FAKE_VOICE_LOG === undefined) delete process.env.FAKE_VOICE_LOG;
+    else process.env.FAKE_VOICE_LOG = previous.FAKE_VOICE_LOG;
     await rm(cwd, { recursive: true, force: true });
   }
 });
