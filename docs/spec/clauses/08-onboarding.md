@@ -90,4 +90,4 @@
 - **Test:** `packages/cli/test/onboarding-v2.test.ts` › "a route skipped with k leaves the summary and the finish screen enables only picks"
 - **Environment:** injected `detect` and `verify`, no network.
 - **Known gaps:** Codex's own verification time (19.9 s in the QA pass) is the CLI's cold start and is not shortened here.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, `muster onboard --no-chat` in `/tmp/polish-onb` with `MUSTER_ONBOARDING_HOME=/tmp/polish-onb/home` and the proxy pointed at a dead port: Codex replied in 8.1 s; Claude Code, the proxy and hybrow failed; after `k` the finish screen read `Ready 3/3` (chat, Codex, memory), listed none of the skipped routes, and `plugins enabled: developer-tools, codex, codex-native-tools` with no MCP line (before: `Ready 5/6` with the skipped route listed, `plugins enabled: …, github` and `MCP servers: github`, S/42-onboard-finish). Quit with `q`/`y`; nothing written. Capture: `screens/polish/qa39-after-finish.ansi`. Red→green: onboarding-v2.test.ts.

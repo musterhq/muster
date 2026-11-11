@@ -79,8 +79,10 @@ interface OnboardingState {
 
 interface VerificationState {
   running: boolean;
-  /** Route ids in the order they were checked (failed-and-skipped ones stay listed). */
+  /** Route ids in the order they were checked (failed ones left with Enter stay listed with their fix). */
   order: string[];
+  /** Failed routes the user dismissed with `k`: neither listed nor counted on the finish screen. */
+  skipped?: Set<string>;
   targets: Record<string, VerifyTarget>;
   results: Record<string, VerifyOutcome>;
 }
@@ -343,6 +345,9 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
       } else if (showingResults && key.name === "e") {
         editFailedRoutes(state);
       } else if (showingResults && key.name === "k") {
+        const dismissed = state.verify!.skipped ?? new Set<string>();
+        for (const id of failedRouteIds(state)) dismissed.add(id);
+        state.verify!.skipped = dismissed;
         skipFailedRoutes(state);
         next(state);
       } else if (showingResults && key.name === "r") {
@@ -697,7 +702,8 @@ export function capabilitySummary(state: OnboardingState): Capability[] {
   else if (defaultRoute) items.push({ ready: false, unverified: true, text: `chat · default route ${labelOf(defaultRoute)}, not verified · check: ${VERIFY_COMMAND}` });
   else items.push({ ready: false, text: `chat · no verified model route · fix: ${firstRouteFix(state) ?? VERIFY_COMMAND}` });
 
-  const routeIds = [...new Set([...(verify?.order ?? []), ...choicesFor(providerStep(), state).filter((item) => state.selected.provider.has(item.id)).map((item) => item.id)])];
+  const routeIds = [...new Set([...(verify?.order ?? []), ...choicesFor(providerStep(), state).filter((item) => state.selected.provider.has(item.id)).map((item) => item.id)])]
+    .filter((id) => !verify?.skipped?.has(id) || state.selected.provider.has(id));
   for (const id of routeIds) {
     const outcome = verify?.results[id];
     if (outcome?.ok) items.push({ ready: true, text: verifyLine(labelOf(id), outcome).slice(2) });
@@ -1165,7 +1171,9 @@ function renderAppliedSetup(state: OnboardingState, width: number, useColor: boo
 
 function pluginsForSelections(state: OnboardingState): string[] {
   const ids = new Set<string>();
-  if (state.selected.purpose.has("code")) ["developer-tools", "codex", "codex-native-tools", "claude-code", "github"].forEach((id) => ids.add(id));
+  // A purpose adds only packs that are not their own pick: GitHub comes from the
+  // senses step, Codex and Claude Code from the model step.
+  if (state.selected.purpose.has("code")) ids.add("developer-tools");
   if (state.selected.purpose.has("apps")) ["google-workspace", "github", "browser", "web-search", "mcp-bridge"].forEach((id) => ids.add(id));
   if (state.selected.purpose.has("frappe") || state.selected.integrations.has("frappe")) ["frappe-federated-bridge", "web-frameworks"].forEach((id) => ids.add(id));
   if (state.selected.purpose.has("research") || state.selected.integrations.has("web")) ["web-search", "research-lab", "codex-web-search"].forEach((id) => ids.add(id));
@@ -1194,7 +1202,7 @@ function pluginsForSelections(state: OnboardingState): string[] {
 
 function mcpForSelections(state: OnboardingState): string[] {
   const ids = new Set<string>();
-  if (state.selected.purpose.has("code") || state.selected.integrations.has("github")) ids.add("github");
+  if (state.selected.integrations.has("github") || state.selected.purpose.has("apps")) ids.add("github");
   if (state.selected.integrations.has("browser")) ids.add("browser");
   if (state.selected.integrations.has("web") || state.selected.purpose.has("research")) ids.add("parallel-search");
   if (state.selected.integrations.has("drive")) ids.add("google-drive");
