@@ -21,7 +21,7 @@ import { execFile } from "node:child_process";
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { createCoalescer, unwrapShellCommand } from "@musterhq/core";
+import { createCoalescer, describePolicyBlock, PLUGIN_HOOK_PREFIX, unwrapShellCommand } from "@musterhq/core";
 import type { AgentToolEvent, ApprovalDecision, ApprovalRequest, BoardView, MessageRow } from "@musterhq/core";
 import { effortDisplayLabel, modelDisplayLabel, modelProvider, type ComposerPickerSelection, type ComposerPickerState, type EffortValue } from "./model-catalog.js";
 import { decodeCapabilitySelection, isCapabilityConfirmationText } from "./capabilities-overlay.js";
@@ -1492,7 +1492,7 @@ export function renderApprovalCard(request: ApprovalRequest, decision?: Approval
 export function renderPolicyBlockCard(request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }): string[] {
   const rows = [
     `${renderActionBullet("failure")} Blocked ${cardTitle(request)}`,
-    `  ${dim(`${RESULT_ELBOW} ${block.reason ?? "blocked by policy"}${block.hookId ? ` · policy ${block.hookId}` : ""}`)}`,
+    `  ${dim(`${RESULT_ELBOW} ${block.hookId?.startsWith(PLUGIN_HOOK_PREFIX) ? describePolicyBlock(block) : `${block.reason ?? "blocked by policy"}${block.hookId ? ` · policy ${block.hookId}` : ""}`}`)}`,
   ];
   return ["", ...rows.map((row) => cardRow(row, "failure"))];
 }

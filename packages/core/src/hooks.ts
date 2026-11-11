@@ -117,5 +117,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/** Hook ids a code plugin registers under: `plugin:<id>`. */
+export const PLUGIN_HOOK_PREFIX = "plugin:";
+
+/** One line for a policy block: `blocked by plugin <id>: <reason>` for plugin hooks, else the reason. */
+export function describePolicyBlock(block: { readonly hookId?: string; readonly reason?: string }): string {
+  const reason = block.reason ?? "blocked by policy";
+  if (block.hookId?.startsWith(PLUGIN_HOOK_PREFIX)) return `blocked by plugin ${block.hookId.slice(PLUGIN_HOOK_PREFIX.length)}: ${reason}`;
+  return reason;
+}
+
 /** Process-wide default bus used by executeRun when no bus is supplied. */
 export const defaultHookBus = createHookBus();

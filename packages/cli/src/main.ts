@@ -267,6 +267,20 @@ import {
   expandPluginCommand,
   listPluginCommands,
   type InstalledPluginCommand,
+  describePermission,
+  describePolicyBlock,
+  createPluginRuntime,
+  inspectCodePluginSource,
+  setCodePluginEnabled,
+  validateCodePlugin,
+  type PluginInstallSummary,
+  readPluginKillList,
+  killListMessage,
+  defaultHookBus,
+  type PluginRuntime,
+  PLUGIN_HOOK_PREFIX,
+  isCodePlugin,
+  readCodePluginManifest,
   callCodexConversation,
   rewindTurns,
   forgetTurnMemories,
@@ -663,6 +677,7 @@ Usage:
   muster artifacts verify <file> [--format docx|xlsx|pptx|pdf] [--require text]
   muster plugins marketplace add <owner/repo|url|folder> | list | remove <name> | update [name]
   muster plugins search <words> | install <name>[@marketplace]
+  muster plugins validate <dir>                                   # the catalog gate for code plugins (muster.plugin.json)
   muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path|git-url> | install <path|git-url> | remove <id> | load <path>
   muster mcp serve                          # Muster's memory and sessions as an MCP server (stdio)
   muster mcp list | status [name] | login <name> | logout <name> | catalog | check [id] | install <id> | oauth status|setup|import ... | add-http <name> <url> [--oauth ...] | add-stdio <name> <command> [args...] | test <name>
@@ -1354,6 +1369,10 @@ interface ChatState {
   dynamicCommands?: readonly ChatCommandDef[];
   /** Installed plugin bundles' prompt commands, by slash name. */
   bundleCommands?: ReadonlyMap<string, InstalledPluginCommand>;
+  /** Code plugins (tools reach turns through mcp serve; hooks and commands live here). */
+  pluginRuntime?: PluginRuntime;
+  /** `--complete` is a script surface: plugin warnings are not printed there. */
+  quietPluginWarnings?: boolean;
   inheritedTools?: BackendEcosystem;
   /** Conflict recovery differs for a Codex import and a native chat. */
   importedFromCodex?: boolean;
@@ -1512,6 +1531,7 @@ async function chat(commandArgs: string[]): Promise<void> {
   }
   const completeIndex = commandArgs.indexOf("--complete");
   if (completeIndex >= 0) {
+    state.quietPluginWarnings = true;
     const fragment = commandArgs[completeIndex + 1] ?? "";
     if (commandArgs.includes("--describe")) {
       // value<TAB>label<TAB>description: the shape zsh/fish completion consumes.
@@ -1529,13 +1549,17 @@ async function chat(commandArgs: string[]): Promise<void> {
     return;
   }
   if (prompt) {
-    if (prompt.startsWith("/")) {
-      await ensureDefaultConfig();
-      await initializeChatComposerState(state);
-      await handleChatCommand(prompt, state);
-      return;
+    try {
+      if (prompt.startsWith("/")) {
+        await ensureDefaultConfig();
+        await initializeChatComposerState(state);
+        await handleChatCommand(prompt, state);
+        return;
+      }
+      await runChatTurn(prompt, state, { timeoutMs: readNumberFlag(commandArgs, "--timeout-ms"), keepAlive: false });
+    } finally {
+      await state.pluginRuntime?.stop();
     }
-    await runChatTurn(prompt, state, { timeoutMs: readNumberFlag(commandArgs, "--timeout-ms"), keepAlive: false });
     return;
   }
   if (shouldLaunchOnboarding(commandArgs)) {
@@ -1545,7 +1569,11 @@ async function chat(commandArgs: string[]): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('Interactive chat requires a TTY. Use: muster chat "your prompt" or muster chat --history --session main.');
   }
-  await interactiveChat(state);
+  try {
+    await interactiveChat(state);
+  } finally {
+    await state.pluginRuntime?.stop();
+  }
 }
 
 /** Chat's starting state from the settings registry (project → global → default). */
@@ -1924,6 +1952,14 @@ async function initializeChatComposerState(state: ChatState): Promise<void> {
     bundleCommands.set(slash, command);
   }
   state.bundleCommands = bundleCommands;
+  state.pluginRuntime ??= createPluginRuntime({
+    cwd: process.cwd(),
+    // Plugin hooks join the process-wide bus every chat turn emits on.
+    hooks: defaultHookBus,
+    reservedCommands: [...builtinNames, ...bundleCommands.keys(), ...(state.dynamicCommands ?? []).map((entry) => entry.name)],
+    owner: "chat",
+  });
+  await refreshChatPlugins(state);
   const runtimeId = state.runtime ?? config.routing.defaultRuntime;
   const runtime = config.runtimes[runtimeId];
   const configuredProviderId = state.provider ?? runtime?.provider;
@@ -1957,7 +1993,20 @@ function chatCommands(state?: ChatState): readonly ChatCommandDef[] {
     usage: `/${slash}${command.argumentHint ? ` ${command.argumentHint}` : ""}`,
     description: `${command.description ?? "plugin command"} · ${command.plugin}`,
   }));
-  return [...CHAT_COMMANDS, ...(state?.dynamicCommands ?? []), ...bundle];
+  const code: ChatCommandDef[] = (state?.pluginRuntime?.commands() ?? []).map((command) => ({
+    name: command.name,
+    usage: command.usage ?? `/${command.name}`,
+    description: `${command.description || "plugin command"} (${command.plugin})`,
+  }));
+  return [...CHAT_COMMANDS, ...(state?.dynamicCommands ?? []), ...bundle, ...code];
+}
+
+/** Reconcile code plugins with what is installed and enabled now; print each new warning once. */
+async function refreshChatPlugins(state: ChatState): Promise<void> {
+  if (!state.pluginRuntime) return;
+  const { warnings } = await state.pluginRuntime.refresh().catch((error: unknown) => ({ warnings: [`plugins: ${error instanceof Error ? error.message : String(error)}`] }));
+  if (state.quietPluginWarnings) return;
+  for (const warning of warnings) console.log(color(`⚠ ${warning}`, "yellow"));
 }
 
 function activeChatProvider(state: ChatState): ModelProvider {
@@ -2773,6 +2822,13 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       return true;
     default:
       {
+        await refreshChatPlugins(state);
+        if (state.pluginRuntime?.commands().some((command) => command.name === name)) {
+          // A plugin command answers itself: its text is the reply, no model turn.
+          const result = await state.pluginRuntime.runCommand(name, args);
+          console.log(result.ok ? result.text : color(result.error, "yellow"));
+          return true;
+        }
         const bundleCommand = state.bundleCommands?.get(name);
         if (bundleCommand) {
           await runChatTurn(await expandPluginCommand(bundleCommand, args), state);
@@ -3158,6 +3214,7 @@ function renderSuggestionPanel(width: number, suggestions: readonly ChatSuggesti
 async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?: number; keepAlive?: boolean } = {}): Promise<void> {
   await ensureDefaultConfig();
   await initializeChatComposerState(state);
+  await refreshChatPlugins(state);
   const routed = parseAgentMention(text);
   const prompt = routed ? routed.prompt : text;
   const agentId = routed?.agentId;
@@ -3254,7 +3311,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       },
       onPolicyBlock: (request, block) => {
         if (painter) painter.blocked(request, block);
-        else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
+        else console.log(color(`blocked ${request.title} — ${block.hookId?.startsWith(PLUGIN_HOOK_PREFIX) ? describePolicyBlock(block) : `${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`}`, "yellow"));
       },
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
@@ -7753,6 +7810,9 @@ async function pluginMarketplaceCommand(args: string[]): Promise<void> {
 
 async function pluginsCommand(args: string[]): Promise<void> {
   const [action, path] = args;
+  // Commands that read or change the plugin config create it on first use,
+  // instead of failing with a raw ENOENT; inspect, validate and search stay read-only.
+  if (action && ["install", "enable", "disable", "remove", "uninstall", "list", "setup"].includes(action)) await ensureDefaultConfig(process.cwd());
   if (action === "marketplace" || action === "marketplaces") {
     await pluginMarketplaceCommand(args.slice(1));
     return;
@@ -7807,6 +7867,12 @@ async function pluginsCommand(args: string[]): Promise<void> {
     await pluginReuseCommand(providerArg.provider, rest);
     return;
   }
+  if ((action === "enable" || action === "disable") && path && (await listPluginBundles()).some((entry) => entry.id === path && entry.code)) {
+    const entry = await setCodePluginEnabled(path, action === "enable");
+    console.log(`${action}d=${entry.id} kind=code`);
+    console.log(action === "enable" ? "note=open chats load it on their next message; muster mcp serve on its next tools/list" : "note=open chats unwind its tools, hooks and commands on their next message");
+    return;
+  }
   if (action === "enable" && path) {
     const plugin = await enableBuiltinPlugin(path, process.cwd(), { allowHighRisk: args.includes("--allow-high-risk") });
     console.log(`enabled plugin=${plugin.id} source=${plugin.source} risk=${plugin.risk} action=${plugin.actionability}`);
@@ -7819,7 +7885,30 @@ async function pluginsCommand(args: string[]): Promise<void> {
     console.log(`disabled plugin=${plugin.id}`);
     return;
   }
+  if (action === "validate" && path) {
+    // The catalog gate: findings by name, exit 1 on any.
+    if (!(await isCodePlugin(resolve(path)))) throw new Error(`No muster.plugin.json in ${resolve(path)}; validate checks code plugins.`);
+    const result = await validateCodePlugin(resolve(path));
+    console.log(`plugin=${result.id ?? "-"} kind=code`);
+    for (const registration of result.registrations) console.log(`registration=${registration.kind}:${registration.name}`);
+    for (const finding of result.findings) console.log(`finding=${finding.code}${finding.field ? ` field=${finding.field}` : ""} message="${finding.message.replace(/"/g, "'")}"`);
+    console.log(result.findings.length ? `result=fail findings=${result.findings.length}` : "result=pass");
+    if (result.findings.length) process.exitCode = 1;
+    return;
+  }
   if (action === "inspect" && path) {
+    if (!isGitPluginSource(path) && await isCodePlugin(resolve(path))) {
+      await printCodePluginInspection(resolve(path));
+      return;
+    }
+    if (isGitPluginSource(path)) {
+      const code = await inspectCodePluginSource(path);
+      if (code) {
+        if (code.commit) console.log(`source=${path} commit=${code.commit}`);
+        printCodePluginReport(code.report, path);
+        return;
+      }
+    }
     if (isGitPluginSource(path) || await detectPluginBundle(resolve(path))) {
       await printPluginBundleInspection(isGitPluginSource(path) ? path : resolve(path));
       return;
@@ -7832,12 +7921,18 @@ async function pluginsCommand(args: string[]): Promise<void> {
     return;
   }
   if (action === "install" && path) {
-    const installOptions = { allowHighRisk: args.includes("--allow-high-risk"), force: args.includes("--force") };
+    const installOptions = { allowHighRisk: args.includes("--allow-high-risk"), force: args.includes("--force"), confirm: confirmCodePluginInstall(args.includes("--yes") || args.includes("-y")) };
     // A name that is neither a folder nor a git URL comes from a marketplace.
     const byName = !isGitPluginSource(path) && !existsSync(resolve(path));
     const { entry, inspection } = byName
       ? await installMarketplacePlugin(path, installOptions)
       : await installPluginBundle(isGitPluginSource(path) ? path : resolve(path), installOptions);
+    if (entry.code) {
+      console.log(`installed=${entry.id} kind=code version=${entry.version ?? "-"} source=${pluginBundleSourceLabel(entry.source)} commit=${entry.commit ?? "-"} digest=${entry.digest}`);
+      console.log(`path=${entry.installedPath}`);
+      console.log("next=muster plugins list · it runs in its own process with only the permissions above");
+      return;
+    }
     console.log(`installed=${entry.id} format=${entry.format} version=${entry.version ?? "-"} source=${pluginBundleSourceLabel(entry.source)} commit=${entry.commit ?? "-"} digest=${entry.digest}`);
     console.log(`path=${entry.installedPath}`);
     for (const server of inspection.servers) console.log(`mcp_server=${server.name} status=added`);
@@ -7864,8 +7959,15 @@ async function pluginsCommand(args: string[]): Promise<void> {
   }
   if (action === "list" || action === undefined) {
     const bundles = await listPluginBundles();
+    const killed = readPluginKillList();
     for (const bundle of bundles) {
-      console.log(`plugin=${bundle.id} format=${bundle.format} source=${pluginBundleSourceLabel(bundle.source)} sha=${bundle.commit ?? "-"} servers=${bundle.mcpServers.length} skills=${bundle.skills.length} risk=${bundle.risk} version=${bundle.version ?? "-"}`);
+      const withdrawn = killed.get(bundle.id);
+      if (bundle.code) {
+        const status = withdrawn ? `status=killed reason="${killListMessage(withdrawn)}"` : bundle.code.failed ? `status=failed reason="${bundle.code.failed.reason.replace(/"/g, "'")}"` : "status=ok";
+        console.log(`plugin=${bundle.id} kind=code source=${pluginBundleSourceLabel(bundle.source)} sha=${bundle.commit ?? "-"} version=${bundle.version ?? "-"} enabled=${bundle.code.enabled ? "yes" : "no"} ${status} permissions=${bundle.code.permissions.join(",") || "-"}`);
+        continue;
+      }
+      console.log(`plugin=${bundle.id} format=${bundle.format} source=${pluginBundleSourceLabel(bundle.source)} sha=${bundle.commit ?? "-"} servers=${bundle.mcpServers.length} skills=${bundle.skills.length} risk=${bundle.risk} version=${bundle.version ?? "-"}${withdrawn ? ` status=killed reason="${killListMessage(withdrawn)}"` : ""}`);
     }
     if (!policy && bundles.length) return;
     if (!policy) {
@@ -7895,6 +7997,59 @@ async function pluginsCommand(args: string[]): Promise<void> {
 
 function pluginBundleSourceLabel(source: { readonly type: "local"; readonly path: string } | { readonly type: "git"; readonly url: string; readonly ref?: string }): string {
   return source.type === "local" ? `local:${source.path}` : `git:${source.url}${source.ref ? `#${source.ref}` : ""}`;
+}
+
+/**
+ * The install prompt for code plugins: every permission in plain words, then
+ * y/N on a terminal. Without a terminal it needs --yes. Bundles run no code
+ * and install as before.
+ */
+function confirmCodePluginInstall(yes: boolean): (summary: PluginInstallSummary) => Promise<boolean> {
+  return async (summary) => {
+    if (summary.kind !== "code") return true;
+    console.log(`plugin=${summary.id} kind=code version=${summary.version ?? "-"}${summary.commit ? ` commit=${summary.commit}` : ""}`);
+    for (const permission of summary.permissions) console.log(`permission=${permission} means="${describePermission(permission)}"`);
+    if (!summary.permissions.length) console.log("permissions=none");
+    if (yes) {
+      console.log("approved=--yes");
+      return true;
+    }
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error(`${summary.id} is a code plugin: it runs code with the permissions above. Re-run with --yes to approve them without a prompt.`);
+    }
+    const answer = (await askLine(`Install ${summary.id} with these permissions? [y/N] `)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  };
+}
+
+async function askLine(question: string): Promise<string> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+
+/** A code plugin's manifest and permissions in plain words. Reads `muster.plugin.json` only; the entry is never imported. */
+async function printCodePluginInspection(dir: string, source = dir): Promise<boolean> {
+  return printCodePluginReport(await readCodePluginManifest(dir), source);
+}
+
+function printCodePluginReport(report: Awaited<ReturnType<typeof readCodePluginManifest>>, source: string): boolean {
+  console.log(`id=${report.id ?? "-"} version=${report.version ?? "-"} kind=code${report.manifest ? ` entry=${report.manifest.entry}` : ""}`);
+  if (report.manifest?.description) console.log(`description="${cutAtWord(report.manifest.description, 80)}"`);
+  for (const permission of report.manifest?.permissions ?? []) console.log(`permission=${permission} means="${describePermission(permission)}"`);
+  if (report.manifest && !report.manifest.permissions.length) console.log("permissions=none");
+  for (const error of report.errors) console.log(`error field=${error.field} message="${error.message.replace(/"/g, "'")}"`);
+  console.log("runs_plugin_code=no");
+  if (report.errors.length) {
+    process.exitCode = 1;
+    return false;
+  }
+  console.log(`next=muster plugins install ${source}`);
+  return true;
 }
 
 /** What `install` would add, read without running any plugin code. Env and header values are never printed. */
@@ -8836,7 +8991,23 @@ async function mcpCommand(args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
   if (action === "serve") {
     // stdout is the protocol channel: nothing else may print to it.
-    await serveMcpOverStdio(createMusterMcpServer({ cwd: process.cwd(), version: CLI_MUSTER_VERSION, defaultScopes: defaultChatScopes().map(formatMemoryScope) }));
+    // Code plugin tools are served too, each from its own isolated host process.
+    const registry = createToolRegistry();
+    registerBuiltinTools(registry);
+    const plugins = createPluginRuntime({ cwd: process.cwd(), registry, owner: "mcp" });
+    try {
+      await plugins.refresh();
+      await serveMcpOverStdio(createMusterMcpServer({
+        cwd: process.cwd(),
+        version: CLI_MUSTER_VERSION,
+        defaultScopes: defaultChatScopes().map(formatMemoryScope),
+        registry,
+        extraTools: () => plugins.toolNames(),
+        refresh: () => plugins.refresh(),
+      }));
+    } finally {
+      await plugins.stop();
+    }
     return;
   }
   // Like chat and config set: a folder without .muster/ gets its config

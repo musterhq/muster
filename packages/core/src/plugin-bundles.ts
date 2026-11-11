@@ -21,12 +21,14 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { loadConfig, saveConfig } from "./config.js";
 import type { McpServerConfig } from "./mcp.js";
+import { killListMessage, readPluginKillList } from "./plugin-killlist.js";
+import { isCodePlugin, readCodePluginManifest, type CodePluginManifest } from "./plugin-manifest.js";
 import { profileDataDir } from "./profiles.js";
 import type { MusterConfig } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
-export type PluginBundleFormat = "agent-plugins-v1" | "claude-code" | "codex";
+export type PluginBundleFormat = "agent-plugins-v1" | "claude-code" | "codex" | "code";
 export type PluginBundleRisk = "low" | "medium" | "high";
 
 export interface PluginBundleServer {
@@ -103,6 +105,28 @@ export interface PluginBundleLockEntry {
   readonly commands?: readonly PluginBundleCommand[];
   readonly ignored: readonly PluginBundleIgnoredPart[];
   readonly risk: PluginBundleRisk;
+  /** Code plugins (`muster.plugin.json`): what the user approved at install, and whether it may load. */
+  readonly code?: CodePluginLockInfo;
+}
+
+export interface CodePluginLockInfo {
+  readonly entry: string;
+  /** The permissions shown and approved at install; the host enforces exactly these. */
+  readonly permissions: readonly string[];
+  readonly enabled: boolean;
+  readonly timeoutMs?: number;
+  readonly failClosed?: boolean;
+  /** Set when the host crashed too often; cleared by enable. */
+  readonly failed?: { readonly reason: string; readonly at: string };
+}
+
+/** What an install is about to add, for a confirmation prompt. */
+export interface PluginInstallSummary {
+  readonly kind: "code" | "bundle";
+  readonly id: string;
+  readonly version?: string;
+  readonly permissions: readonly string[];
+  readonly commit?: string;
 }
 
 export interface PluginBundleLock {
@@ -308,11 +332,18 @@ export interface InstallPluginBundleOptions {
   /** Replace an installed bundle with the same id. */
   readonly force?: boolean;
   readonly now?: Date;
+  /**
+   * Asked after the plugin is fetched and checked, before anything is
+   * written; false cancels. Code plugins show their permissions here.
+   */
+  readonly confirm?: (summary: PluginInstallSummary) => boolean | Promise<boolean>;
 }
 
 export interface InstallPluginBundleResult {
   readonly entry: PluginBundleLockEntry;
   readonly inspection: PluginBundleInspection;
+  /** Set for code plugins. */
+  readonly code?: CodePluginManifest;
 }
 
 /** Fetch a source (local directory or git URL) into a fresh directory, without running anything in it. */
@@ -383,10 +414,13 @@ export async function installPluginBundle(source: string, options: InstallPlugin
       await mkdir(join(staging, ".claude-plugin"), { recursive: true });
       await writeFile(join(staging, ".claude-plugin", "plugin.json"), JSON.stringify(options.inlineManifest, null, 2));
     }
+    if (await isCodePlugin(staging)) return await installCodePlugin(staging, staged, options, cwd);
     const probe = await inspectPluginBundle(staging);
     const installedPath = join(pluginsDir, probe.id);
     const inspection = await inspectPluginBundle(staging, { installRoot: installedPath });
     if (inspection.status === "blocked") throw new Error(`Plugin bundle "${inspection.id}" is blocked: ${inspection.blockers.join("; ")}`);
+    const killed = readPluginKillList(cwd).get(inspection.id);
+    if (killed) throw new Error(`Refused: ${killListMessage(killed)}`);
 
     const config = await loadConfig(cwd);
     const policy = config.plugins;
@@ -404,6 +438,9 @@ export async function installPluginBundle(source: string, options: InstallPlugin
       if (current && current.origin?.plugin !== inspection.id) throw new Error(`MCP server "${server.name}" already exists and does not belong to plugin "${inspection.id}".`);
     }
 
+    if (options.confirm && !(await options.confirm({ kind: "bundle", id: inspection.id, ...(inspection.version ? { version: inspection.version } : {}), permissions: inspection.permissions, ...(staged.commit ? { commit: staged.commit } : {}) }))) {
+      throw new Error(`Install of "${inspection.id}" cancelled.`);
+    }
     const digest = await digestTree(staging);
     await rm(installedPath, { recursive: true, force: true });
     await rename(staging, installedPath);
@@ -433,6 +470,94 @@ export async function installPluginBundle(source: string, options: InstallPlugin
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+}
+
+/** The code plugin half of install: manifest checked cold, kill list and policy, confirmation, then copy and lock. */
+async function installCodePlugin(staging: string, staged: { readonly source: PluginBundleSource; readonly commit?: string }, options: InstallPluginBundleOptions, cwd: string): Promise<InstallPluginBundleResult> {
+  const report = await readCodePluginManifest(staging);
+  if (!report.manifest) throw new Error(`Code plugin "${report.id ?? "?"}" has an invalid manifest: ${report.errors.map((error) => `${error.field}: ${error.message}`).join("; ")}`);
+  const manifest = report.manifest;
+  const killed = readPluginKillList(cwd).get(manifest.id);
+  if (killed) throw new Error(`Refused: ${killListMessage(killed)}`);
+  const config = await loadConfig(cwd);
+  const policy = config.plugins;
+  if (policy?.deny?.includes(manifest.id)) throw new Error(`Plugin "${manifest.id}" is denied by plugins.deny.`);
+  if (policy?.allow?.length && !policy.allow.includes(manifest.id)) throw new Error(`Plugin "${manifest.id}" is not in plugins.allow.`);
+  const lock = await readPluginBundleLock(cwd);
+  if (lock.entries[manifest.id] && !options.force) throw new Error(`Plugin "${manifest.id}" is already installed. Run muster plugins remove ${manifest.id} first, or pass --force to replace it.`);
+  if (options.confirm && !(await options.confirm({ kind: "code", id: manifest.id, version: manifest.version, permissions: manifest.permissions, ...(staged.commit ? { commit: staged.commit } : {}) }))) {
+    throw new Error(`Install of "${manifest.id}" cancelled.`);
+  }
+  const installedPath = join(pluginBundlesDir(cwd), manifest.id);
+  const digest = await digestTree(staging);
+  await rm(installedPath, { recursive: true, force: true });
+  await rename(staging, installedPath);
+  const entry: PluginBundleLockEntry = {
+    id: manifest.id,
+    format: "code",
+    version: manifest.version,
+    source: staged.source,
+    ...(staged.commit ? { commit: staged.commit } : {}),
+    digest,
+    installedPath,
+    installedAt: (options.now ?? new Date()).toISOString(),
+    mcpServers: [],
+    skills: [],
+    skillRoots: [],
+    commands: [],
+    ignored: [],
+    risk: "medium",
+    code: {
+      entry: manifest.entry,
+      permissions: [...manifest.permissions],
+      enabled: true,
+      ...(manifest.timeoutMs !== undefined ? { timeoutMs: manifest.timeoutMs } : {}),
+      ...(manifest.failClosed !== undefined ? { failClosed: manifest.failClosed } : {}),
+    },
+  };
+  await writePluginBundleLock(cwd, { ...lock, entries: { ...lock.entries, [entry.id]: entry } });
+  const inspection: PluginBundleInspection = {
+    path: installedPath, installRoot: installedPath, format: "code", manifestPath: "muster.plugin.json", id: manifest.id, version: manifest.version,
+    ...(manifest.description ? { description: manifest.description } : {}),
+    servers: [], skills: [], skillRoots: [], commands: [], ignored: [], risk: "medium", permissions: manifest.permissions, status: "ready", blockers: [], warnings: [],
+  };
+  return { entry, inspection, code: manifest };
+}
+
+/** Read a code plugin from a folder or git URL without running it; undefined when the source is not a code plugin. */
+export async function inspectCodePluginSource(source: string): Promise<{ readonly report: Awaited<ReturnType<typeof readCodePluginManifest>>; readonly commit?: string } | undefined> {
+  if (!isGitPluginSource(source)) return (await isCodePlugin(resolve(source))) ? { report: await readCodePluginManifest(resolve(source)) } : undefined;
+  const scratch = await mkdtemp(join(tmpdir(), "muster-plugin-inspect-"));
+  try {
+    const staged = join(scratch, "plugin");
+    const { commit } = await stageSource(source, staged);
+    if (!(await isCodePlugin(staged))) return undefined;
+    return { report: await readCodePluginManifest(staged), ...(commit ? { commit } : {}) };
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Turn a code plugin on or off. Enabling clears a recorded failure. */
+export async function setCodePluginEnabled(id: string, enabled: boolean, cwd = process.cwd()): Promise<PluginBundleLockEntry> {
+  return updateCodePlugin(id, cwd, (code) => {
+    const { failed: _failed, ...rest } = code;
+    return enabled ? { ...rest, enabled: true } : { ...code, enabled: false };
+  });
+}
+
+/** Record that a code plugin's host failed (shown by `muster plugins list`). */
+export async function markCodePluginFailed(id: string, reason: string, cwd = process.cwd()): Promise<void> {
+  await updateCodePlugin(id, cwd, (code) => ({ ...code, failed: { reason: reason.slice(0, 500), at: new Date().toISOString() } })).catch(() => undefined);
+}
+
+async function updateCodePlugin(id: string, cwd: string, change: (code: CodePluginLockInfo) => CodePluginLockInfo): Promise<PluginBundleLockEntry> {
+  const lock = await readPluginBundleLock(cwd);
+  const entry = lock.entries[id];
+  if (!entry?.code) throw new Error(`No code plugin "${id}" is installed. Run muster plugins list.`);
+  const next: PluginBundleLockEntry = { ...entry, code: change(entry.code) };
+  await writePluginBundleLock(cwd, { ...lock, entries: { ...lock.entries, [id]: next } });
+  return next;
 }
 
 export async function listPluginBundles(cwd = process.cwd()): Promise<PluginBundleLockEntry[]> {
@@ -476,7 +601,9 @@ export function pluginBundleSkillRoots(cwd = process.cwd()): string[] {
     return [];
   }
   const base = pluginBundlesDir(cwd);
+  const killed = readPluginKillList(cwd);
   return Object.values(lock.entries)
+    .filter((entry) => !killed.has(entry.id))
     .sort((a, b) => a.id.localeCompare(b.id))
     .flatMap((entry) => entry.skillRoots)
     .filter((dir) => isWithin(base, dir));
@@ -652,7 +779,7 @@ async function copyTree(from: string, to: string): Promise<void> {
 }
 
 /** sha256 over every file's relative path and content hash, in sorted order. */
-async function digestTree(root: string): Promise<string> {
+export async function digestTree(root: string): Promise<string> {
   const lines: string[] = [];
   const visit = async (dir: string): Promise<void> => {
     const entries = (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
@@ -721,7 +848,8 @@ export interface InstalledPluginCommand extends PluginBundleCommand {
 /** Every installed bundle's prompt commands. */
 export async function listPluginCommands(cwd = process.cwd()): Promise<InstalledPluginCommand[]> {
   const entries = await listPluginBundles(cwd);
-  return entries.flatMap((entry) => (entry.commands ?? []).map((command) => ({ ...command, plugin: entry.id })));
+  const killed = readPluginKillList(cwd);
+  return entries.filter((entry) => !killed.has(entry.id)).flatMap((entry) => (entry.commands ?? []).map((command) => ({ ...command, plugin: entry.id })));
 }
 
 export const SHELL_SNIPPET_NOTE = "(a shell snippet was here; shell snippets in plugin commands are not executed)";
