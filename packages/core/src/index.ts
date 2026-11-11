@@ -77,5 +77,6 @@ export * from "./plugin-hub.js";
 export * from "./plugin-manifest.js";
 export * from "./plugin-host.js";
 export * from "./plugin-runtime.js";
+export * from "./plugin-killlist.js";
 export * from "./workspace-undo.js";
 export * from "./rewind.js";

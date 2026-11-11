@@ -14,7 +14,7 @@
  * the host. The CLI process never shares memory with plugin code.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { appendFile, mkdir, realpath } from "node:fs/promises";
+import { appendFile, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import type { HookDecision, HookName } from "./hooks.js";
@@ -33,6 +33,8 @@ const MAX_LOG_BYTES = 64 * 1024;
 const MAX_RECEIPTS_PER_PROCESS = 100;
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const COMMAND_PATTERN = /^[a-z0-9][a-z0-9-]{0,40}$/;
+/** Workspace entries no plugin permission ever reaches. */
+const PROTECTED_WORKSPACE_ENTRIES = new Set([".muster", ".git"]);
 
 export interface PluginRegistration {
   readonly kind: "tool" | "hook" | "command";
@@ -212,14 +214,25 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       write.push(...await both(workspace));
       return { read, write };
     }
+    // Muster's own state (.muster: the lock that records approved permissions,
+    // config, tokens) and .git are never granted, even for "the whole workspace".
+    // Node's permission model has no deny list, so the whole workspace means each
+    // of its top-level entries except those, as they exist when the host starts.
+    const topLevel = async (): Promise<string[]> => (await readdir(workspace).catch(() => [] as string[]))
+      .filter((name) => !PROTECTED_WORKSPACE_ENTRIES.has(name))
+      .map((name) => resolve(workspace, name));
     for (const permission of parsed) {
       if (permission.kind !== "fs") continue;
       const target = permission.path ? resolve(workspace, permission.path) : workspace;
       const rel = relative(workspace, target);
       if (rel.startsWith("..") || isAbsolute(rel)) continue;
-      // Writing a file you cannot read back is never what a plugin means.
-      read.push(...await both(target));
-      if (permission.mode === "write") write.push(...await both(target));
+      if (rel && PROTECTED_WORKSPACE_ENTRIES.has(rel.split(/[\\/]/)[0]!)) continue;
+      const targets = rel ? [target] : await topLevel();
+      for (const path of targets) {
+        // Writing a file you cannot read back is never what a plugin means.
+        read.push(...await both(path));
+        if (permission.mode === "write") write.push(...await both(path));
+      }
     }
     return { read: [...new Set(read)], write: [...new Set(write)] };
   };

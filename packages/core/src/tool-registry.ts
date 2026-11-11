@@ -64,6 +64,8 @@ const webSearchCache = new Map<string, { expiresAt: number; data: WebSearchResul
 
 export interface ToolRegistryV2 {
   register<A>(entry: ToolEntry<A>): void;
+  /** Remove a tool (the inverse of register, for plugins that are turned off). */
+  unregister(name: string): boolean;
   list(toolset?: string): ToolEntry[];
   resolveToolset(name: string): string[];
   execute(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult>;
@@ -85,6 +87,9 @@ export function createToolRegistry(toolsets: Record<string, ToolsetDef> = BUILTI
     register(entry) {
       if (entries.has(entry.name)) throw new Error(`Tool already registered: ${entry.name}`);
       entries.set(entry.name, entry as ToolEntry);
+    },
+    unregister(name) {
+      return entries.delete(name);
     },
     list(toolset) {
       const all = [...entries.values()];

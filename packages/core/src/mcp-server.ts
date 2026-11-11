@@ -26,6 +26,10 @@ export interface MusterMcpServerOptions {
   readonly registry?: ToolRegistryV2;
   /** Scopes a memory tool uses when the client passes none (the user's own, as in chat). */
   readonly defaultScopes?: readonly string[];
+  /** Tools served on top of `tools` that can change while serving (code plugin tools). */
+  readonly extraTools?: () => Iterable<string>;
+  /** Called before tools/list and tools/call, so plugins enabled or disabled meanwhile are seen. */
+  readonly refresh?: () => Promise<unknown>;
 }
 
 type JsonRpcMessage = { readonly jsonrpc?: string; readonly id?: string | number | null; readonly method?: string; readonly params?: Record<string, unknown> };
@@ -41,7 +45,9 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
     registerBuiltinTools(created);
     return created;
   })();
-  const allowed = new Set(options.tools ?? MCP_SERVE_TOOLS);
+  const base = new Set(options.tools ?? MCP_SERVE_TOOLS);
+  const isAllowed = (name: string): boolean => base.has(name) || [...(options.extraTools?.() ?? [])].includes(name);
+  const refresh = async (): Promise<void> => { await options.refresh?.().catch(() => undefined); };
   const ctx: ToolContext = { cwd: options.cwd };
   const reply = (id: JsonRpcMessage["id"], result: unknown) => ({ jsonrpc: "2.0", id, result });
   const fail = (id: JsonRpcMessage["id"], code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
@@ -61,8 +67,9 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
         case "ping":
           return reply(id, {});
         case "tools/list":
+          await refresh();
           return reply(id, {
-            tools: registry.list().filter((entry) => allowed.has(entry.name)).map((entry) => ({
+            tools: registry.list().filter((entry) => isAllowed(entry.name)).map((entry) => ({
               name: entry.name,
               description: entry.description,
               inputSchema: entry.inputSchema ?? { type: "object", properties: {} },
@@ -70,7 +77,8 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
           });
         case "tools/call": {
           const name = typeof message.params?.name === "string" ? message.params.name : "";
-          if (!allowed.has(name)) return fail(id, -32602, `Unknown tool: ${name}`);
+          if (!base.has(name)) await refresh();
+          if (!isAllowed(name)) return fail(id, -32602, `Unknown tool: ${name}`);
           let args = (message.params?.arguments && typeof message.params.arguments === "object" ? message.params.arguments : {}) as Record<string, unknown>;
           const noScopes = !Array.isArray(args.scopes) || args.scopes.length === 0;
           if (name.startsWith("memory_") && noScopes && options.defaultScopes?.length) args = { ...args, scopes: [...options.defaultScopes] };

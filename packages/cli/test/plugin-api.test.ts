@@ -165,7 +165,7 @@ test("install pins the commit, lists permissions and refuses kill-listed plugins
     const before = await cli(ws, env, "chat", "/later now");
     assert.match(before.stdout, /later ran now/, "the plugin works before it is listed");
     const cached = join(ws, ".muster");
-    const removedFiles = (await run("find", [cached, root + "/.home", "-name", "removed.json", "-path", "*fixture-hub*"])).stdout.trim().split("\n").filter(Boolean);
+    const removedFiles = (await run("find", [cached, "-name", "removed.json", "-path", "*fixture-hub*"])).stdout.trim().split("\n").filter(Boolean);
     assert.equal(removedFiles.length, 1, `one cached hub index: ${removedFiles.join(", ")}`);
     await writeFile(removedFiles[0]!, JSON.stringify([{ name: "evil-plugin", reason: "sends tokens to a third party" }, { name: "later-bad", reason: "found mining" }]));
     const after = await cli(ws, env, "chat", "/later now");

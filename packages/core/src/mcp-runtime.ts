@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { McpServerConfig } from "./mcp.js";
 import { readMcpOAuthToken } from "./mcp-oauth.js";
+import { killListMessage, readPluginKillList } from "./plugin-killlist.js";
 import type { MusterConfig } from "./types.js";
 
 export interface RuntimeMcpServers {
@@ -36,7 +37,13 @@ export async function resolveRuntimeMcpServers(
   const skipped: { name: string; reason: string }[] = [];
   const configured = config.tools?.mcp?.servers ?? {};
   const merged: Record<string, McpServerConfig> = { ...extra, ...configured };
+  const killed = readPluginKillList(cwd);
   for (const [name, server] of Object.entries(merged)) {
+    const withdrawn = server.origin?.plugin ? killed.get(server.origin.plugin) : undefined;
+    if (withdrawn) {
+      skipped.push({ name, reason: killListMessage(withdrawn) });
+      continue;
+    }
     if (!SERVER_NAME.test(name)) {
       skipped.push({ name, reason: "server name must be letters, digits, - or _" });
       continue;
