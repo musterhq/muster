@@ -17,6 +17,7 @@ export interface FakeVoiceCall {
   readonly argv: readonly string[];
   /** Whether each path-like argument existed when the tool ran. */
   readonly existed: Record<string, boolean>;
+  readonly pid?: number;
 }
 
 const PRELUDE = `#!/usr/bin/env node
@@ -24,7 +25,7 @@ const fs = require("node:fs");
 const argv = process.argv.slice(2);
 const existed = {};
 for (const arg of argv) if (arg.startsWith("/")) existed[arg] = fs.existsSync(arg);
-if (process.env.FAKE_VOICE_LOG) fs.appendFileSync(process.env.FAKE_VOICE_LOG, JSON.stringify({ tool: TOOL, argv, existed }) + "\\n");
+if (process.env.FAKE_VOICE_LOG) fs.appendFileSync(process.env.FAKE_VOICE_LOG, JSON.stringify({ tool: TOOL, argv, existed, pid: process.pid }) + "\\n");
 const after = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 `;
 
