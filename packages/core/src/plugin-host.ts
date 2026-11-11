@@ -14,6 +14,10 @@
  * the host. The CLI process never shares memory with plugin code.
  */
 import { spawn, type ChildProcess } from "node:child_process";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP, type LookupFunction } from "node:net";
 import { appendFile, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { Readable } from "node:stream";
@@ -31,6 +35,25 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const MAX_LOG_BYTES = 64 * 1024;
 const MAX_RECEIPTS_PER_PROCESS = 100;
+/** Headers the broker sets itself. */
+const HOP_HEADERS = new Set(["host", "connection", "content-length", "transfer-encoding", "keep-alive", "upgrade", "proxy-connection", "te", "trailer"]);
+
+const RESTRICTED = (() => {
+  const list = new BlockList();
+  for (const [network, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4]] as const) list.addSubnet(network, prefix, "ipv4");
+  for (const [network, prefix] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]] as const) list.addSubnet(network, prefix, "ipv6");
+  return list;
+})();
+
+/** Loopback, private, link-local, unspecified (and multicast/reserved) addresses, including IPv4-mapped IPv6. */
+export function isRestrictedAddress(address: string): boolean {
+  const mapped = address.toLowerCase().match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return RESTRICTED.check(mapped[1]!, "ipv4");
+  const family = isIP(address);
+  if (family === 4) return RESTRICTED.check(address, "ipv4");
+  if (family === 6) return RESTRICTED.check(address, "ipv6");
+  return true;
+}
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const COMMAND_PATTERN = /^[a-z0-9][a-z0-9-]{0,40}$/;
 /** Workspace entries no plugin permission ever reaches. */
@@ -77,7 +100,8 @@ export interface PluginHostOptions {
   /** Names owned by Muster that a plugin may not take. */
   readonly reservedTools?: Iterable<string>;
   readonly reservedCommands?: Iterable<string>;
-  readonly fetch?: typeof globalThis.fetch;
+  /** How the broker resolves a host before checking it (default: the system resolver). */
+  readonly resolveHost?: (hostname: string) => Promise<ReadonlyArray<{ readonly address: string; readonly family: number }>>;
   readonly nodePath?: string;
   /**
    * "validate" starts a throwaway host with no permissions at all: no env,
@@ -144,7 +168,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   const declaredEnv = new Set(parsed.flatMap((permission) => (permission.kind === "env" ? [permission.name] : [])));
   const reservedTools = new Set(options.reservedTools ?? []);
   const reservedCommands = new Set(options.reservedCommands ?? []);
-  const doFetch = options.fetch ?? globalThis.fetch;
+  const resolveHost = options.resolveHost ?? ((hostname: string) => dnsLookup(hostname, { all: true, verbatim: true }));
   const maxRestarts = options.maxRestarts ?? MAX_RESTARTS;
   const restartWindowMs = options.restartWindowMs ?? RESTART_WINDOW_MS;
 
@@ -257,6 +281,14 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     if (permission.startsWith("module:")) void receipt({ type: "plugin.denied", permission, ...(detail ? { detail } : {}) });
   };
 
+  /**
+   * The network a plugin has. For each hop: the URL's host must be declared;
+   * it is resolved here, every address is checked (loopback, private,
+   * link-local and unspecified addresses are refused unless the permission
+   * names that host literally: an IP, `localhost` or `*.localhost`), and the
+   * connection is pinned to the checked address, so a DNS answer that changes
+   * between the check and the connect reaches nothing else.
+   */
   const brokerFetch = async (params: Record<string, unknown>): Promise<Record<string, unknown>> => {
     let url: URL;
     try {
@@ -265,24 +297,26 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       throw new Error(`ctx.fetch: not a URL: ${String(params.url).slice(0, 200)}`);
     }
     let method = typeof params.method === "string" ? params.method.toUpperCase() : "GET";
-    const headers = params.headers && typeof params.headers === "object" ? Object.fromEntries(Object.entries(params.headers as Record<string, unknown>).filter(([, value]) => typeof value === "string")) as Record<string, string> : {};
+    const headers = params.headers && typeof params.headers === "object" ? Object.fromEntries(Object.entries(params.headers as Record<string, unknown>).filter(([key, value]) => typeof value === "string" && !HOP_HEADERS.has(key.toLowerCase()))) as Record<string, string> : {};
     const rawBody = params.body as { text?: unknown; base64?: unknown; type?: unknown } | undefined;
-    let body: string | Uint8Array<ArrayBuffer> | undefined = typeof rawBody?.text === "string" ? rawBody.text : typeof rawBody?.base64 === "string" ? new Uint8Array(Buffer.from(rawBody.base64, "base64")) : undefined;
+    let body: Buffer | undefined = typeof rawBody?.text === "string" ? Buffer.from(rawBody.text, "utf8") : typeof rawBody?.base64 === "string" ? Buffer.from(rawBody.base64, "base64") : undefined;
     if (typeof rawBody?.type === "string" && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["content-type"] = rawBody.type;
-    if (body !== undefined && Buffer.byteLength(body) > MAX_FETCH_BYTES) throw new Error("ctx.fetch: request body is larger than 10 MB");
+    if (body && body.byteLength > MAX_FETCH_BYTES) throw new Error("ctx.fetch: request body is larger than 10 MB");
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`ctx.fetch refused: only http and https URLs (${url.protocol})`);
-      if (!netPermissionCovers(permissions, url)) {
-        const host = url.hostname.replace(/^\[|\]$/g, "");
+      const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+      const covering = netPermissionCovers(permissions, url);
+      if (!covering) {
         await receipt({ type: "plugin.denied", permission: `net:${host}`, detail: `ctx.fetch ${method} ${url.origin}` });
         throw new Error(`ctx.fetch refused: ${host}${url.port ? `:${url.port}` : ""} is not declared in the plugin's permissions (add "net:${host}")`);
       }
-      const response = await doFetch(url, { method, headers, ...(body !== undefined ? { body } : {}), redirect: "manual" });
-      const location = response.headers.get("location");
-      if (response.status >= 300 && response.status < 400 && location) {
-        await response.body?.cancel().catch(() => undefined);
+      const pinned = await checkedAddress(host);
+      const response = await pinnedRequest(url, pinned, method, headers, body);
+      const location = response.headers.location;
+      if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && typeof location === "string") {
+        response.resume();
         url = new URL(location, url);
-        if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
+        if (response.statusCode === 303 || ((response.statusCode === 301 || response.statusCode === 302) && method === "POST")) {
           method = "GET";
           body = undefined;
         }
@@ -290,24 +324,85 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       }
       const chunks: Buffer[] = [];
       let size = 0;
-      if (response.body) {
-        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-          size += chunk.byteLength;
-          if (size > MAX_FETCH_BYTES) throw new Error("ctx.fetch: response is larger than 10 MB");
-          chunks.push(Buffer.from(chunk));
+      for await (const chunk of response as AsyncIterable<Buffer>) {
+        size += chunk.byteLength;
+        if (size > MAX_FETCH_BYTES) {
+          response.destroy();
+          throw new Error("ctx.fetch: response is larger than 10 MB");
         }
+        chunks.push(chunk);
       }
-      return { status: response.status, statusText: response.statusText, headers: [...response.headers.entries()], url: url.href, bodyBase64: Buffer.concat(chunks).toString("base64") };
+      const pairs: Array<[string, string]> = [];
+      for (let index = 0; index + 1 < response.rawHeaders.length; index += 2) pairs.push([response.rawHeaders[index]!, response.rawHeaders[index + 1]!]);
+      return { status: response.statusCode ?? 0, statusText: response.statusMessage ?? "", headers: pairs, url: url.href, bodyBase64: Buffer.concat(chunks).toString("base64") };
     }
     throw new Error(`ctx.fetch: more than ${MAX_REDIRECTS} redirects`);
   };
 
-  const onMessage = (target: ChildProcess, message: Record<string, unknown>): void => {
+  /** Resolve once and check every answer; the first is the one the connection is pinned to. */
+  const checkedAddress = async (host: string): Promise<{ readonly address: string; readonly family: 4 | 6 }> => {
+    const literal = isIP(host);
+    const answers = literal ? [{ address: host, family: literal }] : await resolveHost(host).catch((error: unknown) => {
+      throw new Error(`ctx.fetch: could not resolve ${host}: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    if (!answers.length) throw new Error(`ctx.fetch: ${host} has no address`);
+    // A permission that names the local host itself means it.
+    const namedLiterally = literal !== 0 || host === "localhost" || host.endsWith(".localhost");
+    for (const answer of answers) {
+      if (!namedLiterally && isRestrictedAddress(answer.address)) {
+        await receipt({ type: "plugin.denied", permission: `net:${host}`, detail: `${host} resolves to a private address ${answer.address}` });
+        throw new Error(`ctx.fetch refused: ${host} resolves to a private address ${answer.address} (only a permission naming that address or localhost may reach it)`);
+      }
+    }
+    const first = answers[0]!;
+    return { address: first.address, family: first.family === 6 ? 6 : 4 };
+  };
+
+  const pinnedRequest = (url: URL, pinned: { readonly address: string; readonly family: 4 | 6 }, method: string, headers: Record<string, string>, body: Buffer | undefined): Promise<IncomingMessage> => {
+    // The socket asks this, never the resolver: it gets only the checked address.
+    const lookup: LookupFunction = (_hostname, lookupOptions, callback) => {
+      if ((lookupOptions as { all?: boolean }).all) (callback as unknown as (error: null, addresses: Array<{ address: string; family: number }>) => void)(null, [{ address: pinned.address, family: pinned.family }]);
+      else callback(null, pinned.address, pinned.family);
+    };
+    const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+    return new Promise((resolveResponse, rejectResponse) => {
+      const outgoing = request(url, { method, headers, lookup, agent: false, timeout: timeoutMs, ...(url.protocol === "https:" ? { servername: isIP(url.hostname) ? undefined : url.hostname } : {}) }, resolveResponse);
+      outgoing.on("timeout", () => outgoing.destroy(new Error(`ctx.fetch: no response from ${url.host} within ${timeoutMs}ms`)));
+      outgoing.on("error", (error) => rejectResponse(new Error(`ctx.fetch ${url.origin}: ${error.message}`)));
+      outgoing.end(body);
+    });
+  };
+
+  // Lines the child sent that are not on the whitelist, counted into one receipt per burst.
+  let ignored = 0;
+  let ignoredSample = "";
+  let ignoredFlush: NodeJS.Timeout | undefined;
+  const ignore = (line: string): void => {
+    ignored += 1;
+    if (!ignoredSample) ignoredSample = line.slice(0, 200);
+    ignoredFlush ??= setTimeout(flushIgnored, 0);
+  };
+  const flushIgnored = (): void => {
+    if (ignoredFlush) clearTimeout(ignoredFlush);
+    ignoredFlush = undefined;
+    if (!ignored) return;
+    void receipt({ type: "plugin.protocol_ignored", count: ignored, detail: `lines from the plugin that were not a reply to a request Muster sent, nor ready, denied or fetch; sample: ${ignoredSample}` });
+    ignored = 0;
+    ignoredSample = "";
+  };
+
+  /**
+   * The child may only send: ready, denied, fetch requests, and replies to
+   * requests the parent sent and has not answered yet. A plugin can write
+   * fd 3 itself, so everything else is ignored and counted.
+   */
+  const onMessage = (target: ChildProcess, message: Record<string, unknown>, line: string): void => {
     if (target !== child) return;
     const messageId = message.id;
-    if (typeof messageId === "number") {
+    const isReply = typeof messageId === "number" && message.method === undefined && ("result" in message || "error" in message);
+    if (isReply) {
       const entry = pending.get(messageId);
-      if (!entry) return;
+      if (!entry) return ignore(line);
       pending.delete(messageId);
       clearTimeout(entry.timer);
       updateRef();
@@ -316,14 +411,16 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       else entry.resolve(message.result);
       return;
     }
-    if (typeof messageId === "string" && message.method === "fetch") {
+    if (typeof messageId === "string" && /^c\d{1,12}$/.test(messageId) && message.method === "fetch") {
       brokerFetch((message.params ?? {}) as Record<string, unknown>).then(
         (result) => send(target, { id: messageId, result }),
         (error: unknown) => send(target, { id: messageId, error: { message: error instanceof Error ? error.message : String(error) } }),
       );
       return;
     }
-    if (message.method === "denied" && message.params && typeof message.params === "object") handleDenied(message.params as Record<string, unknown>);
+    if (messageId === undefined && message.method === "denied" && message.params && typeof message.params === "object") return handleDenied(message.params as Record<string, unknown>);
+    if (messageId === undefined && message.method === "ready") return;
+    ignore(line);
   };
 
   const spawnChild = async (): Promise<ChildProcess> => {
@@ -369,9 +466,11 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
         try {
           message = JSON.parse(line);
         } catch {
+          if (proc === child) ignore(line);
           continue;
         }
-        if (message && typeof message === "object" && !Array.isArray(message)) onMessage(proc, message as Record<string, unknown>);
+        if (message && typeof message === "object" && !Array.isArray(message)) onMessage(proc, message as Record<string, unknown>, line);
+        else if (proc === child) ignore(line);
       }
     });
     channel?.on("error", () => undefined);
@@ -524,6 +623,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     if (!proc || status !== "running") throw new Error(`plugin ${id} failed: ${failure ?? "not running"}`);
     try {
       const result = await call(method, params, ms);
+      flushIgnored();
       await receipts;
       return result;
     } catch (reason) {

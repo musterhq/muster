@@ -61,7 +61,7 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
   - Each refusal writes a receipt (`plugin.denied`, plugin id, permission).
 - **Test:** `packages/core/test/plugin-host.test.ts` › "undeclared hooks, hosts and env vars are refused with receipts"
 - **Environment:** a host child process; a fake HTTP server that records any connection.
-- **Known gaps:** a plugin can still open raw sockets through `node:net`. The host blocks `node:net`, `node:child_process`, `node:worker_threads` and `node:fs` writes outside the workspace by loading the plugin under a Node permission policy (`--permission` with `--allow-fs-read`/`--allow-fs-write` scoped to the plugin dir and the workspace). This is noted as defence in depth, not a sandbox.
+- **Known gaps:** a plugin can still open raw sockets through `node:net`. The host blocks `node:net`, `node:child_process`, `node:worker_threads` and `node:fs` writes outside the workspace by loading the plugin under a Node permission policy (`--permission` with `--allow-fs-read`/`--allow-fs-write` scoped to the plugin dir and the workspace). This is noted as defence in depth, not a sandbox. A plugin can write its own lines to the protocol channel (fd 3); the parent accepts only `ready`, `denied`, `fetch` requests and replies to requests it sent and has not yet answered, ignores the rest and counts them in a `plugin.protocol_ignored` receipt, so forged lines can only affect that plugin's own results.
 - **Evidence:** UNVERIFIED
 
 ## MUS-SPEC-23-1D — Hooks from a plugin can block, with the plugin named
