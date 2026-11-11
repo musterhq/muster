@@ -369,3 +369,38 @@ test("disable unwinds tools, hooks and commands through the ledger and remove de
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-23-3B (docs/spec/clauses/23-plugin-api.md#mus-spec-23-3b--muster-plugins-validate-is-the-catalog-gate)
+test("validate names each defect and passes a good plugin", { timeout: 240_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-plugapi-validate-"));
+  try {
+    const ws = join(root, "ws");
+    await mkdir(ws, { recursive: true });
+    const env = cliEnv(root);
+    await cli(ws, env, "init");
+    const tool = (extra: string) => `export async function register(ctx) {\n  ctx.tool({ name: "weather_now", description: "d"${extra}, handler: async () => 1 });\n}\n`;
+    const defects: Array<[string, Record<string, unknown>, Record<string, string>, RegExp]> = [
+      ["unknown-permission", { ...WEATHER_MANIFEST, id: "v-perm", permissions: ["tools", "teleport"] }, { "dist/index.js": tool(", inputSchema: { type: \"object\" }") }, /finding=manifest field=permissions .*teleport/],
+      ["imports-outside", { ...WEATHER_MANIFEST, id: "v-import" }, { "dist/index.js": `import core from "../../core/index.js";\n${tool(", inputSchema: { type: \"object\" }")}` }, /finding=imports-outside-plugin .*\.\.\/\.\.\/core/],
+      ["side-effect", { ...WEATHER_MANIFEST, id: "v-side" }, { "dist/index.js": `import { writeFileSync } from "node:fs";\nwriteFileSync("dropped.txt", "x");\n${tool(", inputSchema: { type: \"object\" }")}` }, /finding=side-effect-on-import .*dropped\.txt/],
+      ["no-register", { ...WEATHER_MANIFEST, id: "v-noreg" }, { "dist/index.js": "export const nothing = 1;\n" }, /finding=missing-register /],
+      ["no-schema", { ...WEATHER_MANIFEST, id: "v-schema" }, { "dist/index.js": tool("") }, /finding=tool-without-input-schema .*weather_now/],
+    ];
+    for (const [name, manifest, files, expected] of defects) {
+      const dir = await writePlugin(join(root, name), manifest, files);
+      const result = await cli(ws, env, "plugins", "validate", dir);
+      assert.equal(result.code, 1, `${name} exits 1: ${result.stdout}${result.stderr}`);
+      assert.match(result.stdout, expected, name);
+      assert.match(result.stdout, /result=fail/);
+    }
+    const good = await writePlugin(join(root, "good"), WEATHER_MANIFEST, { "dist/index.js": WEATHER_ENTRY("https://api.open-meteo.com").replace(/\s+ctx\.command\(\{ name: "help"[^\n]*\n/, "\n") });
+    const passed = await cli(ws, env, "plugins", "validate", good);
+    assert.equal(passed.code, 0, passed.stdout + passed.stderr);
+    assert.match(passed.stdout, /registration=tool:weather_now/);
+    assert.match(passed.stdout, /result=pass/);
+    assert.doesNotMatch(passed.stdout, /finding=/);
+    assert.equal(existsSync(join(ws, "dropped.txt")), false, "validation never writes the user's workspace");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
