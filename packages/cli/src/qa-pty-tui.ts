@@ -395,10 +395,10 @@ async function caseRealPtyInteraction(artifactDir: string, cliEntry: string): Pr
 
     evidence.stage = "submit-first-history-command";
     await submitPtyText(session, "/name pty-one");
-    await waitForPtyScreen(session, (screen) => stripAnsi(screen).includes("session=pty-one") && composerValue(screen) === "");
+    await waitForPtyScreen(session, (screen) => stripAnsi(screen).includes("Conversation named pty-one.") && composerValue(screen) === "");
     evidence.stage = "submit-second-history-command";
     await submitPtyText(session, "/name pty-two");
-    await waitForPtyScreen(session, (screen) => stripAnsi(screen).includes("session=pty-two") && composerValue(screen) === "");
+    await waitForPtyScreen(session, (screen) => stripAnsi(screen).includes("Conversation named pty-two.") && composerValue(screen) === "");
     evidence.stage = "navigate-history";
     await tmux(["send-keys", "-t", session, "Up"]);
     const historyLatest = await waitForPtyScreen(session, (screen) => composerValue(screen) === "/name pty-two");
