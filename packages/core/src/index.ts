@@ -74,5 +74,6 @@ export * from "./types.js";
 export * from "./workspace-observer.js";
 export * from "./plugin-bundles.js";
 export * from "./plugin-hub.js";
+export * from "./plugin-manifest.js";
 export * from "./workspace-undo.js";
 export * from "./rewind.js";

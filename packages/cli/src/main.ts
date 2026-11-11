@@ -267,6 +267,9 @@ import {
   expandPluginCommand,
   listPluginCommands,
   type InstalledPluginCommand,
+  describePermission,
+  isCodePlugin,
+  readCodePluginManifest,
   callCodexConversation,
   rewindTurns,
   forgetTurnMemories,
@@ -7820,6 +7823,10 @@ async function pluginsCommand(args: string[]): Promise<void> {
     return;
   }
   if (action === "inspect" && path) {
+    if (!isGitPluginSource(path) && await isCodePlugin(resolve(path))) {
+      await printCodePluginInspection(resolve(path));
+      return;
+    }
     if (isGitPluginSource(path) || await detectPluginBundle(resolve(path))) {
       await printPluginBundleInspection(isGitPluginSource(path) ? path : resolve(path));
       return;
@@ -7895,6 +7902,23 @@ async function pluginsCommand(args: string[]): Promise<void> {
 
 function pluginBundleSourceLabel(source: { readonly type: "local"; readonly path: string } | { readonly type: "git"; readonly url: string; readonly ref?: string }): string {
   return source.type === "local" ? `local:${source.path}` : `git:${source.url}${source.ref ? `#${source.ref}` : ""}`;
+}
+
+/** A code plugin's manifest and permissions in plain words. Reads `muster.plugin.json` only; the entry is never imported. */
+async function printCodePluginInspection(dir: string, source = dir): Promise<boolean> {
+  const report = await readCodePluginManifest(dir);
+  console.log(`id=${report.id ?? "-"} version=${report.version ?? "-"} kind=code${report.manifest ? ` entry=${report.manifest.entry}` : ""}`);
+  if (report.manifest?.description) console.log(`description="${cutAtWord(report.manifest.description, 80)}"`);
+  for (const permission of report.manifest?.permissions ?? []) console.log(`permission=${permission} means="${describePermission(permission)}"`);
+  if (report.manifest && !report.manifest.permissions.length) console.log("permissions=none");
+  for (const error of report.errors) console.log(`error field=${error.field} message="${error.message.replace(/"/g, "'")}"`);
+  console.log("runs_plugin_code=no");
+  if (report.errors.length) {
+    process.exitCode = 1;
+    return false;
+  }
+  console.log(`next=muster plugins install ${source}`);
+  return true;
 }
 
 /** What `install` would add, read without running any plugin code. Env and header values are never printed. */
