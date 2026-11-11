@@ -163,7 +163,7 @@ test("the registry lists every channel with its real capabilities", async () => 
   const registry = defaultChannelRegistry();
   assert.deepEqual(
     registry.list().map((adapter) => adapter.id).sort(),
-    ["discord", "email", "googlechat", "matrix", "slack", "teams", "telegram", "whatsapp", "whatsapp-cloud"],
+    ["discord", "email", "googlechat", "matrix", "slack", "sms", "teams", "telegram", "whatsapp", "whatsapp-cloud"],
   );
   const capability = (id: string) => registry.get(id)!.capabilities;
   for (const id of ["discord", "slack", "teams", "googlechat", "whatsapp-cloud"]) assert.equal(capability(id).buttons, true, `${id} declares buttons`);
@@ -190,7 +190,8 @@ test("the registry lists every channel with its real capabilities", async () => 
   const table = channelRegistryTable(registry, gateway);
   const lines = table.trimEnd().split("\n");
   assert.match(lines[0], /^channel\tlabel\tbuttons\tedit\tmax_text\tstatus$/);
-  assert.equal(lines.length, 10);
+  assert.equal(lines.length, 11);
+  assert.match(table, /^sms\tSMS \(Twilio\)\tno\tno\t1600\tnot configured$/m);
   assert.match(table, /^discord\tDiscord\tyes\tyes\t2000\tconfigured$/m);
   assert.match(table, /^teams\tMicrosoft Teams\tyes\tno\t28000\tconfigured$/m);
   assert.match(table, /^whatsapp\tWhatsApp \(linked device\)\tno\tno\t4096\tnot configured$/m);

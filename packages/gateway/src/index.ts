@@ -44,3 +44,6 @@ export * from "./channel-runner.js";
 export { DISCORD_GATEWAY_INTENTS, DiscordGatewayClient, runDiscordGateway } from "./channels/discord-gateway.js";
 export type { DiscordGatewayClientOptions, DiscordGatewayWorkerOptions } from "./channels/discord-gateway.js";
 export * from "./voice-notes.js";
+export * from "./twilio.js";
+export * from "./calls.js";
+export * from "./call-intercept.js";

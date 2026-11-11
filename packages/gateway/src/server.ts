@@ -57,6 +57,12 @@ import { ChannelDeliveryRejectedError, ChannelVerificationError } from "./channe
 import type { ChannelAdapter, ChannelContext } from "./channel-sdk.js";
 import { channelWebhookAdapter, deliverPreparedChannelReplies, runChannelWorker, serveChannelWebhook, verifyChannelWebhook, webhookPeer } from "./channel-runner.js";
 import type { ApprovalDeps } from "./channel-runner.js";
+import { ingestChannelInbound, openChannelRuntime } from "./channel-runner.js";
+import type { ChannelRuntime } from "./channel-runner.js";
+import { interceptOwnerMessage } from "./call-intercept.js";
+import { CallManager, gatewayCallTurnRunner } from "./calls.js";
+import type { CallApprovalSink, CallTurnRunner } from "./calls.js";
+import { smsChannel } from "./channels/sms.js";
 import { parseSlackBody, slackChannel } from "./channels/slack.js";
 import { telegramChannel } from "./channels/telegram.js";
 import { teamsUsesBotFramework } from "./channels/teams.js";
@@ -206,11 +212,21 @@ export interface GatewayServerOptions {
   readonly frappeAskIntentRouter?: FrappeAskIntentRouter;
   /** Isolated Ask artifact executor; injectable only by the gateway host for verification. */
   readonly frappeAskArtifactExecutor?: FrappeAskArtifactExecutor;
+  /** Phone calls (docs/spec/clauses/25-calls-sms.md). Created from gateway.calls when absent. */
+  readonly callManager?: CallManager;
+  /** The turn a call runs per utterance; defaults to a governed gateway turn. */
+  readonly callTurnRunner?: CallTurnRunner;
+  /** In-process call approval (a chat harness); defaults to the owner's notify channel. */
+  readonly callApproval?: CallApprovalSink;
+  /** Environment for `*Env` secret references; defaults to process.env. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface RunningGateway {
   readonly port: number;
   readonly server: Server;
+  /** Present when gateway.calls is configured. */
+  readonly calls?: CallManager;
   /** Wait until accepted background webhook work has finished. */
   waitForIdle(): Promise<void>;
   close(): Promise<void>;
@@ -1425,6 +1441,9 @@ export async function handleSurfaceMessage(
     return { status: "pairing_required", code: pending.code };
   }
   let paired = resolvedPairing;
+  // A y/n on a call card or a text during a call never starts a second turn.
+  const callReply = options.trustedFrappe ? undefined : await interceptOwnerMessage(message);
+  if (callReply) return callReply;
   if (options.trustedFrappe && paired.identity?.provider !== "frappe") {
     return { text: "This Frappe request could not be verified against a bound Frappe identity." };
   }
@@ -4249,6 +4268,20 @@ async function route(
     return;
   }
 
+  // Twilio call and SMS webhooks: authenticated by X-Twilio-Signature, not the bearer.
+  const callWebhook = url.pathname.match(/^\/v1\/calls\/twilio\/(voice|gather|wait|status|sms)$/);
+  if (request.method === "POST" && callWebhook) {
+    if (!options.callManager) {
+      sendJson(response, 404, { error: "Calls are not configured. Add calls to .muster/gateway.json." });
+      return;
+    }
+    const body = await readBody(request, 64_000);
+    const result = await options.callManager.handleTwilioWebhook(callWebhook[1]!, request.url ?? url.pathname, body, request.headers);
+    response.writeHead(result.status, { "content-type": result.contentType, "cache-control": "no-store" });
+    response.end(result.body);
+    return;
+  }
+
   const adapterMatch = url.pathname.match(/^\/v1\/adapters\/([a-z0-9-]+)$/);
   if (request.method === "POST" && adapterMatch) {
     const adapterId = canonicalAdapterRoute(adapterMatch[1]);
@@ -4393,6 +4426,19 @@ async function route(
     return;
   }
   const frappeAuthoritySecret = siteBinding?.secrets.hmacSecret ?? options.frappeRunCsrfSecret ?? options.gateway.token;
+
+  // call_contact from `muster mcp serve`: the manager re-checks the contact and asks the owner.
+  if (request.method === "POST" && url.pathname === "/v1/calls" && deploymentBearer) {
+    if (!options.callManager) throw new GatewayHttpError(404, "Calls are not configured. Add calls to .muster/gateway.json.");
+    const payload = parseJsonRecord(await readBody(request, 16_000), "Call request");
+    const outcome = await options.callManager.requestCall({
+      contact: typeof payload.contact === "string" ? payload.contact : "",
+      brief: typeof payload.brief === "string" ? payload.brief : "",
+      smsFallback: payload.smsFallback === true,
+    });
+    sendJson(response, outcome.status === "refused" ? 422 : 200, outcome);
+    return;
+  }
 
   if (request.method === "POST" && url.pathname === TRUSTED_FRAPPE_WORKFLOW_PROPOSALS_PATH) {
     const { scope } = authenticatedFrappeRunScope(request, frappeAuthoritySecret);
@@ -5023,6 +5069,34 @@ export function startGatewayServer(options: GatewayServerOptions, port = 0): Pro
   // One outbound queue per gateway: chat keys share retry_after backoff state.
   const queue = createOutboundQueue();
   const backgroundTasks = new Set<Promise<void>>();
+  let boundPortForCalls = port;
+  let smsRuntime: ChannelRuntime | undefined;
+  const ownsCallManager = options.callManager === undefined && options.gateway.calls !== undefined;
+  const callManager = options.callManager ?? (options.gateway.calls ? new CallManager({
+    cwd,
+    gateway: options.gateway,
+    fetcher: effectiveOptions.fetcher,
+    env: options.env ?? process.env,
+    log,
+    publicUrl: () => options.gateway.calls?.publicUrl ?? `http://127.0.0.1:${boundPortForCalls}`,
+    approve: options.callApproval,
+    track: (work) => trackBackgroundTask(backgroundTasks, work),
+    turnRunner: options.callTurnRunner ?? gatewayCallTurnRunner({
+      usdPer1kTokens: options.gateway.calls.modelUsdPer1kTokens,
+      runTurn: (message, pairing) => handleSurfaceMessage(message, { ...effectiveOptions, cwd, pairingOverride: pairing }),
+    }),
+    ingestSms: async (item) => {
+      smsRuntime ??= openChannelRuntime(smsChannel, {
+        gateway: options.gateway,
+        cwd,
+        fetcher: effectiveOptions.fetcher ?? fetch,
+        log,
+        env: options.env ?? process.env,
+      }, { config: options.config, registry: options.registry, enterprise, ingress });
+      await ingestChannelInbound(item, smsRuntime.deps);
+    },
+  }) : undefined);
+  const routeOptions: GatewayServerOptions = callManager ? { ...effectiveOptions, callManager } : effectiveOptions;
   const messageRuns = new AsyncMessageRunRegistry(messageRunStore);
   const frappeAskArtifactRoot = join(dataDir(cwd), "artifacts", "frappe-ask");
   const collectExpiredAskArtifacts = async (): Promise<void> => {
@@ -5039,7 +5113,7 @@ export function startGatewayServer(options: GatewayServerOptions, port = 0): Pro
   }, 15 * 60_000);
   artifactGcTimer.unref?.();
   const server = createServer((request, response) => {
-    route(request, response, effectiveOptions, queue, backgroundTasks, messageRuns).catch((error) => {
+    route(request, response, routeOptions, queue, backgroundTasks, messageRuns).catch((error) => {
       const detail = error instanceof Error ? error.message : String(error);
       const status = error instanceof GatewayHttpError
         ? error.status
@@ -5063,6 +5137,8 @@ export function startGatewayServer(options: GatewayServerOptions, port = 0): Pro
         await new Promise<void>((done) => server.close(() => done()));
       }
       clearInterval(artifactGcTimer);
+      if (ownsCallManager) await callManager?.close();
+      await smsRuntime?.close();
       closeWarmProviderTransports(nativeTransportOwner);
       if (ownsMessageRunStore) await messageRunStore.close?.();
       if (ownsFrappeMissionBridge) await frappeMissionBridge?.close();
@@ -5087,12 +5163,14 @@ export function startGatewayServer(options: GatewayServerOptions, port = 0): Pro
       .then(() => server.listen(port, "127.0.0.1", () => {
       const address = server.address();
       const boundPort = typeof address === "object" && address ? address.port : port;
+      boundPortForCalls = boundPort;
       started = true;
       log(`muster gateway listening on http://127.0.0.1:${boundPort}`);
       log(`enterprise ledger backend=${enterprise.backend}${enterprise.backend === "sqlite" ? " (durable local; inject an external store for multi-host deployment)" : ""}`);
       resolvePromise({
         port: boundPort,
         server,
+        ...(callManager ? { calls: callManager } : {}),
         waitForIdle: () => waitForBackgroundTasks(backgroundTasks),
         close: async () => {
           try {

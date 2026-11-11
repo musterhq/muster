@@ -9,6 +9,8 @@ import { addMemory, findMemory, formatMemoryScope, isVisibleInScopes, parseMemor
 import { activeProfile } from "./profiles.js";
 import { createAutomation, describeAutomation, formatAutomationsTable, listAutomations, MAX_ACTIVE_AUTOMATIONS, MAX_AUTOMATION_TEXT, WHEN_FORMS } from "./automations.js";
 import { removeSchedule } from "./scheduler.js";
+import { callsConfigured, gatewayCallToolHost, loadCallSettingsSync, screenCallRequest } from "./calls.js";
+import type { CallToolHost } from "./calls.js";
 import { listSkills } from "./skills.js";
 import { openSessionStore, type SessionSearchArgs } from "./sessions.js";
 import { buildCockpitState } from "./store.js";
@@ -38,6 +40,8 @@ export interface ToolContext {
   readonly toolAllowlist?: readonly string[];
   /** Test/host injection point; defaults to global fetch. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Places approved calls for call_contact; defaults to the running gateway. */
+  readonly calls?: CallToolHost;
 }
 
 export interface ToolEntry<A = Record<string, unknown>> {
@@ -146,6 +150,7 @@ export const BUILTIN_TOOLSETS: Record<string, ToolsetDef> = {
   sessions: { description: "Read-only search, navigation, and status over persisted local sessions", tools: ["session_search", "session_status"] },
   shell: { description: "Run allowlisted commands", tools: ["terminal"] },
   schedule: { description: "Create, list and remove reminders and routines", tools: ["schedule_manage"] },
+  calls: { description: "Phone a named contact after the owner approves", tools: ["call_contact"] },
   results: { description: "Fetch persisted oversized tool results", tools: ["result_fetch"] },
   skills: { description: "Read the skills the turn prompt lists", tools: ["skill_view"] },
   discovery: { description: "Search, describe, and call the authorized tool catalog", tools: ["tool_search", "tool_describe", "tool_call"] },
@@ -968,6 +973,29 @@ export function registerBuiltinTools(registry: ToolRegistryV2): void {
     },
     async handler(args, ctx) {
       return scheduleManage(args, ctx);
+    },
+  });
+  registry.register<{ contact?: unknown; brief?: unknown; smsFallback?: unknown }>({
+    name: "call_contact", toolset: "calls",
+    description: "Phone a contact by NAME from calls.contacts (for example owner or dentist) — never a phone number. Give a brief: the purpose, what you may agree to, and when to hang up. The owner sees an approval card first; nothing is dialled until they say yes. The call opens by saying it is an AI, and ends at the configured time and spend caps. Set smsFallback to text the brief if nobody answers.",
+    inputSchema: {
+      type: "object",
+      required: ["contact", "brief"],
+      properties: {
+        contact: { type: "string", description: "A contact name from calls.contacts, e.g. dentist." },
+        brief: { type: "string", maxLength: 1000, description: "Purpose, what the agent may agree to, and when to hang up." },
+        smsFallback: { type: "boolean", description: "Text the brief to the contact if the call is not answered." },
+      },
+    },
+    available: (ctx) => ctx.calls !== undefined || callsConfigured(loadCallSettingsSync(ctx.cwd)),
+    async handler(args, ctx) {
+      const settings = loadCallSettingsSync(ctx.cwd);
+      const refused = await screenCallRequest(ctx.cwd, settings, args);
+      if (refused) return { ok: false, error: refused.message };
+      const host = ctx.calls ?? gatewayCallToolHost(ctx.cwd, ctx.fetch);
+      const outcome = await host.requestCall({ contact: String(args.contact).trim(), brief: String(args.brief).trim(), smsFallback: args.smsFallback === true });
+      if (outcome.status === "refused") return { ok: false, error: outcome.message };
+      return { ok: true, data: outcome };
     },
   });
   registry.register<{ name: string }>({

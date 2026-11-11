@@ -4,6 +4,7 @@ import { emailChannel } from "./email.js";
 import { googleChatChannel } from "./googlechat.js";
 import { matrixChannel } from "./matrix.js";
 import { slackChannel } from "./slack.js";
+import { smsChannel } from "./sms.js";
 import { teamsChannel } from "./teams.js";
 import { telegramChannel } from "./telegram.js";
 import { whatsAppChannel } from "./whatsapp.js";
@@ -13,6 +14,7 @@ export { emailChannel, emailSurfaceId, parseEmailMessage } from "./email.js";
 export type { ParsedEmail } from "./email.js";
 export { matrixChannel, matrixSurfaceId } from "./matrix.js";
 export { slackChannel } from "./slack.js";
+export { SMS_RECIPIENT_REFUSAL, SMS_TEXT_LIMIT, smsChannel, smsInboundFromTwilio, smsRecipient, smsSurfaceId } from "./sms.js";
 export { telegramChannel } from "./telegram.js";
 export { callDiscord, discordApiBase, discordBotToken, discordChannel, discordGatewayMessageToSurfaceMessage, respondToDiscordInteraction } from "./discord.js";
 export type { DiscordGatewayMessage, DiscordInteractionHandle } from "./discord.js";
@@ -35,5 +37,6 @@ export function defaultChannelRegistry(): ChannelRegistry {
     whatsAppChannel,
     googleChatChannel,
     teamsChannel,
+    smsChannel,
   ]);
 }
