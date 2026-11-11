@@ -930,12 +930,13 @@ async function attemptRoute(
       });
       messages = rendered.map((message) => ({ role: message.role === "tool" ? "user" : message.role, content: message.content }));
     }
+    const promptAt = new Date().toISOString();
     const text = await completeChat({ provider, route, messages, timeoutMs: options.timeoutMs });
     if (options.onDelta && text) {
       for (const chunk of synthesizeDeltas(text)) options.onDelta(chunk);
     }
     if (store && sessionId && text) {
-      store.appendMessage(sessionId, "user", prompts.user);
+      store.appendMessage(sessionId, "user", prompts.user, promptAt);
       store.appendMessage(sessionId, "assistant", text);
     }
     return {

@@ -210,4 +210,4 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tui.test.ts` › "history times are local with a zone and the prompt keeps the turn's start time"
 - **Environment:** pure `formatLocalTimestamp` with fixed zones and clock; a session store in a temp folder.
 - **Known gaps:** messages stored before this change keep the answer's time for the prompt.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, built CLI, `/tmp/polish-rw`, one Codex turn then `chat --session hist-1 --history`: `user      12:55:35 GMT+5:30` / `assistant 12:56:02 GMT+5:30` (before: `user      07:22:44` / `assistant 07:22:44`, UTC with no marker, same time for both). Capture: `screens/polish/qa36-after-history.txt`. Red→green: chat-tui.test.ts.

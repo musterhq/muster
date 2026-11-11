@@ -24,16 +24,16 @@ export interface AgentToolEvent {
 
 /** `id: 4411, content: "QA lunch"`: an MCP call's arguments on one line. */
 export function summarizeToolArguments(value: unknown): string | undefined {
-  let parsed = value;
-  if (typeof parsed === "string") {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
     try {
-      parsed = JSON.parse(parsed);
+      parsed = JSON.parse(value);
     } catch {
-      return parsed.trim() || undefined;
+      return value.trim() || undefined;
     }
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed === undefined || parsed === null ? undefined : JSON.stringify(parsed);
-  const entries = Object.entries(parsed as Record<string, unknown>).map(([key, entry]) => `${key}: ${typeof entry === "string" ? JSON.stringify(entry) : JSON.stringify(entry) ?? String(entry)}`);
+  const entries = Object.entries(parsed as Record<string, unknown>).map(([key, entry]) => `${key}: ${JSON.stringify(entry) ?? String(entry)}`);
   const line = entries.join(", ");
   return line ? (line.length > 400 ? `${line.slice(0, 399)}…` : line) : undefined;
 }

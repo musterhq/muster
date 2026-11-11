@@ -89,7 +89,8 @@ export interface SessionStore {
   createSession(input: { channel: string; peer: string; title?: string; parentId?: string; workspaceCwd?: string | null }): SessionRow;
   /** Reuse the most recent session for (channel, peer), or create one — the conversation↔session mapping for multi-turn continuity. */
   findOrCreateSession(input: { channel: string; peer: string; title?: string; parentId?: string; workspaceCwd?: string | null }): SessionRow;
-  appendMessage(sessionId: string, role: string, content: string): MessageRow;
+  /** `createdAt` (ISO) records when the message was written, e.g. a prompt stored after its answer arrived. */
+  appendMessage(sessionId: string, role: string, content: string, createdAt?: string): MessageRow;
   addUsage(sessionId: string, tokensIn: number, tokensOut: number, costUsd?: number): void;
   setTitle(sessionId: string, title: string): void;
   setWorkspaceCwd(sessionId: string, workspaceCwd: string | null): void;
@@ -194,8 +195,8 @@ export function openSessionStore(cwd = process.cwd()): SessionStore {
             .all(input.channel, input.peer, workspaceCwd) as Record<string, unknown>[];
       return rows.length ? toSession(rows[0]) : makeSession(input);
     },
-    appendMessage(sessionId, role, content) {
-      const createdAt = new Date().toISOString();
+    appendMessage(sessionId, role, content, at) {
+      const createdAt = at ?? new Date().toISOString();
       const tokenCount = estimateTokens(content);
       const result = db.prepare("INSERT INTO messages (session_id, role, content, token_count, created_at) VALUES (?,?,?,?,?)")
         .run(sessionId, role, content, tokenCount, createdAt) as { lastInsertRowid: number | bigint };

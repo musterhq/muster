@@ -15,7 +15,7 @@ import {
   type MissionTaskRunResult,
   type OrchestrationDeps,
 } from "./chat-orchestration.js";
-import { commandUsageLines, cutAtWord, trimDanglingCodeFence } from "./output.js";
+import { commandUsageLines, cutAtWord, formatLocalTimestamp, trimDanglingCodeFence } from "./output.js";
 import {
   buildCapabilityOverlayOptions,
   composerTextForCapabilityAction,
@@ -3303,7 +3303,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       ...(outcome.codexThreadId ? { threadId: outcome.codexThreadId } : {}),
     }].slice(-50);
   }
-  persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state));
+  persistChatTranscriptIfMissing(state.sessionName, prompt, outcome, chatSessionWorkspaceCwd(state), turnStartedAt);
   writeChatSessionRoute(state.sessionName, { runtime: state.runtime, provider: state.provider, model: state.model });
   state.pendingContinuityContext = undefined;
   recordChatUsage(state, outcome.tokens);
@@ -4082,7 +4082,7 @@ function uniqueMemoryScopes(scopes: readonly MemoryScope[]): MemoryScope[] {
   return [...new Map(scopes.map((scope) => [formatMemoryScope(scope), scope])).values()];
 }
 
-function persistChatTranscriptIfMissing(sessionName: string, prompt: string, outcome: RunOutcome, workspaceCwd: string): void {
+function persistChatTranscriptIfMissing(sessionName: string, prompt: string, outcome: RunOutcome, workspaceCwd: string, promptAt?: number): void {
   const store = openSessionStore();
   try {
     const session = store.findOrCreateSession({ channel: "cli-chat", peer: sessionName, title: sessionName, workspaceCwd });
@@ -4091,7 +4091,7 @@ function persistChatTranscriptIfMissing(sessionName: string, prompt: string, out
     const lastTwo = messages.slice(-2);
     const alreadyStored = lastTwo[0]?.role === "user" && lastTwo[0].content === prompt && lastTwo[1]?.role === "assistant" && lastTwo[1].content === outcome.episode.responseText;
     if (!alreadyStored) {
-      store.appendMessage(session.id, "user", prompt);
+      store.appendMessage(session.id, "user", prompt, promptAt === undefined ? undefined : new Date(promptAt).toISOString());
       store.appendMessage(session.id, "assistant", outcome.episode.responseText);
     }
     store.addUsage(session.id, outcome.tokens.inputTokens, outcome.tokens.outputTokens, outcome.tokens.costUsd ?? 0);
@@ -4296,7 +4296,7 @@ function printChatHistory(sessionName: string, limit: number, workspaceCwd = pro
 
 function printChatMessage(message: MessageRow): void {
   const roleColor = message.role === "assistant" ? "green" : message.role === "user" ? "cyan" : "dim";
-  console.log(color(`${message.role.padEnd(9)} ${message.createdAt.slice(11, 19)}`, roleColor));
+  console.log(color(`${message.role.padEnd(9)} ${formatLocalTimestamp(message.createdAt)}`, roleColor));
   for (const line of wrapPreserveLines(message.content, Math.min(process.stdout.columns || 100, 120) - 4).slice(0, 12)) {
     console.log(`  ${line}`);
   }

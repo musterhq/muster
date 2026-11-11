@@ -44,3 +44,21 @@ export function cutAtWord(value: string, max: number): string {
   }
   return `${cut.trimEnd()}…`;
 }
+
+/**
+ * A stored ISO time in the viewer's zone with a zone marker: `12:52:44 GMT+5:30`,
+ * with the date in front when it is not today.
+ */
+export function formatLocalTimestamp(iso: string, options: { readonly timeZone?: string; readonly now?: number } = {}): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const parts = (date: Date) => Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: options.timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZoneName: "short",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  const p = parts(at);
+  const today = parts(new Date(options.now ?? Date.now()));
+  const day = `${p.year}-${p.month}-${p.day}`;
+  const time = `${p.hour}:${p.minute}:${p.second} ${p.timeZoneName}`;
+  return day === `${today.year}-${today.month}-${today.day}` ? time : `${day} ${time}`;
+}
