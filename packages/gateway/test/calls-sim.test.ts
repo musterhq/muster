@@ -63,6 +63,7 @@ test("a simulated call survives a slow tool and a dropped socket", async () => {
     const deadAir = Math.max(...play.webhooks.map((hook) => hook.latencyMs));
     assert.ok(deadAir <= 1_500, `longest silence ${deadAir} ms`);
     assert.equal(turns.length, 3, "the retried request after the drop does not run the turn again");
+    assert.equal(running.calls!.webhookStats().replays, 1, "the dropped request was retried and answered from the first result");
     assert.ok(play.webhooks.every((hook) => hook.status === 200));
 
     const records = (await readCallLedger(cwd)).filter((entry) => entry.kind === "call.record");
