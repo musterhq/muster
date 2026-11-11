@@ -126,3 +126,57 @@ test("while an approval waits, the cell and the spinner say so and the timer sto
   release();
   await turn;
 });
+
+// Spec: MUS-SPEC-10-1I (docs/spec/clauses/10-access-approvals.md#mus-spec-10-1i--an-answered-approval-folds-into-its-cell-and-the-wait-is-not-counted-as-run-time)
+test("an answered approval folds into its cell and the wait is not run time", async () => {
+  const { createNarrationPainter } = await import("../src/chat-tui.js");
+  let sinkRef!: MusterChatSink;
+  let release!: () => void;
+  const chat = createMusterChatHarness({
+    onSubmit: (_text, sink) => new Promise<boolean>((done) => { sinkRef = sink; release = () => done(true); }),
+  });
+  chat.type("make a file");
+  const turn = chat.submit();
+  await tick();
+  let now = 0;
+  const painter = createNarrationPainter({ emit: (line) => sinkRef.appendLine(line), block: (id, render) => sinkRef.upsertBlock(id, render), now: () => now });
+  const command = "/bin/zsh -lc 'touch a.txt'";
+  painter.tool({ phase: "start", id: "item-1", kind: "command", title: command });
+  const request = { id: "item-1", kind: "command" as const, title: command };
+  now = 100;
+  painter.approval(request, "waiting");
+  const decided = sinkRef.requestApproval(request);
+  now = 6_100;
+  chat.input("y");
+  const decision = await decided;
+  assert.equal(decision, "accept");
+  painter.approval(request, "answered", decision);
+  now = 6_150;
+  painter.tool({ phase: "end", id: "item-1", kind: "command", title: command, exitCode: 0, durationMs: 0 });
+  const shown = plain(chat.transcript());
+  const at = shown.findIndex((row) => row.includes("Bash(touch a.txt)"));
+  assert.equal(shown[at + 1], "  ⎿ approved once · exit 0 · 50ms", "the decision leads the result line and the wait is not run time");
+  assert.equal(shown.filter((row) => row.includes("approved once")).length, 1, "no separate answered card");
+  assert.equal(shown.some((row) => /Run touch a\.txt\?/.test(row)), false);
+
+  // A provider-reported duration that spans the wait is corrected too.
+  painter.tool({ phase: "start", id: "item-2", kind: "command", title: "/bin/zsh -lc 'ls'" });
+  const second = { id: "item-2", kind: "command" as const, title: "/bin/zsh -lc 'ls'" };
+  now = 7_000;
+  painter.approval(second, "waiting");
+  now = 9_000;
+  painter.approval(second, "answered", "acceptForSession");
+  painter.tool({ phase: "end", id: "item-2", kind: "command", title: "/bin/zsh -lc 'ls'", exitCode: 0, durationMs: 2_300 });
+  const after = plain(chat.transcript());
+  assert.equal(after[after.findIndex((row) => row.includes("Bash(ls)")) + 1], "  ⎿ approved for this session · exit 0 · 300ms");
+
+  // No matching cell: the settled card stays, as before.
+  const orphan = { id: "x-9", kind: "edit" as const, title: "notes.md" };
+  const orphanDecision = sinkRef.requestApproval(orphan);
+  chat.input("y");
+  painter.approval(orphan, "answered", await orphanDecision);
+  assert.ok(plain(chat.transcript()).some((row) => row.includes("Allow notes.md?")), "the settled card stays when there is no cell");
+  painter.finish();
+  release();
+  await turn;
+});

@@ -239,3 +239,18 @@ test("MCP cells show the arguments and summarise a JSON result", () => withNoCol
   chat.input("\x0f");
   assert.ok(plain(chat.transcript()).some((row) => row.includes("\"redactionState\": \"none\"")), "ctrl+o shows the full JSON");
 }));
+
+// Spec: MUS-SPEC-01-10A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-10a--tool-cells-are-named-for-the-tool-on-every-runtime)
+test("tool cells are named for the tool on claude and pi", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  painter().tool({ phase: "start", id: "r1", kind: "tool", name: "Read", title: "Read notes.md" });
+  painter().tool({ phase: "end", id: "r1", kind: "tool", name: "Read", title: "Read notes.md", output: "hello" });
+  painter().tool({ phase: "start", id: "g1", kind: "tool", name: "Grep", title: "Grep TODO" });
+  painter().tool({ phase: "start", id: "p1", kind: "tool", name: "Read", title: "read a.ts" });
+  const text = plain(chat.transcript()).join("\n");
+  assert.match(text, /⏺ Read\(notes\.md\)/);
+  assert.match(text, /⏺ Grep\(TODO\)/);
+  assert.match(text, /⏺ Read\(a\.ts\)/);
+  assert.doesNotMatch(text, /Tool\(/);
+  await finish();
+}));

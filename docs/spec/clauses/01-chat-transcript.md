@@ -211,3 +211,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure `formatLocalTimestamp` with fixed zones and clock; a session store in a temp folder.
 - **Known gaps:** messages stored before this change keep the answer's time for the prompt.
 - **Evidence:** live, 2026-11-11, built CLI, `/tmp/polish-rw`, one Codex turn then `chat --session hist-1 --history`: `user      12:55:35 GMT+5:30` / `assistant 12:56:02 GMT+5:30` (before: `user      07:22:44` / `assistant 07:22:44`, UTC with no marker, same time for both). Capture: `screens/polish/qa36-after-history.txt`. Red→green: chat-tui.test.ts.
+
+## MUS-SPEC-01-10A — Tool cells are named for the tool, on every runtime
+
+- **Precondition:** a Claude Code turn calls `Read` on `notes.md` and `Grep` for `TODO`; a pi turn calls `read` on `a.ts`.
+- **Action:** the runtimes emit their tool events.
+- **Expected result:** the cells read `⏺ Read(notes.md)`, `⏺ Grep(TODO)` and `⏺ Read(a.ts)`, never `Tool(Read notes.md)`. Commands stay `Bash(…)`, MCP calls stay `MCP(…)`.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "tool cells are named for the tool on claude and pi"
+- **Environment:** harness sink and painter; core event mappers.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
