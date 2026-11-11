@@ -7810,6 +7810,9 @@ async function pluginMarketplaceCommand(args: string[]): Promise<void> {
 
 async function pluginsCommand(args: string[]): Promise<void> {
   const [action, path] = args;
+  // Commands that read or change the plugin config create it on first use,
+  // instead of failing with a raw ENOENT; inspect, validate and search stay read-only.
+  if (action && ["install", "enable", "disable", "remove", "uninstall", "list", "setup"].includes(action)) await ensureDefaultConfig(process.cwd());
   if (action === "marketplace" || action === "marketplaces") {
     await pluginMarketplaceCommand(args.slice(1));
     return;
