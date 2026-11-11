@@ -120,4 +120,4 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Test:** `packages/cli/test/chat-composer.test.ts` › "a long paste is a short preview in the transcript and whole for the model"
 - **Environment:** chat harness, NO_COLOR.
 - **Known gaps:** `--history` and `/history` still print stored prompts up to their own 12-row cap.
-- **Evidence:** UNVERIFIED
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, a 24.6k-character, 201-line bracketed paste (`[paste #1 +201 lines]` chip): the transcript shows `> Reply with just: ok. …`, two `filler row …ip…` rows cut to the width, then `… +197 lines (pasted)`; the model answered `ok` with ~30k input tokens, so it received the whole paste (before: about 200 rows echoed, S/49-longpaste). Capture: `screens/polish/qa37-after-paste.ansi`. Red→green: chat-composer.test.ts.

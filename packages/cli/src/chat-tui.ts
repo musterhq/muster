@@ -411,6 +411,30 @@ export function formatUserLine(text: string): string {
   return `${dim(">")} ${text}`;
 }
 
+/** The composer turns a paste into a chip above these sizes; the transcript previews such a message the same way. */
+const PASTE_PREVIEW_LINES = 10;
+const PASTE_PREVIEW_CHARS = 1000;
+
+/**
+ * A submitted message as the transcript shows it: whole when short; a long
+ * paste as its first three lines plus `… +N lines (pasted)`. The model still
+ * receives the full text — this is only what is painted.
+ */
+export function formatUserTurn(text: string, width = 204): string {
+  const lines = text.split(/\r?\n/);
+  if (lines.length <= PASTE_PREVIEW_LINES && text.length <= PASTE_PREVIEW_CHARS) return formatUserLine(text);
+  // The transcript wraps at width - 2; the row also carries a two-column gutter.
+  const room = Math.max(20, width - 4);
+  const cut = (line: string) => (visibleWidth(line) > room ? `${truncateToWidth(line, room - 1, "")}…` : line);
+  if (lines.length <= 3) {
+    const head = text.replace(/\s+/g, " ").trim();
+    const shown = truncateToWidth(head, room - 1, "");
+    return `${formatUserLine(`${shown}…`)}\n  ${dim(`… +${head.length - shown.length} chars (pasted)`)}`;
+  }
+  const shown = lines.slice(0, 3).map(cut);
+  return [formatUserLine(shown[0]!), ...shown.slice(1).map((line) => `  ${line}`), `  ${dim(`… +${lines.length - 3} lines (pasted)`)}`].join("\n");
+}
+
 /**
  * True for a user turn in scrollback. Assistant prose can legitimately contain
  * a markdown blockquote, so the test is anchored at column 0 — every assistant
@@ -1602,7 +1626,7 @@ export class RunningTurnInput {
         steered = false;
       }
       if (steered) {
-        appendLine(formatUserLine(value));
+        appendLine(formatUserTurn(value));
         appendLine(`  ${dim(`${RESULT_ELBOW} sent to the running turn`)}`);
         return;
       }
@@ -2294,7 +2318,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     // Breathing room, the Claude Code rhythm: one blank row before each user
     // turn so blocks read as blocks, never as a stacked log.
     if (this.lines.length && stripAnsi(this.lines[this.lines.length - 1] ?? "").trim() !== "") this.appendLine("");
-    this.appendLine(formatUserLine(text));
+    this.appendLine(formatUserTurn(text, this.tui.terminal.columns));
   }
 
   clearTranscript(): void {
@@ -2799,7 +2823,7 @@ class HarnessSink implements MusterChatSink {
   }
 
   appendUser(text: string): void {
-    this.appendLine(formatUserLine(text));
+    this.appendLine(formatUserTurn(text));
   }
 
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
