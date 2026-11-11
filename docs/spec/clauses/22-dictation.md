@@ -72,3 +72,13 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Environment:** as 22-1A.
 - **Known gaps:** none.
 - **Evidence:** green 2026-11-11 on `feat/dictation`: CLI `test/chat-dictation.test.ts` with chat-composer, voice and ux-guards, 35/35 four runs in a row at concurrency 1; `qa run pty_tui` passed.
+
+## MUS-SPEC-22-2B — Dictated text continues a sentence in lower case
+
+- **Precondition:** the composer holds text that does not end a sentence (`please `), or ends one (`Done. `), or is empty.
+- **Action:** dictation inserts the transcript `Add a unit test.` (whisper capitalises every clip).
+- **Expected result:** after `please ` the composer reads `please add a unit test.`; after `Done. ` and in an empty composer, the capital stays. Words that are capitals for a reason stay as they are (`I`, `API`, `GitHub`).
+- **Test:** `packages/cli/test/chat-dictation.test.ts` › "dictated text continues a sentence in lower case"
+- **Environment:** pure function.
+- **Known gaps:** none.
+- **Evidence:** green 2026-11-11: CLI `test/chat-dictation.test.ts` 7/7 (red first: `Add a unit test.` stayed capitalised after `please `). Seen live in the 22-1A run, where whisper's `Add` followed `please `.

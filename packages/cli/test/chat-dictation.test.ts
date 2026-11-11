@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { dictationInsertText } from "../src/dictation.js";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -288,4 +289,15 @@ test("dictation is listed in shortcuts and leaves a voice receipt", { timeout: 1
   } finally {
     await ws.done();
   }
+});
+
+// Spec: MUS-SPEC-22-2B (docs/spec/clauses/22-dictation.md#mus-spec-22-2b--dictated-text-continues-a-sentence-in-lower-case)
+test("dictated text continues a sentence in lower case", () => {
+  assert.equal(dictationInsertText("please ", "Add a unit test."), "add a unit test.");
+  assert.equal(dictationInsertText("please", "Add a unit test."), " add a unit test.");
+  assert.equal(dictationInsertText("Done. ", "Add a unit test."), "Add a unit test.");
+  assert.equal(dictationInsertText("", "Add a unit test."), "Add a unit test.");
+  assert.equal(dictationInsertText("please ", "I think so."), "I think so.");
+  assert.equal(dictationInsertText("check ", "API keys first."), "API keys first.");
+  assert.equal(dictationInsertText("open ", "GitHub issues."), "GitHub issues.");
 });
