@@ -404,3 +404,23 @@ test("validate names each defect and passes a good plugin", { timeout: 240_000 }
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-23-3C (docs/spec/clauses/23-plugin-api.md#mus-spec-23-3c--install-works-in-a-folder-muster-has-not-seen-yet)
+test("install works in a folder without .muster and inspect still writes nothing", { timeout: 240_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-plugapi-fresh-"));
+  try {
+    const ws = join(root, "ws");
+    await mkdir(ws, { recursive: true });
+    const env = { ...process.env, HOME: join(root, "home"), MUSTER_HOME: join(root, "home", ".muster") };
+    const plugin = await writePlugin(join(root, "weather"), WEATHER_MANIFEST, { "dist/index.js": WEATHER_ENTRY("http://127.0.0.1:9") });
+    assert.equal((await cli(ws, env, "plugins", "inspect", plugin)).code, 0);
+    assert.equal(existsSync(join(ws, ".muster")), false, "inspect creates nothing");
+    const installed = await cli(ws, env, "plugins", "install", plugin, "--yes");
+    assert.equal(installed.code, 0, installed.stderr);
+    assert.doesNotMatch(installed.stderr, /ENOENT/);
+    const listed = await cli(ws, env, "plugins", "list");
+    assert.match(listed.stdout, /weather/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

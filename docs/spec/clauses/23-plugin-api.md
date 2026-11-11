@@ -130,6 +130,16 @@ Entry: `export async function register(ctx) { ctx.tool({...}); ctx.hook("tool.af
 - **Known gaps:** none.
 - **Evidence:** UNVERIFIED
 
+## MUS-SPEC-23-3C — Install works in a folder Muster has not seen yet
+
+- **Precondition:** a folder with no `.muster/`; the weather plugin.
+- **Action:** `muster plugins inspect <dir>`, then `muster plugins install <dir> --yes`, then `muster plugins list`.
+- **Expected result:** inspect creates nothing. Install creates the default config and installs the plugin (exit 0, no raw `ENOENT`). List shows it.
+- **Test:** `packages/cli/test/plugin-api.test.ts` › "install works in a folder without .muster and inspect still writes nothing"
+- **Environment:** temp dirs.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
 ## MUS-SPEC-23-3B — `muster plugins validate` is the catalog gate
 
 - **Precondition:** plugins with each defect:
