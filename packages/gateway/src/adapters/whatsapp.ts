@@ -55,6 +55,13 @@ interface WhatsAppMessageContent {
   readonly extendedTextMessage?: { readonly text?: string | null; readonly contextInfo?: WhatsAppContextInfo | null } | null;
   readonly imageMessage?: { readonly caption?: string | null; readonly contextInfo?: WhatsAppContextInfo | null } | null;
   readonly videoMessage?: { readonly caption?: string | null; readonly contextInfo?: WhatsAppContextInfo | null } | null;
+  readonly audioMessage?: {
+    readonly mimetype?: string | null;
+    readonly seconds?: number | null;
+    readonly fileLength?: number | string | null;
+    readonly ptt?: boolean | null;
+    readonly contextInfo?: WhatsAppContextInfo | null;
+  } | null;
   readonly ephemeralMessage?: { readonly message?: WhatsAppMessageContent | null } | null;
   readonly viewOnceMessage?: { readonly message?: WhatsAppMessageContent | null } | null;
   readonly viewOnceMessageV2?: { readonly message?: WhatsAppMessageContent | null } | null;
@@ -82,7 +89,7 @@ export interface WhatsAppDoctorResult {
   readonly detail: string;
 }
 
-interface BaileysSocket {
+export interface BaileysSocket {
   readonly ev: {
     on(event: string, listener: (...args: any[]) => void): void;
   };
@@ -92,8 +99,10 @@ interface BaileysSocket {
   end(error?: Error): void;
 }
 
-interface BaileysModule {
+export interface BaileysModule {
   readonly default: (options: Record<string, unknown>) => BaileysSocket;
+  /** Media download for inbound voice notes. */
+  readonly downloadMediaMessage?: (message: WhatsAppWebMessage, type: "buffer", options: Record<string, unknown>) => Promise<Uint8Array>;
   readonly useMultiFileAuthState: (directory: string) => Promise<{ readonly state: unknown; readonly saveCreds: () => Promise<void> }>;
   readonly fetchLatestBaileysVersion?: () => Promise<{ readonly version: readonly number[] }>;
 }
@@ -105,6 +114,11 @@ export interface WhatsAppConnectionManagerOptions {
   readonly log?: (line: string) => void;
   readonly onQr?: (payload: string) => void;
   readonly onMessage: (message: SurfaceMessage) => Promise<SurfaceReply | PairingChallenge>;
+  /**
+   * Hand admitted messages to the channel SDK instead of answering here.
+   * `preAuthorized` is true when the group policy (not pairing) admitted it.
+   */
+  readonly onInbound?: (message: SurfaceMessage, inbound: WhatsAppWebMessage, meta: { readonly preAuthorized: boolean; readonly socket: BaileysSocket; readonly baileys: BaileysModule }) => void;
   readonly loadBaileys?: () => Promise<BaileysModule>;
   readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -167,7 +181,7 @@ function messageText(content: WhatsAppMessageContent | null | undefined): string
 
 function contextInfo(content: WhatsAppMessageContent | null | undefined): WhatsAppContextInfo | undefined {
   const message = unwrapMessage(content);
-  return message?.extendedTextMessage?.contextInfo ?? message?.imageMessage?.contextInfo ?? message?.videoMessage?.contextInfo ?? undefined;
+  return message?.extendedTextMessage?.contextInfo ?? message?.imageMessage?.contextInfo ?? message?.videoMessage?.contextInfo ?? message?.audioMessage?.contextInfo ?? undefined;
 }
 
 /** Pure Baileys-message mapper. Group participant JIDs become senderId/actorId downstream. */
@@ -187,6 +201,35 @@ export function whatsAppWebMessageToSurfaceMessage(message: WhatsAppWebMessage, 
     text,
     replyTo: context?.stanzaId ?? message.key?.id ?? undefined,
     raw: { message, ...(displayMetadata ? { displayMetadata } : {}) },
+  };
+}
+
+/** Audio attachments carry this pseudo-url; the channel downloads them through Baileys. */
+export const WHATSAPP_WEB_MEDIA_URL_PREFIX = "whatsapp-web:";
+
+/** A voice note (or other audio) as an envelope attachment for the shared voice path. */
+export function whatsAppWebAudioToSurfaceMessage(message: WhatsAppWebMessage, options: WhatsAppInboundOptions = {}): SurfaceMessage | undefined {
+  const conversationId = message.key?.remoteJid ?? undefined;
+  const audio = unwrapMessage(message.message)?.audioMessage;
+  if (!conversationId || !audio || !message.key?.id || message.key.fromMe) return undefined;
+  const group = isWhatsAppGroupJid(conversationId);
+  const senderId = group ? message.key.participant ?? undefined : conversationId;
+  if (!senderId) return undefined;
+  const size = typeof audio.fileLength === "string" ? Number(audio.fileLength) : audio.fileLength ?? undefined;
+  return {
+    surfaceId: `whatsapp:${options.account?.trim() || DEFAULT_ACCOUNT}`,
+    conversationId,
+    senderId,
+    text: "",
+    attachments: [{
+      name: audio.ptt ? "voice-note.ogg" : "audio.ogg",
+      mime: audio.mimetype?.split(";")[0]?.trim() || "audio/ogg",
+      url: `${WHATSAPP_WEB_MEDIA_URL_PREFIX}${message.key.id}`,
+      ...(typeof audio.seconds === "number" ? { seconds: audio.seconds } : {}),
+      ...(typeof size === "number" && Number.isFinite(size) ? { sizeBytes: size } : {}),
+    }],
+    replyTo: message.key.id,
+    raw: { message, ...(group && options.groupSubject ? { displayMetadata: { groupSubject: options.groupSubject } } : {}) },
   };
 }
 
@@ -333,6 +376,9 @@ export class WhatsAppConnectionManager {
 
   waitUntilReady(): Promise<void> { return this.#ready; }
 
+  /** The current linked-device socket, while connected. */
+  get socket(): BaileysSocket | undefined { return this.#socket; }
+
   stop(): void {
     this.#stopped = true;
     this.#socket?.end(new Error("Muster WhatsApp connection stopped."));
@@ -372,7 +418,7 @@ export class WhatsAppConnectionManager {
     });
     socket.ev.on("messages.upsert", (event: { readonly type?: string; readonly messages?: readonly WhatsAppWebMessage[] }) => {
       if (event.type !== "notify") return;
-      for (const message of event.messages ?? []) void this.#handleInbound(socket, message);
+      for (const message of event.messages ?? []) void this.#handleInbound(socket, message, baileys);
     });
     return await new Promise<"closed" | "logged_out">((resolvePromise) => {
       socket.ev.on("connection.update", (update: { readonly connection?: string; readonly qr?: string; readonly lastDisconnect?: { readonly error?: unknown } }) => {
@@ -400,7 +446,7 @@ export class WhatsAppConnectionManager {
     });
   }
 
-  async #handleInbound(socket: BaileysSocket, inbound: WhatsAppWebMessage): Promise<void> {
+  async #handleInbound(socket: BaileysSocket, inbound: WhatsAppWebMessage, baileys: BaileysModule): Promise<void> {
     const remoteJid = inbound.key?.remoteJid ?? undefined;
     if (!remoteJid || inbound.key?.fromMe) return;
     const botJid = socket.user?.id ?? undefined;
@@ -414,6 +460,12 @@ export class WhatsAppConnectionManager {
       });
       if (!policyInput || !evaluateWhatsAppGroupPolicy(policyInput).allowed) return;
       groupSubject = await socket.groupMetadata(remoteJid).then((metadata) => metadata.subject ?? undefined).catch(() => undefined);
+    }
+    if (this.#options.onInbound) {
+      const message = whatsAppWebMessageToSurfaceMessage(inbound, { account: this.#options.config.account, botJid, groupSubject })
+        ?? whatsAppWebAudioToSurfaceMessage(inbound, { account: this.#options.config.account, groupSubject });
+      if (message) this.#options.onInbound(message, inbound, { preAuthorized: isWhatsAppGroupJid(remoteJid), socket, baileys });
+      return;
     }
     const message = whatsAppWebMessageToSurfaceMessage(inbound, { account: this.#options.config.account, botJid, groupSubject });
     if (!message) return;

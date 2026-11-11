@@ -218,10 +218,11 @@ test("personal whatsapp on the sdk answers DMs and allowed mentions only and tra
       { key: { id: "24-3b-voice", remoteJid: OWNER }, message: { audioMessage: { mimetype: "audio/ogg; codecs=opus", seconds: 3, ptt: true, fileLength: VOICE_BYTES.length } } },
     ]);
     await baileys.waitForSent(3);
-    assert.deepEqual(baileys.sent.map((entry) => entry.jid), [OWNER, G1, OWNER]);
-    assert.equal(baileys.sent[0].text, "four");
-    assert.equal(baileys.sent[1].text, "four");
-    assert.equal(baileys.sent[2].text, "🎙 \"what is two plus two\"\n\nfour");
+    // Group messages wait for the group subject, so arrival order across chats may differ.
+    const repliesTo = (jid: string) => baileys.sent.filter((entry) => entry.jid === jid).map((entry) => entry.text).sort();
+    assert.deepEqual(repliesTo(OWNER), ["four", "🎙 \"what is two plus two\"\n\nfour"]);
+    assert.deepEqual(repliesTo(G1), ["four"]);
+    assert.deepEqual(repliesTo(G2), []);
     assert.deepEqual(baileys.downloads, ["24-3b-voice"]);
     assert.deepEqual((await readFakeVoiceCalls(tools.log)).map((call) => call.tool), ["ffmpeg", "whisper-cli"]);
     assert.equal(llm.prompts.length, 3, "the unmentioned G1 message and the G2 mention start no turn");

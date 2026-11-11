@@ -49,14 +49,13 @@ import {
 import { surfaceReplyToTelegramSend, telegramCallbackQueryId, telegramUpdateToSurfaceMessage } from "./adapters/telegram.js";
 import type { TelegramSendMessagePayload } from "./adapters/telegram.js";
 import { slackDeliveryId, slackEventToSurfaceMessage, surfaceReplyToSlackPost } from "./adapters/slack.js";
-import { runWhatsAppConnection } from "./adapters/whatsapp.js";
 import { whatsAppVerifyChallenge } from "./adapters/whatsapp-cloud.js";
 import type { GchatRequestVerifier } from "./adapters/gchat.js";
 import { createGoogleChatRequestVerifier } from "./google-chat-verifier.js";
 import { createOutboundQueue, createSlackDraftSink, createTelegramDraftSink } from "./streaming.js";
 import { ChannelDeliveryRejectedError, ChannelVerificationError } from "./channel-sdk.js";
 import type { ChannelAdapter, ChannelContext } from "./channel-sdk.js";
-import { channelWebhookAdapter, deliverPreparedChannelReplies, serveChannelWebhook, verifyChannelWebhook, webhookPeer } from "./channel-runner.js";
+import { channelWebhookAdapter, deliverPreparedChannelReplies, runChannelWorker, serveChannelWebhook, verifyChannelWebhook, webhookPeer } from "./channel-runner.js";
 import type { ApprovalDeps } from "./channel-runner.js";
 import { parseSlackBody, slackChannel } from "./channels/slack.js";
 import { telegramChannel } from "./channels/telegram.js";
@@ -3387,44 +3386,25 @@ export interface WhatsAppSocketOptions extends GatewayServerOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Linked-device WhatsApp worker; Baileys owns the socket, Muster owns policy and the governed envelope. */
+/**
+ * Linked-device WhatsApp worker. Baileys owns the socket, the channel's group
+ * policy admits messages, and the shared SDK runner owns pairing, durable
+ * ingress, voice notes and the governed envelope.
+ */
 export async function pollWhatsApp(options: WhatsAppSocketOptions): Promise<void> {
-  const whatsapp = options.gateway.whatsapp;
-  if (!whatsapp) throw new Error("WhatsApp is not configured. Run: muster channels setup whatsapp");
-  const cwd = options.cwd ?? process.cwd();
-  const log = options.log ?? ((line: string) => console.log(line));
-  const ownsApprovalStore = options.approvalStore === undefined;
-  const approvalStore = options.approvalStore ?? new SqliteApprovalActionStore(join(dataDir(cwd), "enterprise-control-plane.db"));
-  const approvalActions = options.approvalActions ?? createApprovalActionCodec({
-    secret: createHash("sha256").update(`muster-approval:${options.gateway.token}`).digest(),
-    store: approvalStore,
+  if (!options.gateway.whatsapp) throw new Error("WhatsApp is not configured. Run: muster channels setup whatsapp");
+  await runChannelWorker({
+    channelId: "whatsapp",
+    config: options.config,
+    gateway: options.gateway,
+    registry: options.registry,
+    enterprise: options.enterprise,
+    ingress: options.ingress,
+    cwd: options.cwd,
+    fetcher: options.fetcher,
+    signal: options.signal,
+    log: options.log,
   });
-  const ownsEnterpriseRuntime = options.enterprise === undefined;
-  const enterprise = options.enterprise ?? openSqliteGatewayEnterpriseRuntime(cwd);
-  const queue = createOutboundQueue();
-  const context = effectiveAdapterContext({ ...options, enterprise, approvalActions, approvalStore }, {}, queue, cwd, true);
-  try {
-    await runWhatsAppConnection({
-      config: whatsapp,
-      cwd,
-      signal: options.signal,
-      log,
-      onMessage: (message) => handleSurfaceMessage(message, {
-        ...context,
-        ...(message.conversationId.endsWith("@g.us") ? {
-          pairingOverride: {
-            pairingId: `pair_whatsapp_group_${createHash("sha256").update(`${message.surfaceId}\0${message.senderId}`).digest("hex").slice(0, 12)}`,
-            surfaceId: message.surfaceId,
-            senderId: message.senderId,
-            approvedAt: new Date(0).toISOString(),
-          },
-        } : {}),
-      }),
-    });
-  } finally {
-    if (ownsApprovalStore) approvalStore.close();
-    if (ownsEnterpriseRuntime) await enterprise.close?.();
-  }
 }
 
 type AdapterHandler = (body: string, context: AdapterContext) => Promise<unknown>;

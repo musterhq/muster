@@ -19,7 +19,8 @@ export type { DiscordGatewayMessage, DiscordInteractionHandle } from "./discord.
 export { googleChatChannel, googleChatUsesApi } from "./googlechat.js";
 export { teamsChannel, teamsUsesBotFramework } from "./teams.js";
 export { BOT_FRAMEWORK_ISSUER, botFrameworkAccessToken, verifyBotFrameworkToken } from "./bot-framework.js";
-export { whatsAppAccount, whatsAppChannel } from "./whatsapp.js";
+export { createWhatsAppChannel, whatsAppAccount, whatsAppChannel } from "./whatsapp.js";
+export type { WhatsAppChannelOptions } from "./whatsapp.js";
 export { WHATSAPP_MEDIA_URL_PREFIX, whatsAppCloudAccessToken, whatsAppCloudChannel, whatsAppCloudSignatureIsValid, whatsAppCloudToSurfaceMessages } from "./whatsapp-cloud.js";
 
 /** A fresh registry with every built-in SDK channel. */
