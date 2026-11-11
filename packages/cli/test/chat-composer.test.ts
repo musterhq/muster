@@ -313,3 +313,31 @@ test("the rewind result quotes the prompt and cuts only at a word", async () => 
   assert.ok(long.endsWith("…") && long.length <= 61, long);
   assert.equal(long, "Append a function sub(a, b) returning a - b to calc.py, and…");
 });
+
+// Spec: MUS-SPEC-02-4A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-4a--a-long-paste-shows-as-a-short-preview-in-the-transcript)
+test("a long paste is a short preview in the transcript and whole for the model", async () => {
+  const received: string[] = [];
+  const chat = createMusterChatHarness({ onSubmit: async (text, sink) => { received.push(text); sink.appendLine("● ok"); return true; } });
+  const paste = Array.from({ length: 200 }, (_, index) => `row ${index + 1} ${"x".repeat(110)}`).join("\n");
+  chat.type(paste);
+  await chat.submit();
+  assert.equal(received[0], paste, "the model gets the whole paste");
+  let rows = plain(chat.transcript()).split("\n");
+  const at = rows.findIndex((row) => row.startsWith("> row 1 "));
+  assert.ok(at >= 0, rows.slice(0, 8).join("\n"));
+  assert.ok(rows[at + 1]!.startsWith("  row 2 ") && rows[at + 2]!.startsWith("  row 3 "));
+  assert.equal(rows[at + 3], "  … +197 lines (pasted)");
+  assert.ok(!rows.some((row) => row.includes("row 4 ")), "the rest is not echoed");
+
+  chat.type(`one line ${"y".repeat(1500)}`);
+  await chat.submit();
+  rows = plain(chat.transcript()).split("\n");
+  const single = rows.findIndex((row) => row.startsWith("> one line "));
+  assert.ok(rows[single]!.length <= 2 + 201, rows[single]);
+  assert.match(rows[single + 1] ?? "", /^ {2}… \+\d+ chars \(pasted\)$/);
+
+  chat.type("short\nmessage");
+  await chat.submit();
+  rows = plain(chat.transcript()).split("\n");
+  assert.ok(rows.includes("> short") && rows.includes("message"), "short messages are shown whole, as before");
+});

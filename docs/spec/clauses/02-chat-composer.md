@@ -111,3 +111,13 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** real CLI through tsx (the non-TUI path prints `Next: /model` exactly when the TUI would pre-fill it), NO_COLOR.
 - **Known gaps:** bare listing commands (`/runtime`, `/mcp`, `/plugins`) still pre-fill their own command to open the picker; that is the picker flow, not a switch.
 - **Evidence:** live, 2026-11-10, tmux, built CLI: after `/runtime claude-code` the transcript reads `Runtime: Claude Code · model sonnet` / `Type /model to pick a different model.` and the composer is an empty `❯` (before: composer pre-filled with `/model`). Capture: `screens/polish/qa29-qa38-after-runtime.ansi`. Red→green: chat-composer.test.ts.
+
+## MUS-SPEC-02-4A — A long paste shows as a short preview in the transcript
+
+- **Precondition:** chat TUI; the user pastes 200 lines (about 24k characters), which the composer shows as a `[paste #1 +200 lines]` chip.
+- **Action:** submit it.
+- **Expected result:** the transcript shows `> ` plus the first three lines (each cut to the terminal width, 200 characters when the width is unknown, with `…`) and `  … +197 lines (pasted)`; a single-line paste over 1000 characters shows its first 200 characters and `… +N chars (pasted)`. The model still receives the full text. Shorter messages (10 lines or fewer and at most 1000 characters, the composer's own chip threshold) are shown whole.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "a long paste is a short preview in the transcript and whole for the model"
+- **Environment:** chat harness, NO_COLOR.
+- **Known gaps:** `--history` and `/history` still print stored prompts up to their own 12-row cap.
+- **Evidence:** UNVERIFIED
