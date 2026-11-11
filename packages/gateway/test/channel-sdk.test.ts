@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  channelRegistryTable,
   ChannelVerificationError,
   defaultChannelRegistry,
   initGatewayConfig,
@@ -36,7 +37,8 @@ function captureFetcher(respond: (url: string, index: number) => unknown): { rea
 // Spec: MUS-SPEC-18-1A
 test("the default registry lists telegram, slack, matrix and email with their capabilities", () => {
   const registry = defaultChannelRegistry();
-  assert.deepEqual(registry.list().map((adapter) => adapter.id).sort(), ["email", "matrix", "slack", "telegram"]);
+  // Spec 24-1A extends the registry; these four must stay registered.
+  for (const id of ["email", "matrix", "slack", "telegram"]) assert.ok(registry.get(id), id);
   const telegram = registry.get("telegram")!;
   const slack = registry.get("slack")!;
   const matrix = registry.get("matrix")!;
@@ -150,4 +152,43 @@ test("sendToChannel posts into a Slack thread and refuses unknown or unconfigure
   assert.deepEqual(result.messageIds, ["171.9"]);
   await assert.rejects(sendToChannel("nope", "x", "hi", { gateway, fetcher, cwd }), /Unknown channel: nope/);
   await assert.rejects(sendToChannel("matrix", "!r:x", "hi", { gateway, fetcher, cwd }), /muster channels setup matrix/);
+});
+
+// Spec: MUS-SPEC-24-1A (docs/spec/clauses/24-channels-sdk-2.md#mus-spec-24-1a--the-registry-lists-all-eight-channels-with-honest-capabilities)
+test("the registry lists every channel with its real capabilities", async () => {
+  const registry = defaultChannelRegistry();
+  assert.deepEqual(
+    registry.list().map((adapter) => adapter.id).sort(),
+    ["discord", "email", "googlechat", "matrix", "slack", "teams", "telegram", "whatsapp", "whatsapp-cloud"],
+  );
+  const capability = (id: string) => registry.get(id)!.capabilities;
+  for (const id of ["discord", "slack", "teams", "googlechat", "whatsapp-cloud"]) assert.equal(capability(id).buttons, true, `${id} declares buttons`);
+  assert.equal(capability("whatsapp").buttons, false, "personal WhatsApp uses numbered choices");
+  assert.equal(capability("discord").maxTextLength, 2000);
+  assert.equal(capability("whatsapp").maxTextLength, 4096);
+  assert.equal(capability("whatsapp-cloud").maxTextLength, 4096);
+  assert.equal(capability("googlechat").maxTextLength, 4096);
+  assert.equal(capability("teams").maxTextLength, 28000);
+  const numbered = registry.get("whatsapp")!.renderApproval({
+    request: { runId: "r1", gateId: "g1", show: "deploy", options: ["approve", "reject"] },
+    actions: { approve: "a", reject: "b" },
+  });
+  assert.equal(numbered.buttons, undefined);
+  assert.match(numbered.text, /Reply 1 to approve or 2 to reject\.$/);
+
+  const cwd = await mkdtemp(join(tmpdir(), "muster-channel-sdk-table-"));
+  const init = await initGatewayConfig(cwd);
+  const gateway: GatewayConfig = {
+    ...init.config,
+    discord: { botTokenEnv: "DISCORD_BOT_TOKEN" },
+    teams: { appId: "app-1", appPasswordEnv: "TEAMS_APP_PASSWORD" },
+  };
+  const table = channelRegistryTable(registry, gateway);
+  const lines = table.trimEnd().split("\n");
+  assert.match(lines[0], /^channel\tlabel\tbuttons\tedit\tmax_text\tstatus$/);
+  assert.equal(lines.length, 10);
+  assert.match(table, /^discord\tDiscord\tyes\tyes\t2000\tconfigured$/m);
+  assert.match(table, /^teams\tMicrosoft Teams\tyes\tno\t28000\tconfigured$/m);
+  assert.match(table, /^whatsapp\tWhatsApp \(linked device\)\tno\tno\t4096\tnot configured$/m);
+  assert.match(table, /^googlechat\tGoogle Chat\tyes\tno\t4096\tnot configured$/m);
 });
