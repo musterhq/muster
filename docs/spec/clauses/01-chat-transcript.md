@@ -191,3 +191,13 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it; NO_COLOR.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10, tmux 110 cols, built CLI, `/tmp/polish-tr`: `⏺ Bash(ls -la …)` cell, then a blank row, then `● add subtracts b from a instead of adding them.` (before: the `●` row sat directly under the cell's last output row, S/46-narrow80). Capture: `screens/polish/qa40-after-gap.ansi`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-8A — MCP cells show the call's arguments and a summary of a JSON result
+
+- **Precondition:** chat on Codex; the model calls `orders.lookup_order` with `{"id": 4411}` and `muster.memory_write`, whose result is a pretty-printed JSON record.
+- **Action:** the provider emits `item/started` and `item/completed` for the `mcpToolCall` items.
+- **Expected result:** the headline reads `⏺ MCP(orders.lookup_order · id: 4411)` (arguments as `key: value`, strings quoted, cut to the width). A JSON result is summarised collapsed as one `key: value` row per top-level field (`id: "mem_…"`, `scopes: ["user:dhairya"]`, …, at most five rows plus `… +N more fields`), not the raw tail (`"redactionState": "none",` / `"links": []`); Ctrl+O shows the full JSON. Plain-text results are unchanged.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "MCP cells show the arguments and summarise a JSON result"
+- **Environment:** `codexItemToToolEvent` on recorded item shapes; chat harness with the narration painter; NO_COLOR.
+- **Known gaps:** Claude Code and pi MCP calls carry no arguments into the cell yet.
+- **Evidence:** UNVERIFIED
