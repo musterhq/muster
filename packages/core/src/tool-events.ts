@@ -13,6 +13,10 @@ export interface AgentToolEvent {
   readonly kind: AgentToolKind;
   /** What ran: the command line, `server.tool`, or the search query. */
   readonly title: string;
+  /** The tool's own name for generic tools (`Read`, `Grep`): the cell is named for it. */
+  readonly name?: string;
+  /** A display note that leads the result line (e.g. the approval decision). */
+  readonly note?: string;
   readonly exitCode?: number;
   readonly output?: string;
   readonly durationMs?: number;
@@ -142,7 +146,8 @@ export function piToolEventToAgentToolEvent(
   const isCommand = toolName === "bash";
   const kind: AgentToolKind = isCommand ? "command" : "tool";
   const title = isCommand ? (commandText(args.command) ?? "bash") : piToolTitle(toolName, args);
-  if (event.type === "tool_execution_start") return { phase: "start", id, kind, title };
+  const name = isCommand ? undefined : `${toolName.charAt(0).toUpperCase()}${toolName.slice(1)}`;
+  if (event.type === "tool_execution_start") return { phase: "start", id, kind, title, ...(name ? { name } : {}) };
   const output = piResultText(event.result);
   const failed = event.isError === true;
   const exitCode = isCommand ? (failed ? Number(output?.match(/exited with code (\d+)/)?.[1] ?? 1) : 0) : undefined;
@@ -151,6 +156,7 @@ export function piToolEventToAgentToolEvent(
     id,
     kind,
     title,
+    ...(name ? { name } : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(output ? { output } : {}),
     failed,

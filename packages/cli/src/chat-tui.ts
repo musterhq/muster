@@ -761,7 +761,12 @@ export interface NarrationPainter {
   /** A policy hook declined this request: its cell (if any) becomes the red Blocked card; one cell, not two. */
   blocked(request: ApprovalRequest, block: { readonly hookId?: string; readonly reason?: string }): void;
   /** An approval request for an open cell: `awaiting approval` while the card waits, `running…` once answered. */
-  approval(request: ApprovalRequest, state: "waiting" | "answered"): void;
+  /**
+   * An approval for an open cell. While waiting the cell reads `awaiting approval`. Once answered,
+   * the decision leads the cell's result line, the separate card is hidden, and the wait is not counted
+   * as the command's run time. Returns true when the request had a cell.
+   */
+  approval(request: ApprovalRequest, state: "waiting" | "answered", decision?: ApprovalDecision): boolean;
   /** Paint everything buffered now (before an out-of-band card such as a diff). */
   flush(): void;
   /** Feed a provider-approved reasoning summary delta. */
@@ -849,6 +854,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   const titleOf = (event: AgentToolEvent): string => toolCellTitle(event, options.width ? Math.max(40, options.width() - 12) : undefined);
   /** When each tool started, so a cell can show a time the provider did not report (Codex sends 0 ms). */
   const startedAt = new Map<string, number>();
+  /** Time each cell spent waiting on an approval card, and the decision it got. */
+  const waitStart = new Map<string, number>();
+  const waited = new Map<string, number>();
+  const decisions = new Map<string, string>();
   const timed = (event: AgentToolEvent): AgentToolEvent => {
     const started = startedAt.get(event.id);
     if (event.phase === "start") {
@@ -856,8 +865,15 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       return event;
     }
     startedAt.delete(event.id);
-    if ((event.durationMs ?? 0) > 0 || started === undefined) return event;
-    return { ...event, durationMs: Math.max(0, clock() - started) };
+    const wait = waited.get(event.id) ?? 0;
+    const note = decisions.get(event.id);
+    waited.delete(event.id);
+    decisions.delete(event.id);
+    const noted = note && !event.note ? { ...event, note } : event;
+    // The user's time deciding is not the command's run time, whoever measured it.
+    if ((event.durationMs ?? 0) > 0) return wait ? { ...noted, durationMs: Math.max(0, event.durationMs! - wait) } : noted;
+    if (started === undefined) return noted;
+    return { ...noted, durationMs: Math.max(0, clock() - started - wait) };
   };
   const paintOpenCell = (event: AgentToolEvent, label: string): void => {
     options.block?.(`tool:${event.id}`, () => ["", ...[formatToolLine(toolCellName(event), titleOf(event), "pending"), `  ${dim(`${RESULT_ELBOW} ${label}`)}`].map((row) => cardRow(row))]);
@@ -930,10 +946,26 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
         afterCard = true;
       } else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
     },
-    approval(request, state) {
-      if (!options.block || !bullets) return;
+    approval(request, state, decision) {
+      if (!options.block || !bullets) return false;
       const cell = cellFor(request);
-      if (cell) paintOpenCell(cell, state === "waiting" ? "awaiting approval" : "running…");
+      if (!cell) return false;
+      if (state === "waiting") {
+        waitStart.set(cell.id, clock());
+        paintOpenCell(cell, "awaiting approval");
+        return true;
+      }
+      const from = waitStart.get(cell.id);
+      waitStart.delete(cell.id);
+      if (from !== undefined) waited.set(cell.id, (waited.get(cell.id) ?? 0) + Math.max(0, clock() - from));
+      if (decision) {
+        decisions.set(cell.id, APPROVAL_LABELS[decision]);
+        // The cell carries the decision now: the separate answered card goes.
+        options.block(`approval:${request.id}`, () => []);
+      }
+      const approved = !decision || decision === "accept" || decision === "acceptForSession";
+      paintOpenCell(cell, approved ? "running…" : APPROVAL_LABELS[decision]);
+      return true;
     },
     flush() {
       flushAll();
@@ -988,13 +1020,21 @@ function toolCellName(event: AgentToolEvent): string {
     case "command": return "Bash";
     case "mcp": return "MCP";
     case "web": return "Search";
-    default: return "Tool";
+    default: return event.name || "Tool";
   }
+}
+
+/** `Read notes.md` under a cell already named Read → `notes.md`. */
+function withoutToolName(event: AgentToolEvent, title: string): string {
+  if (event.kind !== "tool" || !event.name) return title;
+  const prefix = `${event.name} `;
+  return title.toLowerCase().startsWith(prefix.toLowerCase()) ? title.slice(prefix.length) : title;
 }
 
 /** One row, bounded: multi-line commands show their first line plus an ellipsis. */
 function toolCellTitle(event: AgentToolEvent, max = 96): string {
-  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.args ? `${event.title} · ${event.args}` : event.title;
+  const own = withoutToolName(event, event.title);
+  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.args ? `${own} · ${event.args}` : own;
   const lines = raw.split(/\r?\n/).filter((line) => line.trim());
   let title = (lines[0] ?? raw).trim();
   if (lines.length > 1) title += " …";
@@ -1044,6 +1084,7 @@ export function formatToolEndLines(
   view: { readonly expanded?: boolean; readonly expandable?: boolean } = {},
 ): string[] {
   const segments: string[] = [];
+  if (event.note) segments.push(event.note);
   if (event.exitCode !== undefined) segments.push(`exit ${event.exitCode}`);
   else segments.push(event.failed ? "failed" : "done");
   // Codex reports 0 for commands it did not time; "0ms" reads as a lie.

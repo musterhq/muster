@@ -95,11 +95,11 @@
 ## MUS-SPEC-10-1I — An answered approval folds into its cell, and the wait is not counted as run time
 
 - **Precondition:** ask mode; a command cell `Bash(printf 'one' > a.txt && ls)` waiting on its approval card.
-- **Action:** the user waits about 6 s and presses `y`; the command runs for about 50 ms and ends.
+- **Action:** the user waits about 6 s and presses `y`; the command runs for about 150 ms in total outside the wait and ends.
 - **Expected result:**
-  - The separate answered card disappears. The cell's result line starts with the decision: `⎿ approved once · exit 0 · 50ms`.
+  - The separate answered card disappears. The cell's result line starts with the decision: `⎿ approved once · exit 0 · 150ms`.
   - The cell's time excludes the wait, whether Codex reported a duration or Muster measured it.
-  - A declined request keeps its cell, which reads `⎿ declined`.
+  - A declined request keeps its cell, which reads `⎿ denied`.
   - A request with no matching cell keeps the settled card, as before.
 - **Test:** `packages/cli/test/access-approvals.test.ts` › "an answered approval folds into its cell and the wait is not run time"
 - **Environment:** harness sink and painter.

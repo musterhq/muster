@@ -287,6 +287,7 @@ import {
   type RecordedTurn,
   type MusterConfig as ChatMusterConfig,
   type WorkspacePatchEvent,
+  type ApprovalDecision,
   ACCESS_MODES,
   isAccessMode,
   type AccessMode,
@@ -3302,11 +3303,13 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         if (!state.statusSink) return "decline";
         turnTimer.pause();
         painter?.approval(request, "waiting");
+        let decision: ApprovalDecision | undefined;
         try {
-          return await state.statusSink.requestApproval(request);
+          decision = await state.statusSink.requestApproval(request);
+          return decision;
         } finally {
           turnTimer.resume();
-          painter?.approval(request, "answered");
+          painter?.approval(request, "answered", decision);
         }
       },
       onPolicyBlock: (request, block) => {

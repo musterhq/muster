@@ -155,7 +155,7 @@ test("an answered approval folds into its cell and the wait is not run time", as
   painter.tool({ phase: "end", id: "item-1", kind: "command", title: command, exitCode: 0, durationMs: 0 });
   const shown = plain(chat.transcript());
   const at = shown.findIndex((row) => row.includes("Bash(touch a.txt)"));
-  assert.equal(shown[at + 1], "  ⎿ approved once · exit 0 · 50ms", "the decision leads the result line and the wait is not run time");
+  assert.equal(shown[at + 1], "  ⎿ approved once · exit 0 · 150ms", "the decision leads the result line and the wait is not run time");
   assert.equal(shown.filter((row) => row.includes("approved once")).length, 1, "no separate answered card");
   assert.equal(shown.some((row) => /Run touch a\.txt\?/.test(row)), false);
 
