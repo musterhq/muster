@@ -349,5 +349,10 @@ function message(error: unknown): string {
 
 /** Insert dictated text at the cursor, with a space when it would touch a word. */
 export function dictationInsertText(before: string, text: string): string {
-  return before && !/\s$/.test(before) ? ` ${text}` : text;
+  // Whisper capitalises every clip; mid-sentence the first word continues in
+  // lower case, unless it is a capital for a reason (I, API, GitHub).
+  const continues = /\S/.test(before) && !/[.!?:]\s*$/.test(before);
+  const first = /^(\p{Lu})(\p{Ll}*)(?=[\s,.;:!?]|$)/u.exec(text);
+  const lowered = continues && first && first[2] !== "" ? `${first[1]!.toLowerCase()}${text.slice(1)}` : text;
+  return before && !/\s$/.test(before) ? ` ${lowered}` : lowered;
 }

@@ -81,4 +81,4 @@ Key: `Ctrl+R` (record). `/dictate` does the same for terminals that take Ctrl+R.
 - **Test:** `packages/cli/test/chat-dictation.test.ts` › "dictated text continues a sentence in lower case"
 - **Environment:** pure function.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: CLI `test/chat-dictation.test.ts` 7/7 (red first: `Add a unit test.` stayed capitalised after `please `). Seen live in the 22-1A run, where whisper's `Add` followed `please `.
