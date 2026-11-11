@@ -49,7 +49,7 @@ async function signingKeys(openIdConfigUrl: string, fetcher: typeof fetch, now: 
 export interface BotFrameworkTokenCheck {
   readonly authorization: string | undefined;
   readonly appId: string;
-  /** The activity's serviceUrl; must match the token's serviceurl claim when present. */
+  /** The activity's serviceUrl; must match the token's serviceurl claim. */
   readonly serviceUrl?: string;
   readonly openIdConfigUrl?: string;
   readonly issuer?: string;
@@ -74,8 +74,9 @@ export async function verifyBotFrameworkToken(input: BotFrameworkTokenCheck): Pr
     if (!audiences.includes(input.appId)) return false;
     if (typeof claims.exp !== "number" || claims.exp < now - CLOCK_SKEW_SECONDS) return false;
     if (claims.nbf !== undefined && (typeof claims.nbf !== "number" || claims.nbf > now + CLOCK_SKEW_SECONDS)) return false;
+    // The reply (with a bot token) goes to the activity's serviceUrl, so the token must vouch for it.
     const claimedServiceUrl = claims.serviceurl ?? claims.serviceUrl;
-    if (claimedServiceUrl && (!input.serviceUrl || !sameServiceUrl(claimedServiceUrl, input.serviceUrl))) return false;
+    if (!claimedServiceUrl || !input.serviceUrl || !sameServiceUrl(claimedServiceUrl, input.serviceUrl)) return false;
     const openId = input.openIdConfigUrl ?? BOT_FRAMEWORK_OPENID;
     let key = (await signingKeys(openId, input.fetcher, nowMs, false)).find((candidate) => candidate.kid === header.kid);
     // Keys rotate: one refresh on an unknown kid.

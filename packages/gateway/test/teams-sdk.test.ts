@@ -113,12 +113,13 @@ test("teams bot framework activities are acknowledged and answered proactively; 
     assert.deepEqual(JSON.parse(replies[0].body), { type: "message", text: "the ledger is balanced", replyToId: "act-24-5a-1" });
     assert.ok(calls.every((call) => !call.url.includes("teams-password-24")));
 
-    // Invalid tokens: wrong signer, wrong audience, expired, wrong serviceUrl, none.
+    // Invalid tokens: wrong signer, wrong audience, expired, wrong or missing serviceUrl claim, none.
     const rejected = [
       jwt(strangerPem, "bf-kid-24", claims),
       jwt(connectorPem, "bf-kid-24", { ...claims, aud: "someone-else" }),
       jwt(connectorPem, "bf-kid-24", { ...claims, exp: now - 3600, nbf: now - 7200 }),
       jwt(connectorPem, "bf-kid-24", { ...claims, serviceurl: "https://evil.fake.test/" }),
+      jwt(connectorPem, "bf-kid-24", { ...claims, serviceurl: undefined }),
       "not-a-jwt",
     ];
     for (const [index, bearer] of rejected.entries()) {

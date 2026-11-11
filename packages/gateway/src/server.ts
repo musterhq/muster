@@ -59,6 +59,7 @@ import { channelWebhookAdapter, deliverPreparedChannelReplies, runChannelWorker,
 import type { ApprovalDeps } from "./channel-runner.js";
 import { parseSlackBody, slackChannel } from "./channels/slack.js";
 import { telegramChannel } from "./channels/telegram.js";
+import { teamsUsesBotFramework } from "./channels/teams.js";
 import { deliverSpokenReply, prepareVoiceInbound, voiceEchoLine, withVoiceEcho } from "./voice-notes.js";
 import type { OutboundQueue } from "./streaming.js";
 import {
@@ -5153,7 +5154,7 @@ export function gatewayStartupErrors(gateway: GatewayConfig): readonly string[] 
     const allowedLegacy = gateway.security.allowLegacyGchatToken && Boolean(gateway.gchat.verificationToken);
     if (!modern && !allowedLegacy) errors.push("Google Chat signed bearer verification requires a Cloud project number or the exact HTTPS /v1/adapters/gchat audience URL");
   }
-  if (gateway.teams && !gateway.teams.hmacSecret) errors.push("Teams request verification is required");
+  if (gateway.teams && !gateway.teams.hmacSecret && !teamsUsesBotFramework(gateway)) errors.push("Teams request verification is required");
   const ttl = gateway.approvals?.ttlSeconds;
   if (ttl !== undefined && (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 3600)) errors.push("approval ttlSeconds must be between 60 and 3600");
   return errors;
