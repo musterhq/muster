@@ -4,8 +4,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import type { VoiceConfig } from "@musterhq/core";
-import { createMusterChatHarness, type MusterChatSink } from "../src/chat-tui.js";
+import { listVoiceReceipts, type VoiceConfig } from "@musterhq/core";
+import { alignHelpRows, CHAT_SHORTCUTS, createMusterChatHarness, type MusterChatSink } from "../src/chat-tui.js";
+import { CHAT_COMMANDS } from "../src/chat-command-catalog.js";
+import { resolveRecorder } from "../src/dictation.js";
 import { installFakeVoiceTools, readFakeVoiceCalls } from "../../core/test/fakes/voice-tools.js";
 
 const CTRL_R = "\x12";
@@ -207,6 +209,67 @@ test("a recording stops at the dictation limit and is still transcribed", { time
     assert.ok(Date.now() - started < 4000);
     assert.equal(chat.text(), "add a test for the parser");
     assert.match(plain(chat.transcript()), /stopped at the 1 s limit/);
+  } finally {
+    await ws.done();
+  }
+});
+
+// Spec: MUS-SPEC-22-1C (docs/spec/clauses/22-dictation.md#mus-spec-22-1c--dictation-without-speech-to-text-or-a-recorder-says-how-to-set-it-up)
+test("dictation without stt or a recorder explains the setup", { timeout: 15000 }, async () => {
+  const ws = await workspace(["whisper-cli"]);
+  try {
+    // (a) speech-to-text off
+    const off = createMusterChatHarness({ dictation: { voice: () => ({ stt: { provider: "off" } }), env: ws.env, cwd: ws.cwd, platform: "darwin" } });
+    off.type("please ");
+    off.input(CTRL_R);
+    await within(off.dictationDone());
+    const offLines = plain(off.transcript()).split("\n").filter((line) => line.trim());
+    assert.deepEqual(offLines.map((line) => line.trim()), ["Dictation needs speech-to-text: run muster voice doctor"]);
+    assert.equal(off.text(), "please ");
+    // (b) speech-to-text on, but neither rec nor ffmpeg on PATH
+    const env = { ...ws.env, PATH: ws.bin };
+    const bare = createMusterChatHarness({ dictation: { voice: () => ws.voice, env, cwd: ws.cwd, platform: "darwin" } });
+    bare.type("please ");
+    bare.input(CTRL_R);
+    await within(bare.dictationDone());
+    assert.deepEqual(plain(bare.transcript()).split("\n").filter((line) => line.trim()).map((line) => line.trim()), ["Dictation needs a recorder: brew install sox"]);
+    assert.equal(bare.text(), "please ");
+    assert.doesNotMatch(plain(bare.visible()), /Recording/);
+    assert.deepEqual(await readFakeVoiceCalls(ws.log), [], "nothing is spawned");
+    // With ffmpeg but no rec, ffmpeg records from the default input (argv only).
+    const withFfmpeg = await installFakeVoiceTools(join(ws.cwd, ".ffmpeg-only"), ["ffmpeg"]);
+    const fallback = resolveRecorder(ws.voice, "/tmp/x.wav", { PATH: withFfmpeg.bin }, "darwin");
+    assert.equal(fallback?.kind, "ffmpeg");
+    assert.deepEqual(fallback?.args.slice(fallback.args.indexOf("-f"), fallback.args.indexOf("-f") + 4), ["-f", "avfoundation", "-i", ":0"]);
+    const linux = resolveRecorder({ ...ws.voice, dictation: { input: "mic2" } }, "/tmp/x.wav", { PATH: withFfmpeg.bin }, "linux");
+    assert.deepEqual(linux?.args.slice(linux.args.indexOf("-f"), linux.args.indexOf("-f") + 4), ["-f", "pulse", "-i", "mic2"]);
+  } finally {
+    await ws.done();
+  }
+});
+
+// Spec: MUS-SPEC-22-2A (docs/spec/clauses/22-dictation.md#mus-spec-22-2a--shortcuts-help-and-the-receipt-know-about-dictation)
+test("dictation is listed in shortcuts and leaves a voice receipt", { timeout: 15000 }, async () => {
+  const shortcuts = plain(alignHelpRows(CHAT_SHORTCUTS, 120));
+  assert.match(shortcuts, /^Ctrl\+R +dictate a prompt \(speech-to-text\)$/m);
+  assert.ok(CHAT_COMMANDS.some((command) => command.name === "dictate"), "/help lists /dictate");
+  const ws = await workspace();
+  try {
+    const runtime = fakeRuntime();
+    const chat = createMusterChatHarness({ onSubmit: runtime.onSubmit, dictation: { voice: () => ws.voice, env: ws.env, cwd: ws.cwd } });
+    // /dictate does what Ctrl+R does, for terminals that take Ctrl+R.
+    chat.type("/dictate");
+    await chat.submit();
+    await sleep(300);
+    assert.match(plain(chat.visible()), /● Recording/);
+    assert.deepEqual(runtime.turns, [], "/dictate is not sent as a turn");
+    chat.input(CTRL_R);
+    await within(chat.dictationDone());
+    assert.equal(chat.text(), "add a test for the parser");
+    const receipts = (await listVoiceReceipts(ws.cwd)).filter((receipt) => receipt.kind === "voice.stt");
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0]!.surfaceId, "chat");
+    assert.equal(receipts[0]!.ok, true);
   } finally {
     await ws.done();
   }
