@@ -20,6 +20,8 @@ import type { VoiceConfig, VoiceEnv } from "@musterhq/core";
 export const DICTATION_DEFAULT_MAX_SECONDS = 120;
 const LEVEL_BARS = "▁▂▃▄▅▆▇█";
 const STOP_GRACE_MS = 3000;
+/** Esc can arrive twice (the raw stdin hook and the TUI's delayed lone-Esc); the second is the same press. */
+const ESCAPE_DEDUPE_MS = 500;
 
 export interface DictationOptions {
   /** Read at each start, so a config change applies without restarting chat. */
@@ -126,6 +128,7 @@ interface Session {
   startedAt: number;
   levels: number[];
   ticker?: ReturnType<typeof setInterval>;
+  limit?: ReturnType<typeof setTimeout>;
   stderr: string;
 }
 
@@ -136,6 +139,7 @@ export class Dictation {
   private finishCycle: (() => void) | undefined;
   /** Set when the user stopped (or cancelled) before the recorder was up. */
   private pending: "stop" | "cancel" | undefined;
+  private escapeAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly options: DictationOptions, private readonly host: DictationHost) {}
 
@@ -219,7 +223,15 @@ export class Dictation {
     this.paintRecording(session);
     session.ticker = setInterval(() => { void this.sample(session); }, this.options.tickMs ?? 200);
     session.ticker.unref?.();
+    const maxSeconds = voice?.dictation?.maxSeconds ?? DICTATION_DEFAULT_MAX_SECONDS;
+    session.limit = setTimeout(() => {
+      if (this.session !== session || this.state !== "recording") return;
+      this.host.note(`stopped at the ${maxSeconds} s limit`);
+      void this.stop();
+    }, Math.max(0, maxSeconds * 1000));
+    session.limit.unref?.();
     if (this.pending === "stop") void this.stop();
+    else if (this.pending === "cancel") void this.cancel();
   }
 
   private paintRecording(session: Session): void {
@@ -240,6 +252,7 @@ export class Dictation {
   private recorderExited(session: Session): void {
     if (this.session !== session || this.state !== "recording") return;
     if (session.ticker) clearInterval(session.ticker);
+    if (session.limit) clearTimeout(session.limit);
     const detail = session.stderr.trim().split("\n").slice(-2).join(" | ").slice(0, 300);
     this.host.note(`Dictation stopped: the recorder exited${detail ? `: ${detail}` : ""}`);
     void rm(session.dir, { recursive: true, force: true }).finally(() => this.endCycle());
@@ -248,6 +261,7 @@ export class Dictation {
   /** Stop the recorder and wait for it to finish the file. */
   private async halt(session: Session): Promise<void> {
     if (session.ticker) clearInterval(session.ticker);
+    if (session.limit) clearTimeout(session.limit);
     const child = session.child;
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
     if (session.kind === "ffmpeg" && child.stdin) {
@@ -259,6 +273,38 @@ export class Dictation {
     killer.unref?.();
     await session.exited;
     clearTimeout(killer);
+  }
+
+  /** Esc while recording: stop the recorder and discard the clip. Nothing is transcribed. */
+  async cancel(): Promise<boolean> {
+    if (this.state === "starting") {
+      this.pending = "cancel";
+      return true;
+    }
+    const session = this.session;
+    if (!session || this.state !== "recording") return false;
+    this.state = "transcribing";
+    try {
+      await this.halt(session);
+    } finally {
+      await rm(session.dir, { recursive: true, force: true });
+      this.endCycle();
+    }
+    return true;
+  }
+
+  /**
+   * Esc: true when it belonged to dictation (it cancelled a recording, or is
+   * the duplicate delivery of the press that did). A running turn is then left
+   * alone: Esc never both cancels a recording and interrupts the turn.
+   */
+  handleEscape(now = Date.now()): boolean {
+    if (this.recording) {
+      this.escapeAt = now;
+      void this.cancel();
+      return true;
+    }
+    return now - this.escapeAt <= ESCAPE_DEDUPE_MS;
   }
 
   /** Ctrl+R or Enter while recording: stop, transcribe, insert at the cursor. */

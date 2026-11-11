@@ -178,7 +178,10 @@ test("esc cancels a recording without transcribing", { timeout: 15000 }, async (
     assert.equal(calls.some((call) => call.tool === "whisper-cli" || call.tool === "ffmpeg"), false, "no transcription runs");
     const wav = calls.find((call) => call.tool === "rec")!.argv.at(-1)!;
     assert.equal(existsSync(dirname(wav)), false, "the temp audio is deleted");
-    // With no recording, Esc interrupts the turn as before.
+    // A later Esc, with no recording, interrupts the turn as before. (The
+    // press that cancelled is deduplicated for 500 ms: terminals deliver a
+    // lone Esc on two paths.)
+    await sleep(600);
     chat.input(ESC);
     await tick();
     assert.equal(runtime.interrupted, 1);

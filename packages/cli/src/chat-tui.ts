@@ -1724,6 +1724,7 @@ export function createMusterChatHarness(options: MusterAutocompleteOptions & {
         void dictation.stop();
         return;
       }
+      if (data === "\x1b" && dictation?.handleEscape()) return;
       if (options.onDecisionKey?.(data, sink)) return;
       if (data === "\x0f") {
         sink.toggleExpanded();
@@ -2064,6 +2065,10 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
       void dictation.stop();
       return { consume: true };
     }
+    if (matchesKey(data, "escape") && dictation?.handleEscape()) {
+      tui.requestRender(true);
+      return { consume: true };
+    }
     if (options.onDecisionKey?.(data, screen)) {
       editor.setText("");
       tui.requestRender(true);
@@ -2154,6 +2159,10 @@ export async function runMusterChatTui(options: RunMusterChatTuiOptions): Promis
     const data = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
     if (boardMode?.active || parseSgrMouseSequence(data)) return;
     if (screen.approvals.pending || screen.settingsOpen) return;
+    if (data === "\x1b" && dictation?.handleEscape()) {
+      tui.requestRender(true);
+      return;
+    }
     if (data === "\x1b" && screen.consumeLiveDiffEscapeSuppression()) return;
     if (data === "\x1b" && screen.closeLiveDiff()) return;
     if (data === "\x1b" && screen.interruptTurn()) return;
