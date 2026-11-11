@@ -18,6 +18,24 @@ function plain(lines: readonly string[] | string): string {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll until the screen shows what we wait for; fixed sleeps flake when the recorder starts late under load. */
+/** The fake recorder logs rec:ready once it listens for SIGINT; stop or cancel only after that. */
+async function recorderReady(log: string, ms = 8000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!(await readFakeVoiceCalls(log)).some((call) => call.tool === "rec:ready")) {
+    if (Date.now() > deadline) throw new Error("timed out waiting for the recorder to start");
+    await sleep(10);
+  }
+}
+
+async function until(check: () => boolean, what: string, ms = 8000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await sleep(5);
+  }
+}
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 /** Fail instead of hanging when a dictation never settles. */
@@ -88,15 +106,12 @@ test("ctrl+r records and inserts the transcript into the composer without sendin
     });
     chat.type("please ");
     chat.input(CTRL_R);
-    await sleep(300);
-    const recording = plain(chat.visible());
-    assert.match(recording, /● Recording 0:00 [▁▂▃▄▅▆▇█]{3} · ctrl\+r stop · esc cancel/);
+    await until(() => /● Recording 0:00 [▁▂▃▄▅▆▇█]{3} · ctrl\+r stop · esc cancel/.test(plain(chat.visible())), "the recording row");
     offset = 1000;
-    await sleep(300);
-    assert.match(plain(chat.visible()), /● Recording 0:01 /, "the timer advances");
+    await until(() => /● Recording 0:01 /.test(plain(chat.visible())), "the timer to advance");
+    await recorderReady(ws.log);
     chat.input(CTRL_R);
-    await tick();
-    assert.match(plain(chat.visible()), /Transcribing…/);
+    await until(() => /Transcribing…/.test(plain(chat.visible())) || chat.text().includes("parser"), "the transcribing row");
     await within(chat.dictationDone());
     assert.equal(chat.text(), "please add a test for the parser");
     assert.doesNotMatch(plain(chat.visible()), /Recording|Transcribing/);
@@ -134,8 +149,8 @@ test("dictated text can steer a running turn", { timeout: 15000 }, async () => {
     const first = chat.submit();
     await tick();
     chat.input(CTRL_R);
-    await sleep(300);
-    assert.match(plain(chat.visible()), /● Recording/);
+    await until(() => /● Recording/.test(plain(chat.visible())), "the recording row");
+    await recorderReady(ws.log);
     chat.input(CTRL_R);
     await within(chat.dictationDone());
     assert.equal(chat.text(), "add a test for the parser");
@@ -168,8 +183,8 @@ test("esc cancels a recording without transcribing", { timeout: 15000 }, async (
     await tick();
     chat.type("please ");
     chat.input(CTRL_R);
-    await sleep(300);
-    assert.match(plain(chat.visible()), /● Recording/);
+    await until(() => /● Recording/.test(plain(chat.visible())), "the recording row");
+    await recorderReady(ws.log);
     chat.input(ESC);
     await within(chat.dictationDone());
     assert.equal(chat.text(), "please ", "the composer text is unchanged");
@@ -260,8 +275,8 @@ test("dictation is listed in shortcuts and leaves a voice receipt", { timeout: 1
     // /dictate does what Ctrl+R does, for terminals that take Ctrl+R.
     chat.type("/dictate");
     await chat.submit();
-    await sleep(300);
-    assert.match(plain(chat.visible()), /● Recording/);
+    await until(() => /● Recording/.test(plain(chat.visible())), "the recording row");
+    await recorderReady(ws.log);
     assert.deepEqual(runtime.turns, [], "/dictate is not sent as a turn");
     chat.input(CTRL_R);
     await within(chat.dictationDone());

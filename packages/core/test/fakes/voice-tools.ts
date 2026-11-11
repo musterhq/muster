@@ -86,6 +86,8 @@ process.on("SIGINT", () => {
   fs.closeSync(fd);
   process.exit(0);
 });
+// Listening for SIGINT from here on: tests that stop or cancel wait for this line.
+if (process.env.FAKE_VOICE_LOG) fs.appendFileSync(process.env.FAKE_VOICE_LOG, JSON.stringify({ tool: "rec:ready", argv: [], existed: {} }) + "\\n");
 `,
   "my-stt": `
 const input = argv[0];
