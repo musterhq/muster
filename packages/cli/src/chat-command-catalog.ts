@@ -31,6 +31,7 @@ export const CHAT_COMMANDS: readonly ChatCommandDef[] = [
   { name: "schedule", usage: "/schedule [list|add|remove|run <id>]", description: "see and manage reminders and routines", aliases: ["automations"], bareBehavior: "picker", pickerInvocations: ["remove", "run"] },
   { name: "live-diff", usage: "/live-diff [on|off]", description: "show file changes while they happen", aliases: ["livediff", "diffs"] },
   { name: "diff", usage: "/diff", description: "open or close this turn's file changes" },
+  { name: "dictate", usage: "/dictate", description: "speak a prompt into the composer (same as Ctrl+R)" },
   { name: "tasks", usage: "/tasks [board | \"<goal>\" | why <taskId> | assign <taskId> <cardId>]", description: "open your task board or plan work across agents", bareBehavior: "picker", pickerInvocations: ["why", "assign"] },
   { name: "reasoning", usage: "/reasoning [auto|low|medium|high|compact|full]", description: "choose thinking effort or summary detail", aliases: ["think"] },
   { name: "senses", usage: "/senses", description: "see available screen and browser access" },

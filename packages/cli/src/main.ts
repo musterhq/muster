@@ -341,7 +341,7 @@ import {
 } from "@musterhq/gateway";
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
 import { sdkChannelsCommand } from "./sdk-channels-command.js";
-import { voiceCommand } from "./voice-command.js";
+import { loadVoiceConfig, voiceCommand } from "./voice-command.js";
 import { renderSettingsList, SettingsPanel, type SettingsChange } from "./settings-panel.js";
 import { allowedSettingValues, formatSettingValue, requireSetting, resetSetting as resetSettingValue, resolveSetting, resolveSettings, setSetting, settingsPaths, settingValues, validateSettingsFiles, type SettingScope } from "@musterhq/core";
 import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
@@ -1771,6 +1771,7 @@ ${CHAT_COMMANDS.map((command) => `  ${command.usage.padEnd(21)} ${command.descri
 Shortcuts:
   Tab                  complete slash commands, toolsets, and session names
   Ctrl+D               toggle the current turn's full-file live view
+  Ctrl+R               dictate a prompt (speech-to-text; /dictate does the same)
   @agent-name <task>   route this turn with agent id agent-name
   End a line with \\   continue multiline input.`);
 }
@@ -1811,6 +1812,8 @@ async function interactiveChat(state: ChatState): Promise<void> {
       // and the composer queues the text as the next turn instead.
       onSteer: (text) => steerActiveCodexTurn(text, "cli-chat", chatConversationKey(state.sessionName)).catch(() => false),
       onDecisionKey: (data, sink) => handleChatDecisionKey(data, state, sink),
+      // Ctrl+R / /dictate: speech into the composer with voice.stt (spec 22). Never sent on its own.
+      dictation: { voice: () => loadVoiceConfig(process.cwd()), cwd: process.cwd() },
       // Reminders fire into this transcript while the chat is open (#165).
       onReady: (sink) => {
         const ticker = attachChatAutomations(sink);
@@ -2526,6 +2529,10 @@ async function handleChatCommand(text: string, state: ChatState): Promise<boolea
       return true;
     case "access":
       setChatAccessMode(args, state);
+      return true;
+    case "dictate":
+      // The chat TUI handles /dictate before it reaches here; other surfaces have no microphone row.
+      console.log(color("Dictation works in the interactive chat: press Ctrl+R (or type /dictate) there.", "dim"));
       return true;
     case "diff":
       if (state.statusSink) state.statusSink.toggleLiveDiff();

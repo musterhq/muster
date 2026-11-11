@@ -7,6 +7,7 @@ semantic versioning.
 ## [Unreleased]
 
 ### Added
+- Chat dictation: Ctrl+R (or `/dictate`) records from the microphone with sox `rec` or ffmpeg, transcribes with `voice.stt`, and puts the text in the composer at the cursor, unsent. Esc cancels; `voice.dictation.maxSeconds` (default 120) and `voice.dictation.input` configure it.
 - Codex app-server lifecycle budgets (`CODEX_RUN_LIFECYCLE_VERSION`): independent request, idle, and absolute turn budgets, cancellation, thread/turn identity callbacks, and a `dispatchState` classification on run results. Callers that omit `budgets` keep the previous behaviour.
 - Hindsight client (`core/src/hindsight.ts`) and a SQLite-backed durable scheduler store with one-shot import of legacy `schedules.json`.
 

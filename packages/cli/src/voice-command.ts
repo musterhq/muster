@@ -20,7 +20,7 @@ import type { MusterConfig, SynthesisFormat, VoiceConfig, VoiceDoctorReport } fr
 
 export const VOICE_USAGE = "Usage: muster voice doctor [--json] | transcribe <file> [--json] | say \"text\" [-o out.ogg|out.wav] [--voice Name]";
 
-async function loadVoiceConfig(cwd: string): Promise<VoiceConfig | undefined> {
+export async function loadVoiceConfig(cwd: string): Promise<VoiceConfig | undefined> {
   const config: MusterConfig = existsSync(configPath(cwd)) ? await loadConfig(cwd) : defaultConfig();
   return config.voice;
 }
