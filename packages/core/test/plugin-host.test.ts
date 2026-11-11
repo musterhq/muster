@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPluginHost, readCodePluginManifest, type CodePluginManifest } from "../src/index.js";
+import { attachPluginHooks, clearCodexAppServerSessions, createHookBus, createPluginHost, defaultConfig, describePolicyBlock, executeRun, readCodePluginManifest, type CodePluginManifest, type MusterConfig } from "../src/index.js";
 
 /** A local HTTP server that records every TCP connection it sees. */
 async function recordingServer(handler?: (url: string) => { status?: number; body: string }): Promise<{ server: Server; port: number; connections: () => number; close: () => Promise<void> }> {
@@ -192,6 +192,122 @@ module.exports = async (port) => {
     }
   } finally {
     await fake.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** A fake Codex app-server that asks to run each command, recording answers and steers. */
+async function fakeCodex(dir: string, commands: string[]): Promise<{ fake: string; log: string }> {
+  const fake = join(dir, "codex-fake.mjs");
+  const log = join(dir, "codex-log.jsonl");
+  await writeFile(fake, `#!/usr/bin/env node
+import readline from "node:readline";
+import { appendFileSync } from "node:fs";
+if (process.argv[2] !== "app-server") process.exit(0);
+const rl = readline.createInterface({ input: process.stdin });
+const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const note = (m) => appendFileSync(${JSON.stringify(log)}, JSON.stringify(m) + "\\n");
+const commands = ${JSON.stringify(commands)};
+let next = 0;
+function ask() {
+  if (next >= commands.length) return finish();
+  send({ id: 900 + next, method: "item/commandExecution/requestApproval", params: { threadId: "t", turnId: "turn-1", itemId: "c" + next, command: commands[next], cwd: "/w", startedAtMs: 1 } });
+}
+rl.on("line", (line) => {
+  const m = JSON.parse(line);
+  if (m.method === "initialize") send({ id: m.id, result: { userAgent: "fake" } });
+  else if (m.method === "thread/start" || m.method === "thread/resume") send({ id: m.id, result: { thread: { id: "t" } } });
+  else if (m.method === "turn/start") { send({ id: m.id, result: { turn: { id: "turn-1", status: "inProgress" } } }); ask(); }
+  else if (m.method === "turn/steer") { note({ steer: m.params.input?.[0]?.text }); send({ id: m.id, result: {} }); }
+  else if (typeof m.id === "number" && m.id >= 900) { note({ command: commands[m.id - 900], answer: m.result }); next += 1; ask(); }
+});
+function finish() {
+  send({ method: "item/completed", params: { threadId: "t", turnId: "turn-1", item: { type: "agentMessage", id: "m", text: "ok" } } });
+  send({ method: "turn/completed", params: { threadId: "t", turn: { id: "turn-1", status: "completed" } } });
+}
+`, "utf8");
+  await chmod(fake, 0o755);
+  return { fake, log };
+}
+
+// Spec: MUS-SPEC-23-1D (docs/spec/clauses/23-plugin-api.md#mus-spec-23-1d--hooks-from-a-plugin-can-block-with-the-plugin-named)
+test("a plugin tool.before hook blocks a command and the block names the plugin", { timeout: 90_000 }, async () => {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), "muster-plughost-d-")));
+  const hosts: Array<{ stop: () => Promise<void> }> = [];
+  try {
+    const workspace = join(dir, "ws");
+    await mkdir(workspace, { recursive: true });
+    const receiptsPath = join(dir, "receipts.jsonl");
+    const guard = await writePlugin(join(dir, "weather-guard"), { id: "weather-guard", version: "1.0.0", entry: "index.mjs", permissions: ["hooks:tool.before"] }, {
+      "index.mjs": `
+export async function register(ctx) {
+  ctx.hook("tool.before", (event) => /rm -rf/.test(event.title) ? { action: "block", reason: "recursive deletes need a human" } : { action: "pass" });
+}
+`,
+    });
+    const host = createPluginHost({ root: guard.root, manifest: guard.manifest, workspace, receiptsPath });
+    hosts.push(host);
+    await host.start();
+    const bus = createHookBus();
+    const detach = attachPluginHooks(bus, host);
+    assert.equal(bus.count("tool.before"), 1);
+
+    const { fake, log } = await fakeCodex(dir, ["rm -rf build", "ls"]);
+    const blocks: Array<{ title: string; hookId?: string; reason?: string }> = [];
+    const previous = process.env.MUSTER_CODEX_COMMAND;
+    process.env.MUSTER_CODEX_COMMAND = fake;
+    try {
+      await executeRun({ ...defaultConfig() } as MusterConfig, {
+        runtime: "codex", prompt: "clean up", cwd: workspace, nativeSession: true, nativeTransport: "warm", nativeSessionKeepAlive: false,
+        conversationKey: `plugin-hooks-${Math.random()}`, accessMode: "auto-edit", hooks: bus,
+        skipAgentRules: true, skipRecall: true, skipSkillSelection: true, skipMemoryWrite: true,
+        onPolicyBlock: (request, block) => blocks.push({ title: request.title, ...block }),
+      } as Parameters<typeof executeRun>[1]);
+    } finally {
+      if (previous === undefined) delete process.env.MUSTER_CODEX_COMMAND;
+      else process.env.MUSTER_CODEX_COMMAND = previous;
+      clearCodexAppServerSessions();
+    }
+    const entries = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, any>);
+    assert.deepEqual(entries.filter((entry) => entry.command).map((entry) => [entry.command, entry.answer.decision]), [["rm -rf build", "decline"], ["ls", "accept"]]);
+    assert.deepEqual(blocks, [{ title: "rm -rf build", hookId: "plugin:weather-guard", reason: "recursive deletes need a human" }]);
+    assert.equal(describePolicyBlock(blocks[0]!), "blocked by plugin weather-guard: recursive deletes need a human", "the Blocked card's line");
+    const steers = entries.filter((entry) => entry.steer).map((entry) => String(entry.steer));
+    assert.equal(steers.length, 1, "the model is told why");
+    assert.match(steers[0]!, /rm -rf build/);
+    assert.match(steers[0]!, /blocked by plugin weather-guard: recursive deletes need a human/);
+    detach();
+    assert.equal(bus.count("tool.before"), 0);
+
+    // A hook that throws or outlives 2 s passes, unless the manifest sets failClosed; either way it is logged.
+    const source = `
+export async function register(ctx) {
+  ctx.hook("tool.before", (event) => {
+    if (event.title === "throw") throw new Error("hook exploded");
+    return new Promise(() => {});
+  });
+}
+`;
+    const open = await writePlugin(join(dir, "flaky-open"), { id: "flaky-open", version: "1.0.0", entry: "index.mjs", permissions: ["hooks:tool.before"] }, { "index.mjs": source });
+    const closed = await writePlugin(join(dir, "flaky-closed"), { id: "flaky-closed", version: "1.0.0", entry: "index.mjs", permissions: ["hooks:tool.before"], failClosed: true }, { "index.mjs": source });
+    const openHost = createPluginHost({ root: open.root, manifest: open.manifest, workspace, receiptsPath });
+    const closedHost = createPluginHost({ root: closed.root, manifest: closed.manifest, workspace, receiptsPath });
+    hosts.push(openHost, closedHost);
+    await openHost.start();
+    await closedHost.start();
+    assert.equal((await openHost.runHook("tool.before", { title: "throw" })).action, "pass");
+    const startedAt = Date.now();
+    assert.equal((await openHost.runHook("tool.before", { title: "hang" })).action, "pass");
+    const elapsed = Date.now() - startedAt;
+    assert.ok(elapsed >= 1_900 && elapsed < 4_000, `a hanging hook is cut off at 2 s (${elapsed}ms)`);
+    const blockedThrow = await closedHost.runHook("tool.before", { title: "throw" });
+    assert.equal(blockedThrow.action, "block");
+    assert.match(blockedThrow.reason ?? "", /flaky-closed.*hook exploded/);
+    assert.equal((await closedHost.runHook("tool.before", { title: "hang" })).action, "block");
+    const logged = (await receipts(receiptsPath)).filter((entry) => entry.type === "plugin.hook_failed").map((entry) => entry.plugin);
+    assert.deepEqual(logged, ["flaky-open", "flaky-open", "flaky-closed", "flaky-closed"]);
+  } finally {
+    for (const host of hosts) await host.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });
