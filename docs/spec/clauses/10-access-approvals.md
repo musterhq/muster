@@ -104,4 +104,4 @@
 - **Test:** `packages/cli/test/access-approvals.test.ts` › "an answered approval folds into its cell and the wait is not run time"
 - **Environment:** harness sink and painter.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: CLI `access-approvals.test.ts` (red first: a separate `Run …? approved once` card and the wait counted in the cell time). Found in live QA pass 2: `exit 0 · 8.1s` after about 6 s of waiting.

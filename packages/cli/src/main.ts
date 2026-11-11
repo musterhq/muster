@@ -414,7 +414,7 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-      printHelp();
+      printHelp(args);
       return;
     case "version":
     case "--version":
@@ -761,8 +761,50 @@ Design rule:
   One active runtime per run. Providers/models can route dynamically by task.
 `;
 
-function printHelp(): void {
-  console.log(HELP_TEXT);
+/** `muster --help`: one page of what most people need. `help all` is the full list. */
+const SHORT_HELP = `Muster v${CLI_MUSTER_VERSION} — one agent for code, channels, memory and automations
+
+Start
+  muster                                  open chat (the first run sets things up)
+  muster chat "your prompt"               ask once, then keep chatting
+  muster onboard                          providers, channels and memory, step by step
+  muster doctor                           check this machine and folder
+
+Work
+  muster chat --session <name>            pick up a named conversation
+  muster run "task"                       one task, no chat
+  muster schedule remind "in 10m" "..."   reminders and routines
+
+Extend
+  muster plugins install <path|git|name>  plugins (isolated, with permissions)
+  muster mcp list                         MCP servers (add-stdio, add-http, serve)
+  muster skills list                      skills
+
+Reach
+  muster channels list                    Telegram, Slack, Discord, WhatsApp, Matrix, email, ...
+  muster gateway daemon start             run channels and automations in the background
+  muster voice doctor                     speech-to-text and text-to-speech
+
+More
+  muster help <command>                   usage for one command, e.g. muster help plugins
+  muster help all                         every command`;
+
+function printHelp(args: readonly string[] = []): void {
+  const topic = args.find((arg) => !arg.startsWith("-") && arg !== "help");
+  if (!topic) {
+    console.log(SHORT_HELP);
+    return;
+  }
+  if (topic === "all") {
+    console.log(HELP_TEXT);
+    return;
+  }
+  const lines = commandUsageLines(HELP_TEXT, topic);
+  if (lines.length) {
+    console.log(lines.join("\n"));
+    return;
+  }
+  console.log(`No command "${topic}". ${SHORT_HELP.split("\n").slice(-2).join(" · ").replace(/\s+/g, " ").trim()}`);
 }
 
 async function frappeCommand(args: string[]): Promise<void> {

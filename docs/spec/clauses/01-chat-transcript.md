@@ -220,4 +220,4 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "tool cells are named for the tool on claude and pi"
 - **Environment:** harness sink and painter; core event mappers.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: CLI `chat-tool-cards.test.ts` with access-approvals and ux-guards 27/27 (red first). Found in live QA pass 2: a Claude `Read` showed as `Tool(Read notes.md)`.

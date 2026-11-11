@@ -30,7 +30,7 @@ Muster keeps per-workspace state in `.muster/`. In a git repository it must not 
 - **Test:** `packages/cli/test/workspace-hygiene.test.ts` › "doctor in a new folder suggests init instead of printing ENOENT"
 - **Environment:** temp folder; real CLI.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: CLI `workspace-hygiene.test.ts` 3/3 (red first: `err config ENOENT … config.json`).
 
 ## MUS-SPEC-15-3B — `muster --help` is one short page; the full list is one command away
 
@@ -43,4 +43,4 @@ Muster keeps per-workspace state in `.muster/`. In a git repository it must not 
 - **Test:** `packages/cli/test/cli.test.ts` › "help is one short grouped page with help <command> and help all"
 - **Environment:** real CLI.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: CLI `cli.test.ts` help tests 3/3; `muster --help` is 26 lines (it was 131); `muster help plugins` prints the plugins usage only.
