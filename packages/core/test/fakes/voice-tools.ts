@@ -7,7 +7,9 @@ import { join } from "node:path";
  * JSON line) to $FAKE_VOICE_LOG and does just enough file work for the real
  * code path: ffmpeg writes a WAV of $FAKE_WAV_SECONDS (default 2) seconds or
  * an Ogg stub, say writes an AIFF stub, whisper-cli prints a timestamped
- * transcript ($FAKE_TRANSCRIPT) for its -f input.
+ * transcript ($FAKE_TRANSCRIPT) for its -f input, and rec (sox) records a
+ * 16 kHz mono WAV of a tone to its last argument until SIGINT, logging the
+ * signal it got as a `rec:signal` call.
  */
 
 export interface FakeVoiceCall {
@@ -55,6 +57,35 @@ const output = after("-o");
 if (output) fs.writeFileSync(output, Buffer.concat([Buffer.from("FORM"), Buffer.alloc(40)]));
 `,
   afplay: ``,
+  rec: `
+const output = argv[argv.length - 1];
+const header = Buffer.alloc(44);
+header.write("RIFF", 0); header.write("WAVEfmt ", 8);
+header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+header.writeUInt32LE(16000, 24); header.writeUInt32LE(32000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+header.write("data", 36);
+fs.writeFileSync(output, header);
+let samples = 0;
+const chunk = () => {
+  const data = Buffer.alloc(3200);
+  for (let i = 0; i < 1600; i += 1) data.writeInt16LE(Math.round(8000 * Math.sin(((samples + i) / 16000) * 2 * Math.PI * 440)), i * 2);
+  samples += 1600;
+  fs.appendFileSync(output, data);
+};
+chunk();
+const timer = setInterval(chunk, 100);
+process.on("SIGINT", () => {
+  clearInterval(timer);
+  if (process.env.FAKE_VOICE_LOG) fs.appendFileSync(process.env.FAKE_VOICE_LOG, JSON.stringify({ tool: "rec:signal", argv: ["SIGINT"], existed: {} }) + "\\n");
+  const size = fs.statSync(output).size;
+  const fd = fs.openSync(output, "r+");
+  const sizes = Buffer.alloc(4);
+  sizes.writeUInt32LE(size - 8, 0); fs.writeSync(fd, sizes, 0, 4, 4);
+  sizes.writeUInt32LE(size - 44, 0); fs.writeSync(fd, sizes, 0, 4, 40);
+  fs.closeSync(fd);
+  process.exit(0);
+});
+`,
   "my-stt": `
 const input = argv[0];
 if (!input || !fs.existsSync(input)) { process.stderr.write("my-stt: no input\\n"); process.exit(4); }
