@@ -272,6 +272,7 @@ import {
   createPluginRuntime,
   inspectCodePluginSource,
   setCodePluginEnabled,
+  validateCodePlugin,
   type PluginInstallSummary,
   readPluginKillList,
   killListMessage,
@@ -676,6 +677,7 @@ Usage:
   muster artifacts verify <file> [--format docx|xlsx|pptx|pdf] [--require text]
   muster plugins marketplace add <owner/repo|url|folder> | list | remove <name> | update [name]
   muster plugins search <words> | install <name>[@marketplace]
+  muster plugins validate <dir>                                   # the catalog gate for code plugins (muster.plugin.json)
   muster plugins list | catalog | setup <id> | reuse <provider> [--adopt-mcp id|--adopt-all-mcps] | context frappe <setup|docs|module|build> | enable <id> | disable <id> | policy | inspect <path|git-url> | install <path|git-url> | remove <id> | load <path>
   muster mcp serve                          # Muster's memory and sessions as an MCP server (stdio)
   muster mcp list | status [name] | login <name> | logout <name> | catalog | check [id] | install <id> | oauth status|setup|import ... | add-http <name> <url> [--oauth ...] | add-stdio <name> <command> [args...] | test <name>
@@ -7878,6 +7880,17 @@ async function pluginsCommand(args: string[]): Promise<void> {
   if (action === "disable" && path) {
     const plugin = await disableBuiltinPlugin(path);
     console.log(`disabled plugin=${plugin.id}`);
+    return;
+  }
+  if (action === "validate" && path) {
+    // The catalog gate: findings by name, exit 1 on any.
+    if (!(await isCodePlugin(resolve(path)))) throw new Error(`No muster.plugin.json in ${resolve(path)}; validate checks code plugins.`);
+    const result = await validateCodePlugin(resolve(path));
+    console.log(`plugin=${result.id ?? "-"} kind=code`);
+    for (const registration of result.registrations) console.log(`registration=${registration.kind}:${registration.name}`);
+    for (const finding of result.findings) console.log(`finding=${finding.code}${finding.field ? ` field=${finding.field}` : ""} message="${finding.message.replace(/"/g, "'")}"`);
+    console.log(result.findings.length ? `result=fail findings=${result.findings.length}` : "result=pass");
+    if (result.findings.length) process.exitCode = 1;
     return;
   }
   if (action === "inspect" && path) {
