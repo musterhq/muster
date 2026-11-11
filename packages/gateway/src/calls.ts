@@ -233,6 +233,9 @@ export class CallManager implements CallToolHost {
     if (brief.length < 8) return refuseCallRequest(cwd, request.contact, "call_contact needs a written brief: the purpose, what the agent may agree to, and when to hang up.");
     if (this.calls?.provider && this.calls.provider !== "twilio") return refuseCallRequest(cwd, request.contact, `Calls through ${this.calls.provider} are not available yet; use provider twilio.`);
     if (!this.credentials() || !this.calls?.from) return refuseCallRequest(cwd, request.contact, "Calls are not configured: set calls.from, calls.accountSidEnv and calls.authTokenEnv.");
+    if (!this.calls.publicUrl && !this.calls.apiBaseUrl) {
+      return refuseCallRequest(cwd, request.contact, "Set calls.publicUrl to the HTTPS address Twilio reaches this gateway at (public URL or tunnel) before placing calls.");
+    }
     const active = this.activeCall();
     if (active) return refuseCallRequest(cwd, request.contact, `A call with ${active.contact} is in progress; one call at a time.`);
     if (this.pendingApproval && this.pendingApproval.expiresAt > this.now()) {

@@ -41,7 +41,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls.test.ts` › "call_contact dials only named contacts after approval"
 - **Environment:** fake Twilio REST; harness approval sink.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11 on `feat/calls-sms`: red `12e53c0` (`Cannot find module src/twilio.js`) → green `03fcba1`; `npx tsx --test --test-concurrency=1 test/calls.test.ts` 5/5. Live 2026-11-11: the real `muster gateway start --port 7525` against the fake Twilio REST server and TwiML callee, a local stub model, and `muster mcp serve` (`~/.muster-work/review/screens/calls-25/evidence.txt`): `call_contact` with `+15559999999` and `unknown` returned isError "call_contact takes a contact name from calls.contacts (owner, dentist)."; with `dentist` it returned `awaiting_approval` and the card was texted to the owner (`☎ Call dentist (+1 555-765-4321)?` / brief / `Cap: 15 s · $0.50` / `y call · n cancel`); Calls.json count stayed 0 until the owner texted `y`, then `To=+15557654321` with the status callback URL and `TimeLimit=30`.
 
 ## MUS-SPEC-25-1B — Approvals during a call fail closed
 
@@ -53,7 +53,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls.test.ts` › "approvals during a call are declined and routed to the text channel"
 - **Environment:** fake call session.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: red `12e53c0` → green `03fcba1`; `test/calls.test.ts` 5/5. The in-call turn's approval request was declined, the owner got "During the call with dentist the agent asked to edit notes.md; approve it here after the call" by SMS, and an owner text during the call reached the next turn as a steer with no model turn of its own (reply "Passed to the call with dentist."). Not run live (it needs a model that requests a gated tool).
 
 ## MUS-SPEC-25-2A — The first sentence discloses the AI, and the cap ends the call
 
@@ -65,8 +65,8 @@ Config (`gateway.json`):
   - Spend is tracked from provider pricing plus model usage. Reaching `maxUsdPerCall` also ends the call.
 - **Test:** `packages/gateway/test/calls.test.ts` › "the call opens with an AI disclosure and ends at the time or spend cap"
 - **Environment:** a fake media-stream WebSocket.
-- **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Known gaps:** realtime speech (OpenAI realtime, Gemini Live over a media stream) is not built yet: calls use `<Gather input="speech">` and `<Say>`, and a configured `calls.realtime` only logs that. Telnyx (ed25519 webhooks) is not built; `provider: "telnyx"` is refused. Model spend is estimated from prompt and reply length.
+- **Evidence:** green 2026-11-11: red `12e53c0` → green `03fcba1`; `test/calls.test.ts` 5/5 (time cap 2 s; spend cap 0.05 with a 0.06 model turn). The fake media stream is the TwiML callee in `test/fakes/twilio.ts`, because this slice carries speech over `<Gather>`/`<Say>`. Live 2026-11-11: the real `muster gateway start --port 7525` against the fake Twilio REST server and TwiML callee, a local stub model, and `muster mcp serve` (`~/.muster-work/review/screens/calls-25/evidence.txt`): the callee first heard "Hi, this is an AI assistant calling for Dhairya."; at the 15 s cap the gateway posted `Calls/CA…04.json` with `<Say>I have to wrap up this call now. Thank you, goodbye.</Say><Hangup/>` and the call ended (`ended=api after 15.0 s`).
 
 ## MUS-SPEC-25-2B — After the call: record, summary and fallback
 
@@ -79,7 +79,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls.test.ts` › "completed calls are recorded and summarised, unanswered calls fall back"
 - **Environment:** fake callbacks.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: red `12e53c0` → green `03fcba1` (`muster calls list` in `06408b1`); `test/calls.test.ts` 5/5. Live 2026-11-11: the real `muster gateway start --port 7525` against the fake Twilio REST server and TwiML callee, a local stub model, and `muster mcp serve` (`~/.muster-work/review/screens/calls-25/evidence.txt`): `calls.jsonl` got one `call.record` (`outcome: completed`, `endedBy: time-cap`, 15 s, $0.0148, transcript path); the owner got the 3-line summary by SMS; `muster calls list` printed the row. The no-answer SMS fallback and the owner question are covered by the test only.
 
 ## MUS-SPEC-25-3A — Webhooks are signed and replay-protected
 
@@ -89,7 +89,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls.test.ts` › "call webhooks verify signatures and ignore replays and stale requests"
 - **Environment:** the real gateway HTTP server.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: red `12e53c0` → green `03fcba1`; `test/calls.test.ts` 5/5: valid → 200 and processed once; the same body → 200, counted as a replay and not processed; wrong token → 403; a 10-minute-old `Timestamp` → 403; a signature for another call's URL → 403. Live: a forged SMS webhook → 403; the gateway log never contained the auth token.
 
 ## MUS-SPEC-25-4A — SMS is a channel on the SDK
 
@@ -102,7 +102,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/sms-channel.test.ts` › "sms inbound runs through the shared runner and outbound goes only to named contacts"
 - **Environment:** fakes.
 - **Known gaps:** MMS images are listed as attachments only.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: red `5658d23` run against the pre-implementation sources of `12e53c0` (`does not provide an export named 'twilioSignature'`); the adapter landed in `03fcba1`, ahead of its test; `npx tsx --test --test-concurrency=1 test/sms-channel.test.ts` 1/1. Live 2026-11-11: the real `muster gateway start --port 7525` against the fake Twilio REST server and TwiML callee, a local stub model, and `muster mcp serve` (`~/.muster-work/review/screens/calls-25/evidence.txt`): the owner's first text got the pairing challenge (`muster pairing approve GAPZ5SQ7`), and after approval "what is 2+2" was answered "four" through Messages.json.
 
 ## MUS-SPEC-25-5A — A full simulated call in CI
 
@@ -117,4 +117,4 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls-sim.test.ts` › "a simulated call survives a slow tool and a dropped socket"
 - **Environment:** fakes only; no real calls in CI.
 - **Known gaps:** real-network calls are a manual release check.
-- **Evidence:** UNVERIFIED
+- **Evidence:** green 2026-11-11: red `5658d23` against the pre-implementation sources (`running.calls` undefined); green `ad23d24`; `npx tsx --test --test-concurrency=1 test/calls-sim.test.ts` 1/1, about 3.1 s. The transcript has six turns in order, the 3 s tool is covered by "One moment." with the longest silence under 1.5 s, the dropped request is retried and answered as a replay without rerunning the turn, and exactly one record is written.
