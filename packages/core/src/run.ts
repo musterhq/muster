@@ -11,7 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { loadAgentRules } from "./agent-rules.js";
-import { defaultHookBus, type HookBus } from "./hooks.js";
+import { defaultHookBus, describePolicyBlock, PLUGIN_HOOK_PREFIX, type HookBus } from "./hooks.js";
 import { appendGoalLoopTurn, buildGoalLoopTurn, rememberedMemoryWrite, type GoalLoopMemoryWrite } from "./goal-loop.js";
 import { runClaudeCode } from "./claude.js";
 import { runCodex } from "./codex.js";
@@ -733,7 +733,9 @@ const runCodexBackend: CliBackendRunner = async (route, prompts, options, config
                       // Codex's decline carries no reason; tell the turn why, so the
                       // model can explain the block instead of "no reason was given".
                       void steerActiveCodexTurn(
-                        `Muster policy${verdict.blockedBy ? ` rule "${verdict.blockedBy}"` : ""} blocked \`${subject}\`: ${verdict.reason ?? "blocked by policy"}. It did not run.`,
+                        verdict.blockedBy?.startsWith(PLUGIN_HOOK_PREFIX)
+                          ? `Muster blocked \`${subject}\` (${describePolicyBlock({ hookId: verdict.blockedBy, ...(verdict.reason ? { reason: verdict.reason } : {}) })}). It did not run.`
+                          : `Muster policy${verdict.blockedBy ? ` rule "${verdict.blockedBy}"` : ""} blocked \`${subject}\`: ${verdict.reason ?? "blocked by policy"}. It did not run.`,
                         options.nativeTransportOwner,
                         options.conversationKey,
                       ).catch(() => false);

@@ -268,6 +268,8 @@ import {
   listPluginCommands,
   type InstalledPluginCommand,
   describePermission,
+  describePolicyBlock,
+  PLUGIN_HOOK_PREFIX,
   isCodePlugin,
   readCodePluginManifest,
   callCodexConversation,
@@ -3257,7 +3259,7 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
       },
       onPolicyBlock: (request, block) => {
         if (painter) painter.blocked(request, block);
-        else console.log(color(`blocked ${request.title} — ${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`, "yellow"));
+        else console.log(color(`blocked ${request.title} — ${block.hookId?.startsWith(PLUGIN_HOOK_PREFIX) ? describePolicyBlock(block) : `${block.reason ?? "policy"}${block.hookId ? ` (${block.hookId})` : ""}`}`, "yellow"));
       },
       onDelta: painter ? (chunk) => painter.delta(chunk) : undefined,
       onReasoningDelta: painter ? (chunk) => painter.reasoning(chunk) : undefined,
