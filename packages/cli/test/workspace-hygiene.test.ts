@@ -54,3 +54,19 @@ test("the SQLite experimental warning is hidden and other warnings still print",
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-15-3A (docs/spec/clauses/15-workspace-hygiene.md#mus-spec-15-3a--muster-doctor-in-a-new-folder-says-what-to-do-not-a-raw-error)
+test("doctor in a new folder suggests init instead of printing ENOENT", { timeout: 120_000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-doctor-fresh-"));
+  try {
+    const env = { ...process.env, MUSTER_ONBOARDING_HOME: join(dir, ".test-home"), MUSTER_SKIP_ONBOARDING: "1" };
+    const { stdout } = await run("tsx", [cliPath, "doctor"], { cwd: dir, env }).catch((error: { stdout?: string }) => ({ stdout: error.stdout ?? "" }));
+    assert.match(stdout, /^warn config\s+no Muster config in this folder yet$/m);
+    assert.match(stdout, /^fix\s+config\s+muster init \(or muster doctor --fix\)$/m);
+    assert.doesNotMatch(stdout, /ENOENT/);
+    assert.doesNotMatch(stdout, /^(ok |err) /m, "one vocabulary: pass, warn, fail");
+    assert.equal(existsSync(join(dir, ".muster")), false, "doctor makes no files");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

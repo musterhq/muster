@@ -91,3 +91,17 @@
 - **Environment:** chat harness with the narration painter; `TurnTimer` with an injected clock.
 - **Known gaps:** an edit approval has no tool cell (file edits are shown as diff cards), so only the status row changes for it.
 - **Evidence:** live, 2026-11-10, `/access ask`, "touch approved.txt": the cell read `⎿ awaiting approval`, the row `✻ Waiting for approval · … · 3.5s` and still `3.5s` 5 s later; after `y` the turn finished. Red→green: access-approvals.test.ts.
+
+## MUS-SPEC-10-1I — An answered approval folds into its cell, and the wait is not counted as run time
+
+- **Precondition:** ask mode; a command cell `Bash(printf 'one' > a.txt && ls)` waiting on its approval card.
+- **Action:** the user waits about 6 s and presses `y`; the command runs for about 150 ms in total outside the wait and ends.
+- **Expected result:**
+  - The separate answered card disappears. The cell's result line starts with the decision: `⎿ approved once · exit 0 · 150ms`.
+  - The cell's time excludes the wait, whether Codex reported a duration or Muster measured it.
+  - A declined request keeps its cell, which reads `⎿ denied`.
+  - A request with no matching cell keeps the settled card, as before.
+- **Test:** `packages/cli/test/access-approvals.test.ts` › "an answered approval folds into its cell and the wait is not run time"
+- **Environment:** harness sink and painter.
+- **Known gaps:** none.
+- **Evidence:** green 2026-11-11: CLI `access-approvals.test.ts` (red first: a separate `Run …? approved once` card and the wait counted in the cell time). Found in live QA pass 2: `exit 0 · 8.1s` after about 6 s of waiting.

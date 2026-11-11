@@ -21,3 +21,26 @@ Muster keeps per-workspace state in `.muster/`. In a git repository it must not 
 - **Environment:** real CLI through tsx; a tsx child that installs the filter and emits both warnings.
 - **Known gaps:** child processes Muster spawns with their own Node (plugins, MCP servers) keep Node's default warning output.
 - **Evidence:** live, 2026-11-10, built CLI in `/tmp/polish-w`: `node packages/cli/dist/index.js --version`, `config list` and `status` print nothing to stderr (before: `(node:…) ExperimentalWarning: SQLite is an experimental feature…` and the `--trace-warnings` hint on every command); a `DeprecationWarning` emitted after the filter still prints. Red→green: workspace-hygiene.test.ts; cli.test.ts "CLI roster inspect and install verify entries into a lockfile" passes.
+
+## MUS-SPEC-15-3A — `muster doctor` in a new folder says what to do, not a raw error
+
+- **Precondition:** a folder with no `.muster/`.
+- **Action:** `muster doctor`.
+- **Expected result:** the config row reads `warn config  no Muster config in this folder yet`, followed by `fix  config  muster init (or muster doctor --fix)`. No `ENOENT` and no raw path error appear. Every row uses the same words as the environment checks: `pass` / `warn` / `fail`, never `ok` / `err`. The command makes no files.
+- **Test:** `packages/cli/test/workspace-hygiene.test.ts` › "doctor in a new folder suggests init instead of printing ENOENT"
+- **Environment:** temp folder; real CLI.
+- **Known gaps:** none.
+- **Evidence:** green 2026-11-11: CLI `workspace-hygiene.test.ts` 3/3 (red first: `err config ENOENT … config.json`).
+
+## MUS-SPEC-15-3B — `muster --help` is one short page; the full list is one command away
+
+- **Precondition:** any folder.
+- **Action:** `muster --help`; `muster help plugins`; `muster help all`.
+- **Expected result:**
+  - `--help` fits in 40 lines, grouped as Start / Work / Extend / Reach / More. It names `muster help <command>` and `muster help all`.
+  - `help plugins` prints only the `muster plugins …` usage lines.
+  - `help all` prints the full command list, which is what `--help` printed before.
+- **Test:** `packages/cli/test/cli.test.ts` › "help is one short grouped page with help <command> and help all"
+- **Environment:** real CLI.
+- **Known gaps:** none.
+- **Evidence:** green 2026-11-11: CLI `cli.test.ts` help tests 3/3; `muster --help` is 26 lines (it was 131); `muster help plugins` prints the plugins usage only.

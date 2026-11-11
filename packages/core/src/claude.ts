@@ -165,7 +165,7 @@ function claudeToolTitle(name: string, input: Record<string, unknown>): string {
  * kept as the answer so the turn still completes.
  */
 class ClaudeStreamParser {
-  private readonly tools = new Map<string, { kind: AgentToolEvent["kind"]; title: string; fileEdit: boolean }>();
+  private readonly tools = new Map<string, { kind: AgentToolEvent["kind"]; title: string; fileEdit: boolean; name?: string }>();
   private plain: string[] = [];
   private assistantText: string[] = [];
   private result: { text: string; isError: boolean; usage?: ClaudeCodeUsage } | undefined;
@@ -215,10 +215,10 @@ class ClaudeStreamParser {
             const kind: AgentToolEvent["kind"] = name === "Bash" ? "command" : name.startsWith("mcp__") ? "mcp" : name === "WebSearch" ? "web" : "tool";
             const title = kind === "command" && typeof args.command === "string" ? args.command : claudeToolTitle(name, args);
             const fileEdit = this.input.fileEditCards === true && CLAUDE_FILE_EDIT_TOOLS.has(name);
-            this.tools.set(block.id, { kind, title, fileEdit });
+            this.tools.set(block.id, { kind, title, fileEdit, ...(kind === "tool" ? { name } : {}) });
             // With live diff, a file edit is shown by the observer's diff card
             // (as on Codex); its cell appears only if the edit fails.
-            if (!fileEdit) this.emitTool({ phase: "start", id: block.id, kind, title });
+            if (!fileEdit) this.emitTool({ phase: "start", id: block.id, kind, title, ...(kind === "tool" ? { name } : {}) });
           }
         }
         return;
@@ -234,7 +234,7 @@ class ClaudeStreamParser {
           if (tool.fileEdit) {
             this.tools.delete(block.tool_use_id);
             if (!failed) continue;
-            this.emitTool({ phase: "start", id: block.tool_use_id, kind: tool.kind, title: tool.title });
+            this.emitTool({ phase: "start", id: block.tool_use_id, kind: tool.kind, title: tool.title, ...(tool.name ? { name: tool.name } : {}) });
           }
           const exitCode = tool.kind === "command" ? (failed ? Number(output.match(/exit code (\d+)/i)?.[1] ?? 1) : 0) : undefined;
           this.emitTool({
@@ -242,6 +242,7 @@ class ClaudeStreamParser {
             id: block.tool_use_id,
             kind: tool.kind,
             title: tool.title,
+            ...(tool.name ? { name: tool.name } : {}),
             ...(exitCode !== undefined ? { exitCode } : {}),
             ...(output ? { output } : {}),
             failed,

@@ -14,7 +14,7 @@ const cliPath = resolve(import.meta.dirname, "..", "src", "index.ts");
 const cliPackageVersion = (JSON.parse(await readFile(resolve(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
 
 test("CLI help exposes terminal and pi surfaces", async () => {
-  const { stdout } = await runCli(["help"]);
+  const { stdout } = await runCli(["help", "all"]);
 
   assert.match(stdout, /muster --version/);
   assert.match(stdout, /muster update \[--manager npm\|pnpm\|yarn\|bun\] \[--target latest\] \[--apply\]/);
@@ -3535,7 +3535,7 @@ test("CLI doctor --fix bootstraps a fresh workspace and status renders mission c
   const fixed = await runCli(["doctor", "--fix"], cwd);
   assert.match(fixed.stdout, /fix config/);
   assert.match(fixed.stdout, /fix data-dir/);
-  assert.match(fixed.stdout, /ok  config/);
+  assert.match(fixed.stdout, /pass config/);
 
   await runCli(["schedule", "add", "* * * * *", "daily digest"], cwd);
 
@@ -3959,3 +3959,18 @@ async function runCliAllowFailure(args: string[], cwd = resolve(import.meta.dirn
     return { stdout: detail.stdout ?? "", stderr: detail.stderr ?? "", code: detail.code ?? 1 };
   }
 }
+
+// Spec: MUS-SPEC-15-3B (docs/spec/clauses/15-workspace-hygiene.md#mus-spec-15-3b--muster---help-is-one-short-page-the-full-list-is-one-command-away)
+test("help is one short grouped page with help <command> and help all", async () => {
+  const short = (await runCli(["--help"])).stdout;
+  assert.ok(short.trimEnd().split("\n").length <= 40, `short help is ${short.split("\n").length} lines`);
+  for (const group of ["Start", "Work", "Extend", "Reach", "More"]) assert.match(short, new RegExp(`^${group}$`, "m"));
+  assert.match(short, /muster help <command>/);
+  assert.match(short, /muster help all/);
+  const plugins = (await runCli(["help", "plugins"])).stdout;
+  assert.match(plugins, /muster plugins validate <dir>/);
+  assert.doesNotMatch(plugins, /muster mcp /);
+  const all = (await runCli(["help", "all"])).stdout;
+  assert.ok(all.split("\n").length > 100, "help all is the full list");
+  assert.match(all, /muster runtime doctor/);
+});

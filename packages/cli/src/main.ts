@@ -287,6 +287,7 @@ import {
   type RecordedTurn,
   type MusterConfig as ChatMusterConfig,
   type WorkspacePatchEvent,
+  type ApprovalDecision,
   ACCESS_MODES,
   isAccessMode,
   type AccessMode,
@@ -413,7 +414,7 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-      printHelp();
+      printHelp(args);
       return;
     case "version":
     case "--version":
@@ -760,8 +761,51 @@ Design rule:
   One active runtime per run. Providers/models can route dynamically by task.
 `;
 
-function printHelp(): void {
-  console.log(HELP_TEXT);
+/** `muster --help`: one page of what most people need. `help all` is the full list. */
+const SHORT_HELP = `Muster v${CLI_MUSTER_VERSION}
+One agent for code, channels, memory and automations.
+
+Start
+  muster                                  open chat (the first run sets things up)
+  muster chat "your prompt"               ask once, then keep chatting
+  muster onboard                          providers, channels and memory, step by step
+  muster doctor                           check this machine and folder
+
+Work
+  muster chat --session <name>            pick up a named conversation
+  muster run "task"                       one task, no chat
+  muster schedule remind "in 10m" "..."   reminders and routines
+
+Extend
+  muster plugins install <path|git|name>  plugins (isolated, with permissions)
+  muster mcp list                         MCP servers (add-stdio, add-http, serve)
+  muster skills list                      skills
+
+Reach
+  muster channels list                    Telegram, Slack, Discord, WhatsApp, Matrix, email, ...
+  muster gateway daemon start             run channels and automations in the background
+  muster voice doctor                     speech-to-text and text-to-speech
+
+More
+  muster help <command>                   usage for one command, e.g. muster help plugins
+  muster help all                         every command`;
+
+function printHelp(args: readonly string[] = []): void {
+  const topic = args.find((arg) => !arg.startsWith("-") && arg !== "help");
+  if (!topic) {
+    console.log(SHORT_HELP);
+    return;
+  }
+  if (topic === "all") {
+    console.log(HELP_TEXT);
+    return;
+  }
+  const lines = commandUsageLines(HELP_TEXT, topic);
+  if (lines.length) {
+    console.log(lines.join("\n"));
+    return;
+  }
+  console.log(`No command "${topic}". ${SHORT_HELP.split("\n").slice(-2).join(" · ").replace(/\s+/g, " ").trim()}`);
 }
 
 async function frappeCommand(args: string[]): Promise<void> {
@@ -1128,7 +1172,7 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
     await mkdir(data, { recursive: true });
     console.log(`fix data-dir          ${data}`);
   }
-  const checks: Array<[string, boolean, string]> = [];
+  const checks: Array<[string, boolean | "warn", string]> = [];
   let configLoaded = false;
   try {
     const config = await loadConfig();
@@ -1140,7 +1184,8 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
       checks.push([`provider:${provider.id}`, true, `${provider.kind} ${provider.baseUrl ?? ""}`.trim()]);
     }
   } catch (error) {
-    checks.push(["config", false, error instanceof Error ? error.message : String(error)]);
+    const missing = (error as NodeJS.ErrnoException)?.code === "ENOENT" || /ENOENT/.test(error instanceof Error ? error.message : String(error));
+    checks.push(["config", missing ? "warn" : false, missing ? "no Muster config in this folder yet" : error instanceof Error ? error.message : String(error)]);
   }
 
   if (configLoaded) {
@@ -1153,8 +1198,11 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
     }
   }
 
+  // One vocabulary with the environment checks below: pass, warn, fail.
   for (const [name, ok, detail] of checks) {
-    console.log(`${ok ? "ok " : "err"} ${name.padEnd(28)} ${detail}`);
+    const status = ok === "warn" ? "warn" : ok ? "pass" : "fail";
+    console.log(`${status.padEnd(4)} ${name.padEnd(28)} ${detail}`);
+    if (name === "config" && ok === "warn") console.log(`fix  ${name.padEnd(28)} muster init (or muster doctor --fix)`);
   }
 
   for (const check of await runEnvironmentDoctorChecks()) {
@@ -3302,11 +3350,13 @@ async function runChatTurn(text: string, state: ChatState, options: { timeoutMs?
         if (!state.statusSink) return "decline";
         turnTimer.pause();
         painter?.approval(request, "waiting");
+        let decision: ApprovalDecision | undefined;
         try {
-          return await state.statusSink.requestApproval(request);
+          decision = await state.statusSink.requestApproval(request);
+          return decision;
         } finally {
           turnTimer.resume();
-          painter?.approval(request, "answered");
+          painter?.approval(request, "answered", decision);
         }
       },
       onPolicyBlock: (request, block) => {
