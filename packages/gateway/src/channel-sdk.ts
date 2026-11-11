@@ -1,4 +1,5 @@
-import type { ApprovalRequest, SurfaceArtifact, SurfaceAttachment, SurfaceMessage, SurfaceReply } from "./envelope.js";
+import type { ApprovalRequest, PairingChallenge, SurfaceArtifact, SurfaceAttachment, SurfaceMessage, SurfaceReply } from "./envelope.js";
+import type { TrustedFrappeContext } from "./frappe-ingress.js";
 import type { GatewayConfig } from "./gateway-config.js";
 import type { ApprovalActionParser, ApprovalActionRenderContext, ApprovalActionTokens } from "./presentation.js";
 
@@ -16,6 +17,18 @@ export class ChannelVerificationError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
     this.name = "ChannelVerificationError";
+  }
+}
+
+/**
+ * Thrown by send when the platform definitively refused the message (an HTTP
+ * error answer, not a lost connection). The durable webhook path keeps the
+ * generated reply and retries delivery instead of running the turn again.
+ */
+export class ChannelDeliveryRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelDeliveryRejectedError";
   }
 }
 
@@ -44,6 +57,8 @@ export interface ChannelPeer {
   readonly surfaceId?: string;
   /** The inbound platform payload, when replying to one. */
   readonly raw?: unknown;
+  /** A platform handle that must answer this item (e.g. a Discord interaction id and token). */
+  readonly interaction?: unknown;
 }
 
 export interface ChannelButton {
@@ -83,6 +98,13 @@ export interface ChannelInboundRequest {
   readonly body: string;
   readonly headers: Readonly<Record<string, string | readonly string[] | undefined>>;
   readonly gateway: GatewayConfig;
+  /** For verifiers that fetch signing keys (Bot Framework JWKS). Only configured endpoints are fetched. */
+  readonly fetcher?: typeof fetch;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Host-injected bearer verifier (Google Chat signed requests). */
+  readonly bearerVerifier?: {
+    verify(input: { readonly authorization: string | undefined; readonly rawBody: string; readonly payload: unknown; readonly audience: string }): boolean | Promise<boolean>;
+  };
 }
 
 export interface ChannelNormalizeContext {
@@ -94,6 +116,13 @@ export interface ChannelInbound {
   /** Stable platform delivery id, the durable-ingress key. */
   readonly deliveryId: string;
   readonly message: SurfaceMessage;
+  /**
+   * The adapter's own policy admitted this sender (e.g. the WhatsApp group
+   * allowlist), so the shared path skips the per-sender pairing step.
+   */
+  readonly preAuthorized?: boolean;
+  /** Handed to the reply peer (see ChannelPeer.interaction). */
+  readonly interaction?: unknown;
 }
 
 export interface ChannelInvite {
@@ -127,10 +156,59 @@ export interface ChannelApprovalRender {
   readonly buttons?: readonly ChannelButton[];
 }
 
+/** What a raw webhook body asks for. */
+export type ChannelWebhookInbound =
+  /** Answer at once with this body and start no turn (e.g. Discord PING). */
+  | { readonly kind: "respond"; readonly body: unknown }
+  | { readonly kind: "ignored"; readonly reason: string }
+  | { readonly kind: "messages"; readonly messages: readonly SurfaceMessage[] };
+
+export interface ChannelWebhookTurn {
+  /** Answer with this instead of running the turn. */
+  readonly respond?: SurfaceReply;
+  readonly trustedFrappe?: TrustedFrappeContext;
+}
+
+/**
+ * Webhook behaviour of a channel, used by the shared webhook path
+ * (serveChannelWebhook in channel-runner.ts) behind POST /v1/adapters/<route>.
+ */
+export interface ChannelWebhook {
+  /** Route ids under /v1/adapters/. The first one is the durable-ingress scope. */
+  readonly routes: readonly string[];
+  /** Error for a request that arrives while the channel is not configured. */
+  readonly notConfigured: string;
+  parse(payload: unknown, context: ChannelNormalizeContext): ChannelWebhookInbound;
+  /** Key for the in-process reply cache; defaults to deliveryKey. */
+  cacheKey?(payload: unknown): string | undefined;
+  /**
+   * Acknowledge the request at once with this status and body, and answer
+   * later through `send`. Undefined answers within the HTTP response.
+   */
+  acknowledge?(gateway: GatewayConfig, payload: unknown): { readonly status: number; readonly body: unknown } | undefined;
+  /** The reply as the HTTP response body, or undefined to send it through the outbound API. */
+  syncReply?(
+    reply: SurfaceReply | PairingChallenge,
+    message: SurfaceMessage,
+    context: { readonly gateway: GatewayConfig; readonly approvalAction?: ApprovalActionRenderContext },
+  ): unknown;
+  /** Body for a retry that is still running or already answered. */
+  busyResponse?(state: "in-flight" | "replay"): unknown;
+  /** Channel-specific step before the turn (e.g. Google Chat's Frappe identity). */
+  beforeTurn?(message: SurfaceMessage, payload: unknown, context: ChannelContext): Promise<ChannelWebhookTurn>;
+}
+
 export interface ChannelAdapter {
   readonly id: string;
   readonly label: string;
   readonly capabilities: ChannelCapabilities;
+  /**
+   * Senders are admitted by pairing alone unless channels.<id>.allowFrom is
+   * set. Channels that predate the SDK keep this, so existing setups work.
+   */
+  readonly admitByPairing?: boolean;
+  /** Present on channels that receive webhooks on /v1/adapters/<route>. */
+  readonly webhook?: ChannelWebhook;
   /** True when gateway.json has what this channel needs. */
   configured(gateway: GatewayConfig): boolean;
   /** Surface id used for pairing and sessions, e.g. "telegram:bot". */
@@ -152,7 +230,7 @@ export interface ChannelAdapter {
    * (Telegram file id, Matrix mxc://). The shared voice path calls this only
    * after its length and size checks pass.
    */
-  downloadAttachment?(attachment: SurfaceAttachment, context: ChannelContext): Promise<Uint8Array>;
+  downloadAttachment?(attachment: SurfaceAttachment, context: ChannelContext, options?: { readonly maxBytes?: number }): Promise<Uint8Array>;
   /** Send a spoken reply as a native voice message (Ogg/Opus). Without it the runner falls back to sendMedia. */
   sendVoice?(peer: ChannelPeer, audio: ChannelVoiceAudio, context: ChannelContext): Promise<ChannelSendResult>;
   /** Approval prompt: buttons when the channel has them, otherwise a numbered choice. */
@@ -285,4 +363,18 @@ export function defaultPairingText(code: string): string {
 export function isLocalHost(host: string): boolean {
   const value = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
   return value === "localhost" || value === "::1" || value.startsWith("127.");
+}
+
+/** `muster channels list`: one row per registered channel, with whether gateway.json configures it. */
+export function channelRegistryTable(registry: ChannelRegistry, gateway: GatewayConfig): string {
+  const yes = (value: boolean) => (value ? "yes" : "no");
+  const rows = registry.list().map((adapter) => [
+    adapter.id,
+    adapter.label,
+    yes(adapter.capabilities.buttons),
+    yes(adapter.capabilities.edit),
+    String(adapter.capabilities.maxTextLength),
+    adapter.configured(gateway) ? "configured" : "not configured",
+  ].join("\t"));
+  return `${["channel", "label", "buttons", "edit", "max_text", "status"].join("\t")}\n${rows.join("\n")}\n`;
 }

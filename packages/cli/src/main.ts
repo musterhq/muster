@@ -343,6 +343,8 @@ import {
   pollTelegram,
   pollWhatsApp,
   runChannelWorker,
+  channelRegistryTable,
+  defaultChannelRegistry,
   saveGatewayConfig,
   slackEventToSurfaceMessage,
   startGatewayServer,
@@ -12862,6 +12864,9 @@ async function channelsCommand(commandArgs: string[]): Promise<void> {
   if (await sdkChannelsCommand(commandArgs)) return;
   if (action === "list" || action === undefined) {
     printChannelCatalog();
+    const registryGateway = await loadGatewayConfig().catch(() => emptyGatewayConfig());
+    console.log("");
+    process.stdout.write(channelRegistryTable(defaultChannelRegistry(), registryGateway));
     return;
   }
   if (action === "status") {

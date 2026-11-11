@@ -153,9 +153,16 @@ export interface GatewayConfig {
     readonly signingSecret?: string;
   };
   readonly discord?: {
-    readonly botToken: string;
+    /** Legacy inline bot token. Prefer botTokenEnv. */
+    readonly botToken?: string;
+    /** Name of the environment variable holding the bot token. */
+    readonly botTokenEnv?: string;
     /** Application public key (hex, developer portal) for ed25519 interaction verification. */
     readonly publicKey?: string;
+    /** REST base; defaults to https://discord.com/api/v10. */
+    readonly apiBaseUrl?: string;
+    /** Gateway WebSocket URL; defaults to the one GET /gateway/bot returns. */
+    readonly gatewayUrl?: string;
   };
   readonly whatsapp?: {
     readonly account?: string;
@@ -167,7 +174,10 @@ export interface GatewayConfig {
     readonly sessionDir?: string;
   };
   readonly "whatsapp-cloud"?: {
-    readonly accessToken: string;
+    /** Legacy inline access token. Prefer accessTokenEnv. */
+    readonly accessToken?: string;
+    /** Name of the environment variable holding the Graph API access token. */
+    readonly accessTokenEnv?: string;
     readonly verifyToken: string;
     readonly phoneNumberId: string;
     /** Meta app secret for X-Hub-Signature-256 POST webhook verification. */
@@ -180,6 +190,18 @@ export interface GatewayConfig {
     readonly verificationToken?: string;
     /** Modern bearer verification is performed by an injected verifier. */
     readonly verification?: { readonly mode: "bearer"; readonly audience: string };
+    /**
+     * Answer through the Chat API (in-thread, asynchronously) instead of the
+     * synchronous webhook response. The service-account key JSON is read from
+     * the named environment variable; it is never stored here.
+     */
+    readonly api?: {
+      readonly serviceAccountKeyEnv: string;
+      /** Chat API base; defaults to https://chat.googleapis.com/v1. */
+      readonly baseUrl?: string;
+      /** OAuth token endpoint; defaults to the key's token_uri. */
+      readonly tokenUrl?: string;
+    };
     /** Google command id -> Muster slash command. */
     readonly commands?: Readonly<Record<string, string>>;
     /** Resolve a verified Google email to a permission-bearing Frappe identity. */
@@ -195,7 +217,20 @@ export interface GatewayConfig {
       readonly cacheTtlMs?: number;
     };
   };
-  readonly teams?: { readonly hmacSecret?: string };
+  readonly teams?: {
+    /** Outgoing-webhook mode: base64 HMAC secret. */
+    readonly hmacSecret?: string;
+    /** Bot Framework mode: the bot's Microsoft app id (the JWT audience). */
+    readonly appId?: string;
+    /** Name of the environment variable holding the bot's app password (client secret). */
+    readonly appPasswordEnv?: string;
+    /** Bot Framework OpenID configuration; defaults to https://login.botframework.com/v1/.well-known/openidconfiguration */
+    readonly openIdConfigUrl?: string;
+    /** Bot token endpoint; defaults to https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token */
+    readonly tokenUrl?: string;
+    /** Expected JWT issuer; defaults to https://api.botframework.com */
+    readonly issuer?: string;
+  };
   /** Channels built on the channel SDK (channel-sdk.ts). Secrets are env-var names, never values. */
   readonly channels?: GatewayChannelsConfig;
   readonly devices?: {
