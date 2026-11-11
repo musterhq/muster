@@ -7,6 +7,7 @@ semantic versioning.
 ## [Unreleased]
 
 ### Added
+- Channels slice 2 (spec 24): Discord, WhatsApp Cloud, personal WhatsApp, Google Chat and Teams run on the channel SDK, and the legacy webhook handlers are gone. Discord gets a gateway WebSocket bot (`muster gateway start --with-discord`) for DMs and @mentions, with approval buttons only the requester can press. WhatsApp voice notes go through the shared voice path. Google Chat (`gchat.api.serviceAccountKeyEnv`) and Teams Bot Framework (`teams.appId` + `teams.appPasswordEnv`) acknowledge at once and answer in-thread later. `muster channels list` shows every channel's capabilities and whether it is configured.
 - Chat dictation: Ctrl+R (or `/dictate`) records from the microphone with sox `rec` or ffmpeg, transcribes with `voice.stt`, and puts the text in the composer at the cursor, unsent. Esc cancels; `voice.dictation.maxSeconds` (default 120) and `voice.dictation.input` configure it.
 - Codex app-server lifecycle budgets (`CODEX_RUN_LIFECYCLE_VERSION`): independent request, idle, and absolute turn budgets, cancellation, thread/turn identity callbacks, and a `dispatchState` classification on run results. Callers that omit `budgets` keep the previous behaviour.
 - Hindsight client (`core/src/hindsight.ts`) and a SQLite-backed durable scheduler store with one-shot import of legacy `schedules.json`.
