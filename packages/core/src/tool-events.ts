@@ -18,6 +18,24 @@ export interface AgentToolEvent {
   readonly durationMs?: number;
   /** True when the tool reported failure (non-zero exit, MCP error). */
   readonly failed?: boolean;
+  /** The call's arguments as `key: value` text (MCP calls), for the cell headline. */
+  readonly args?: string;
+}
+
+/** `id: 4411, content: "QA lunch"`: an MCP call's arguments on one line. */
+export function summarizeToolArguments(value: unknown): string | undefined {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return value.trim() || undefined;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed === undefined || parsed === null ? undefined : JSON.stringify(parsed);
+  const entries = Object.entries(parsed as Record<string, unknown>).map(([key, entry]) => `${key}: ${JSON.stringify(entry) ?? String(entry)}`);
+  const line = entries.join(", ");
+  return line ? (line.length > 400 ? `${line.slice(0, 399)}…` : line) : undefined;
 }
 
 function text(value: unknown): string | undefined {
@@ -65,7 +83,8 @@ export function codexItemToToolEvent(item: Record<string, unknown>, phase: "star
     }
     case "mcpToolCall": {
       const title = [text(item.server), text(item.tool)].filter(Boolean).join(".") || "mcp";
-      if (phase === "start") return { phase, id, kind: "mcp", title };
+      const args = summarizeToolArguments(item.arguments);
+      if (phase === "start") return { phase, id, kind: "mcp", title, ...(args ? { args } : {}) };
       const error = item.error && typeof item.error === "object" ? text((item.error as { message?: unknown }).message) : undefined;
       const output = error ?? mcpResultText(item.result);
       return {
@@ -73,6 +92,7 @@ export function codexItemToToolEvent(item: Record<string, unknown>, phase: "star
         id,
         kind: "mcp",
         title,
+        ...(args ? { args } : {}),
         ...(output ? { output } : {}),
         ...(num(item.durationMs) !== undefined ? { durationMs: num(item.durationMs) } : {}),
         failed: Boolean(error) || text(item.status) === "failed",

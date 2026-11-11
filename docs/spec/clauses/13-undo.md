@@ -41,3 +41,13 @@
 - **Environment:** pure helpers (`markTurnUndone`, `rewindTurnLabel`, `undoLastTurnRows`).
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10 in a git scratch repo: `/undo` → `Undid 2 files`, `/undo` again → `Already undone: …`; the `/rewind` picker listed the turn as `· undone` and the rewind reported `0 files restored` with no "left alone" rows. Red→green: live-diff-render.test.ts.
+
+## MUS-SPEC-13-2A — `/undo` says what it did to each file
+
+- **Precondition:** a git repo; the last turn edited `a.txt`, created `new.txt` and deleted `gone.txt`.
+- **Action:** run `/undo`.
+- **Expected result:** the rows read `a.txt (reverted +2 −1)`, `new.txt (removed)` and `gone.txt (restored)`: a file the turn created is described as removed, a file it deleted as restored; only edits show line counts.
+- **Test:** `packages/cli/test/live-diff-render.test.ts` › "undo names created files removed and deleted files restored"
+- **Environment:** real git repo, the workspace observer recording one turn, `undoLastTurnRows` without colour.
+- **Known gaps:** a rename is reported as reverted.
+- **Evidence:** live, 2026-11-11, tmux, built CLI, `/tmp/polish-rw`, a Codex turn that created `notes2.txt` and appended to `a.txt`, then `/undo`: `↺ Undid 2 files` / `⎿ a.txt (reverted +1 −0)` / `⎿ notes2.txt (removed)`, and `notes2.txt` was gone (before: `notes2.txt (reverted +1 −0)`). Capture: `screens/polish/qa35-after-undo.ansi`. Red→green: live-diff-render.test.ts.

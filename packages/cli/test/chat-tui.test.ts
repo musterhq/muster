@@ -650,3 +650,29 @@ test("windowTranscript scrolls in-app for the alternate screen and clamps at the
   assert.equal(short.clamped, 0, "short transcripts never scroll");
   assert.equal(short.visible.length, 5);
 });
+
+// Spec: MUS-SPEC-01-9A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-9a----history-shows-local-times-with-a-zone-and-each-message-keeps-its-own-time)
+test("history times are local with a zone and the prompt keeps the turn's start time", async () => {
+  const output = await import("../src/output.js") as { formatLocalTimestamp?: (iso: string, options?: { timeZone?: string; now?: number }) => string };
+  assert.equal(typeof output.formatLocalTimestamp, "function");
+  const now = Date.parse("2026-11-10T09:00:00.000Z");
+  assert.equal(output.formatLocalTimestamp!("2026-11-10T07:22:44.000Z", { timeZone: "Asia/Kolkata", now }), "12:52:44 GMT+5:30");
+  assert.equal(output.formatLocalTimestamp!("2026-11-10T07:22:44.000Z", { timeZone: "UTC", now }), "07:22:44 UTC");
+  assert.equal(output.formatLocalTimestamp!("2026-11-08T07:22:44.000Z", { timeZone: "Asia/Kolkata", now }), "2026-11-08 12:52:44 GMT+5:30");
+
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { openSessionStore } = await import("@musterhq/core");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-history-time-"));
+  const store = openSessionStore(cwd);
+  try {
+    const session = store.findOrCreateSession({ channel: "cli-chat", peer: "times" });
+    const append = store.appendMessage as (id: string, role: string, content: string, createdAt?: string) => { createdAt: string };
+    assert.equal(append.call(store, session.id, "user", "hi", "2026-11-10T07:22:30.000Z").createdAt, "2026-11-10T07:22:30.000Z");
+    assert.notEqual(append.call(store, session.id, "assistant", "hello").createdAt, "2026-11-10T07:22:30.000Z");
+  } finally {
+    store.close();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

@@ -107,7 +107,7 @@ test("narration painter heuristically separates sentence-start deltas after term
   assert.deepEqual(lines, ["● The suite is green now.", "  ", "  Tests pass without a join."]);
 });
 
-test("reasoning summaries render violet italic with a sparkle above the message they explain", () => {
+test("reasoning summaries render violet italic with their own glyph above the message they explain", () => {
   const painted: string[] = [];
   const painter = createNarrationPainter({ emit: (line) => painted.push(line), minChars: 8, maxChars: 64 });
   painter.reasoning("Checking whether the spool lease is renewed.\n");
@@ -118,7 +118,7 @@ test("reasoning summaries render violet italic with a sparkle above the message 
   const messageIndex = painted.findIndex((line) => stripAnsi(line).includes("The lease renews"));
   assert.ok(reasoningIndex >= 0 && messageIndex >= 0);
   assert.ok(reasoningIndex < messageIndex, "reasoning must render above the message");
-  assert.match(stripAnsi(painted[reasoningIndex]), /^✻ /);
+  assert.match(stripAnsi(painted[reasoningIndex]), /^∴ /);
   if (!process.env.NO_COLOR) {
     assert.ok(painted[reasoningIndex].includes("\x1b[3m"), "reasoning renders italic");
     assert.ok(formatReasoningLine("x").includes("183;157;219"), "reasoning uses the sanctioned violet");
@@ -252,7 +252,7 @@ test("exit commands are routed by the TUI itself", async () => {
 
 // ── Defect #6: compact launch header ────────────────────────────────────────
 
-test("compact launch header is ONE line: model once, session, path, help — nothing else", () => {
+test("compact launch header is ONE line: session and help — model and folder live in the status bar", () => {
   const lines = buildCompactHeaderLines({
     session: "main",
     cwd: "~/code/muster",
@@ -265,10 +265,10 @@ test("compact launch header is ONE line: model once, session, path, help — not
 
   assert.equal(lines.length, 1, `idle chrome is exactly one line, saw ${lines.length}`);
   const text = plain(lines).join("\n");
-  assert.match(text, /MUSTER · gpt-5\.6-sol · main · ~\/code\/muster · \/help/);
-  // The model is stated here and ONLY here while idle; provider/runtime/speed/
-  // scopes belong to /status, and no second hint line exists.
-  assert.doesNotMatch(text, /codex · native|speed session|scopes|@agent|\/header/);
+  assert.equal(text, "MUSTER · main · /help");
+  // Model and folder are in the status bar under the composer (QA-31);
+  // provider/runtime/speed/scopes belong to /status, and no second hint line exists.
+  assert.doesNotMatch(text, /gpt-5\.6-sol|~\/code\/muster|codex · native|speed session|scopes|@agent|\/header/);
 });
 
 // ── the transcript must show exactly what the model said ────────────────────
@@ -466,7 +466,7 @@ test("narration painter gives each reasoning summary part its own row", () => {
     painter.reasoning("Finding pytest environment");
     painter.reasoning("\n\nRunning an isolated package");
     painter.finish();
-    assert.deepEqual(plain(lines), ["✻ Finding pytest environment", "✻ Running an isolated package"]);
+    assert.deepEqual(plain(lines), ["∴ Finding pytest environment", "∴ Running an isolated package"]);
   } finally {
     if (previous === undefined) delete process.env.NO_COLOR;
     else process.env.NO_COLOR = previous;
@@ -479,4 +479,22 @@ test("command cells drop the shell wrapper, quoted or not", () => {
   assert.equal(unwrapShellCommand("/bin/zsh -lc hostname"), "hostname");
   assert.equal(unwrapShellCommand("bash -c \"ls -la\""), "ls -la");
   assert.equal(unwrapShellCommand("git status"), "git status");
+});
+
+// Spec: MUS-SPEC-01-7A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-7a--reasoning-summaries-do-not-wear-the-spinners-glyph)
+test("reasoning summaries use their own glyph, not the spinner's", () => {
+  const previous = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  try {
+    const lines: string[] = [];
+    const painter = createNarrationPainter({ emit: (line) => lines.push(line) });
+    painter.reasoning("Implementing now");
+    painter.reasoning("\n\nWaiting for next input");
+    painter.finish();
+    assert.deepEqual(plain(lines), ["∴ Implementing now", "∴ Waiting for next input"]);
+    for (const line of plain(lines)) assert.ok(!line.startsWith("✻"), `reasoning row must not look like the spinner: ${line}`);
+  } finally {
+    if (previous === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previous;
+  }
 });

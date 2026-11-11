@@ -227,3 +227,117 @@ test("muster chat --shortcuts prints the keys in aligned columns", { timeout: 60
   const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
   assert.ok(starts.every((start) => start > 0 && start === starts[0]), `descriptions start in one column:\n${stdout}`);
 });
+
+async function chatCommandReplies(commands: readonly string[]): Promise<Map<string, string>> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { resolve, join } = await import("node:path");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const run = promisify(execFile);
+  const cli = resolve(import.meta.dirname, "..", "src", "index.ts");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-replies-"));
+  const env = { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1", MUSTER_ONBOARDING_HOME: join(cwd, ".test-home") };
+  const replies = new Map<string, string>();
+  try {
+    await run("tsx", [cli, "init"], { cwd, env });
+    for (const command of commands) {
+      const { stdout } = await run("tsx", [cli, "chat", "--session", "replies", command], { cwd, env, timeout: 60_000 });
+      replies.set(command, stdout);
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+  return replies;
+}
+
+// Spec: MUS-SPEC-02-3A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3a--command-replies-are-plain-sentences-not-debug-keyvalue-pairs)
+test("chat command replies are plain sentences", { timeout: 240_000 }, async () => {
+  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex", "/model gpt-5.5", "/access ask", "/reasoning full", "/new s2", "/reset", "/name s3", "/resume s2"]);
+  const debug = /provider_handles_cleared|\bruntime=|\bprovider=|\bmodel=|Model=|\baccess=|reasoning_density=|session=/;
+  for (const [command, out] of replies) assert.doesNotMatch(out, debug, `${command}:\n${out}`);
+  assert.match(replies.get("/runtime claude-code")!, /^Runtime: Claude Code · model sonnet$/m);
+  assert.match(replies.get("/runtime codex")!, /^Runtime: Codex · model \S+$/m);
+  assert.match(replies.get("/model gpt-5.5")!, /^Model: \S.* · this session$/m);
+  assert.match(replies.get("/access ask")!, /^Access: ask · asks before /m);
+  assert.match(replies.get("/reasoning full")!, /^Reasoning summaries: full$/m);
+  assert.match(replies.get("/new s2")!, /^New session s2\.$/m);
+  assert.match(replies.get("/reset")!, /^Conversation reset; the next turn starts a fresh provider thread\.$/m);
+  assert.match(replies.get("/name s3")!, /^Conversation named s3\.$/m);
+  assert.match(replies.get("/resume s2")!, /^Resumed session s2\.$/m);
+});
+
+// Spec: MUS-SPEC-02-3B (docs/spec/clauses/02-chat-composer.md#mus-spec-02-3b--switching-runtime-does-not-pre-fill-the-composer)
+test("switching runtime leaves the composer empty and hints at /model", { timeout: 240_000 }, async () => {
+  const replies = await chatCommandReplies(["/runtime claude-code", "/runtime codex"]);
+  for (const [command, out] of replies) {
+    assert.doesNotMatch(out, /Next: \/model/, `${command} must not pre-fill /model:\n${out}`);
+    assert.match(out, /^Type \/model to pick a different model\.$/m, `${command}:\n${out}`);
+  }
+});
+
+// Spec: MUS-SPEC-17-3A (docs/spec/clauses/17-rewind.md#mus-spec-17-3a--the-rewind-picker-is-titled-aligned-and-lists-only-turns-worth-rewinding)
+test("the rewind picker is titled, aligned and leaves out failed turns", async () => {
+  const liveDiff = await import("../src/live-diff.js") as Record<string, unknown>;
+  const { RuledOverlay } = await import("../src/chat-tui.js");
+  const rewindPickerOptions = liveDiff.rewindPickerOptions as (stack: readonly { prompt: string; patches: readonly unknown[] }[]) => Array<{ value: string; label: string }>;
+  const recordableTurn = liveDiff.recordableTurn as (turn: { failed: boolean; patches: readonly unknown[] }) => boolean;
+  assert.equal(typeof rewindPickerOptions, "function");
+  assert.equal(typeof recordableTurn, "function");
+  assert.equal(recordableTurn({ failed: true, patches: [] }), false, "a failed turn that changed nothing is not recorded");
+  assert.equal(recordableTurn({ failed: true, patches: [{ path: "a.txt" }] }), true, "a failed turn that changed files can still be rewound");
+  assert.equal(recordableTurn({ failed: false, patches: [] }), true);
+
+  const stack = Array.from({ length: 13 }, (_, index) => ({ prompt: `prompt ${index + 1}`, patches: [] }));
+  const options = rewindPickerOptions(stack);
+  assert.equal(options[0]!.value, "1", "most recent first");
+  const starts = options.map((option) => option.label.indexOf("prompt"));
+  assert.ok(starts.every((start) => start === starts[0]), options.map((option) => option.label).join("\n"));
+  assert.equal(options.find((option) => option.value === "13")!.label, "13  prompt 1");
+  assert.equal(options.find((option) => option.value === "9")!.label, " 9  prompt 5");
+
+  const inner = { render: () => ["item"], handleInput: () => {}, invalidate: () => {} };
+  const rows = new RuledOverlay(inner, { title: "Rewind to before which turn?", hint: "↑↓ choose · enter select · esc cancel" })
+    .render(60).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+  assert.deepEqual(rows, ["─".repeat(60), "Rewind to before which turn?", "item", "↑↓ choose · enter select · esc cancel"]);
+});
+
+// Spec: MUS-SPEC-17-3B (docs/spec/clauses/17-rewind.md#mus-spec-17-3b--the-rewind-result-names-the-prompt-without-cutting-a-word)
+test("the rewind result quotes the prompt and cuts only at a word", async () => {
+  const { rewindPromptPreview } = await import("../src/live-diff.js") as { rewindPromptPreview?: (prompt: string, max?: number) => string };
+  assert.equal(typeof rewindPromptPreview, "function");
+  assert.equal(rewindPromptPreview!("Create b.txt containing two. Remember the second codeword is WALRUS."), "Create b.txt containing two. Remember the second codeword…");
+  assert.equal(rewindPromptPreview!("Create b.txt containing two."), "Create b.txt containing two.");
+  assert.equal(rewindPromptPreview!("short  prompt\nhere"), "short prompt here");
+  const long = rewindPromptPreview!("Append a function sub(a, b) returning a - b to calc.py, and create notes2.txt containing two.");
+  assert.ok(long.endsWith("…") && long.length <= 61, long);
+  assert.equal(long, "Append a function sub(a, b) returning a - b to calc.py, and…");
+});
+
+// Spec: MUS-SPEC-02-4A (docs/spec/clauses/02-chat-composer.md#mus-spec-02-4a--a-long-paste-shows-as-a-short-preview-in-the-transcript)
+test("a long paste is a short preview in the transcript and whole for the model", async () => {
+  const received: string[] = [];
+  const chat = createMusterChatHarness({ onSubmit: async (text, sink) => { received.push(text); sink.appendLine("● ok"); return true; } });
+  const paste = Array.from({ length: 200 }, (_, index) => `row ${index + 1} ${"x".repeat(110)}`).join("\n");
+  chat.type(paste);
+  await chat.submit();
+  assert.equal(received[0], paste, "the model gets the whole paste");
+  let rows = plain(chat.transcript()).split("\n");
+  const at = rows.findIndex((row) => row.startsWith("> row 1 "));
+  assert.ok(at >= 0, rows.slice(0, 8).join("\n"));
+  assert.ok(rows[at + 1]!.startsWith("  row 2 ") && rows[at + 2]!.startsWith("  row 3 "));
+  assert.equal(rows[at + 3], "  … +197 lines (pasted)");
+  assert.ok(!rows.some((row) => row.includes("row 4 ")), "the rest is not echoed");
+
+  chat.type(`one line ${"y".repeat(1500)}`);
+  await chat.submit();
+  rows = plain(chat.transcript()).split("\n");
+  const single = rows.findIndex((row) => row.startsWith("> one line "));
+  assert.ok(rows[single]!.length <= 2 + 201, rows[single]);
+  assert.match(rows[single + 1] ?? "", /^ {2}… \+\d+ chars \(pasted\)$/);
+
+  chat.type("short\nmessage");
+  await chat.submit();
+  rows = plain(chat.transcript()).split("\n");
+  assert.ok(rows.includes("> short") && rows.includes("message"), "short messages are shown whole, as before");
+});

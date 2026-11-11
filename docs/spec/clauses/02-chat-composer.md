@@ -91,3 +91,33 @@ How the composer behaves while a turn is running. Each case names the one test t
 - **Environment:** pure list and row formatter.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10: `/shortcuts` lists 11 keys and `/help` descriptions start in one column. The CLI test went red on the panel printer collapsing padding, then green.
+
+## MUS-SPEC-02-3A — Command replies are plain sentences, not debug `key=value` pairs
+
+- **Precondition:** a chat session (`muster chat --session <name> "<command>"` or the TUI).
+- **Action:** run `/runtime claude-code`, `/runtime codex`, `/model gpt-5.5`, `/access ask`, `/reasoning full`, `/new s2`, `/reset`, `/name s3` and `/resume s2`.
+- **Expected result:** each reply reads as a sentence with labels, e.g. `Runtime: Claude Code · model sonnet`, `Model: 5.5 · this session`, `Access: ask · asks before…`, `Reasoning summaries: full`, `New session s2.`, `Conversation reset; the next turn starts a fresh provider thread.`, `Conversation named s3.`, `Resumed session s2.`; no reply contains `provider_handles_cleared`, `runtime=`, `provider=`, `model=`, `Model=`, `access=` or `reasoning_density=`, `session=`.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "chat command replies are plain sentences"
+- **Environment:** real CLI through tsx in a scratch folder, NO_COLOR; no provider is called.
+- **Known gaps:** machine-readable subcommands outside chat (`muster runtime`, `muster run`, panels such as the `/runtime` list) keep their `key=value` output for scripts.
+- **Evidence:** live, 2026-11-10, tmux 110 cols, built CLI, `/tmp/polish-tr`: `Runtime: Codex · model gpt-5.6-sol`, `Model: 5.5 · this session`, `Access: ask · asks before commands and edits…`, `Reasoning summaries: full`, `Conversation reset; the next turn starts a fresh provider thread.`, `New session pol-3.` (before: `runtime=codex provider=codex model=… provider_handles_cleared=0`, `Model=5.5 · session`, `access=ask · …`, `reasoning_density=full`, `session=pol-3 provider_handles_cleared=0`, `/resume pol-1` → `session=pol-1`; now `Resumed session pol-1.`). No test or script parsed the old strings. Capture: `screens/polish/qa29-after-replies.ansi`. Red→green: chat-composer.test.ts.
+
+## MUS-SPEC-02-3B — Switching runtime does not pre-fill the composer
+
+- **Precondition:** chat TUI on Codex.
+- **Action:** run `/runtime claude-code` (also `/runtime codex`, `/runtime pi`, `/provider <id>`).
+- **Expected result:** the reply names the runtime and model and adds a dim hint `Type /model to pick a different model.`; the composer stays empty (no `/model` typed for the user, no `Next: /model` line).
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "switching runtime leaves the composer empty and hints at /model"
+- **Environment:** real CLI through tsx (the non-TUI path prints `Next: /model` exactly when the TUI would pre-fill it), NO_COLOR.
+- **Known gaps:** bare listing commands (`/runtime`, `/mcp`, `/plugins`) still pre-fill their own command to open the picker; that is the picker flow, not a switch.
+- **Evidence:** live, 2026-11-10, tmux, built CLI: after `/runtime claude-code` the transcript reads `Runtime: Claude Code · model sonnet` / `Type /model to pick a different model.` and the composer is an empty `❯` (before: composer pre-filled with `/model`). Capture: `screens/polish/qa29-qa38-after-runtime.ansi`. Red→green: chat-composer.test.ts.
+
+## MUS-SPEC-02-4A — A long paste shows as a short preview in the transcript
+
+- **Precondition:** chat TUI; the user pastes 200 lines (about 24k characters), which the composer shows as a `[paste #1 +200 lines]` chip.
+- **Action:** submit it.
+- **Expected result:** the transcript shows `> ` plus the first three lines (each cut to the terminal width, 200 characters when the width is unknown, with `…`) and `  … +197 lines (pasted)`; a single-line paste over 1000 characters shows its first 200 characters and `… +N chars (pasted)`. The model still receives the full text. Shorter messages (10 lines or fewer and at most 1000 characters, the composer's own chip threshold) are shown whole.
+- **Test:** `packages/cli/test/chat-composer.test.ts` › "a long paste is a short preview in the transcript and whole for the model"
+- **Environment:** chat harness, NO_COLOR.
+- **Known gaps:** `--history` and `/history` still print stored prompts up to their own 12-row cap.
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, a 24.6k-character, 201-line bracketed paste (`[paste #1 +201 lines]` chip): the transcript shows `> Reply with just: ok. …`, two `filler row …ip…` rows cut to the width, then `… +197 lines (pasted)`; the model answered `ok` with ~30k input tokens, so it received the whole paste (before: about 200 rows echoed, S/49-longpaste). Capture: `screens/polish/qa37-after-paste.ansi`. Red→green: chat-composer.test.ts.

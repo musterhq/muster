@@ -16,7 +16,7 @@ test("task transcript replay uses the chat grammar for every stored role", () =>
   assert.deepEqual(lines, [
     "> review this",
     "  carefully",
-    "✻ Checking the edge case",
+    "∴ Checking the edge case",
     "● I found the cause.",
     "  The guard was missing.",
     "⏺ Read(src/a.ts)",

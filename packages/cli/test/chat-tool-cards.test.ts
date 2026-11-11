@@ -189,3 +189,53 @@ test("a policy block replaces the command's cell; a blocked prompt goes back to 
   assert.equal(promptBackAfterHookBlock(new Error("Command failed (exit 1)"), "other", sink), false);
   assert.deepEqual(opened, ["deploy to prod"]);
 }));
+
+// Spec: MUS-SPEC-01-7B (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-7b--a-blank-row-separates-a-tool-cell-from-the-narration-after-it)
+test("the narration after a tool cell starts below a blank row", () => withNoColor(async () => {
+  const { chat, painter, finish } = await chatWithPainter();
+  painter().delta("I’ll check the current directory.\n\n");
+  painter().flush();
+  painter().tool({ phase: "start", id: "gap1", kind: "command", title: "ls -la" });
+  painter().tool({ phase: "end", id: "gap1", kind: "command", title: "ls -la", exitCode: 0, durationMs: 50, output: "total 8\ndata.csv" });
+  painter().delta("Reversed: tëst Ünïcödé\nAnd one more line.\n\n");
+  await finish();
+  const text = plain(chat.transcript());
+  const last = text.indexOf("    data.csv");
+  assert.ok(last > 0, text.join("\n"));
+  assert.equal(text[last + 1], "", "a blank row after the cell");
+  assert.equal(text[last + 2], "● Reversed: tëst Ünïcödé");
+  const opener = text.indexOf("● I’ll check the current directory.");
+  assert.equal(text[opener + 1], "", "the cell keeps its own blank row above it");
+  assert.equal(text[text.indexOf("● Reversed: tëst Ünïcödé") + 1], "  And one more line.", "no extra blank row inside one block");
+}));
+
+// Spec: MUS-SPEC-01-8A (docs/spec/clauses/01-chat-transcript.md#mus-spec-01-8a--mcp-cells-show-the-calls-arguments-and-a-summary-of-a-json-result)
+test("MCP cells show the arguments and summarise a JSON result", () => withNoColor(async () => {
+  const { codexItemToToolEvent } = await import("../../core/src/tool-events.js");
+  const lookupItem = { id: "mcp1", type: "mcpToolCall", server: "orders", tool: "lookup_order", status: "completed", arguments: { id: 4411 } };
+  const start = codexItemToToolEvent(lookupItem, "start")!;
+  const end = codexItemToToolEvent({ ...lookupItem, result: { content: [{ type: "text", text: "Order 4411: shipped via DHL, tracking DHL-7731-AX" }] }, durationMs: 12 }, "end")!;
+  const record = { id: "mem_30d2ee0f-73ab-4f5e-85f7-0184413f219f", content: "QA team lunch is on Thursday at Saffron", kind: "fact", createdAt: "2026-11-10T10:00:00.000Z", scopes: ["user:dhairya"], redactionState: "none", links: [] };
+  const writeItem = { id: "mcp2", type: "mcpToolCall", server: "muster", tool: "memory_write", status: "completed", arguments: { content: "QA team lunch is on Thursday at Saffron", scope: "user:dhairya" } };
+  const writeEnd = codexItemToToolEvent({ ...writeItem, result: { content: [{ type: "text", text: JSON.stringify(record, null, 2) }] }, durationMs: 5 }, "end")!;
+
+  const { chat, painter, finish } = await chatWithPainter({ width: () => 110 });
+  painter().tool(start);
+  painter().tool(end);
+  painter().tool(codexItemToToolEvent(writeItem, "start")!);
+  painter().tool(writeEnd);
+  await finish();
+  const text = plain(chat.transcript());
+  assert.ok(text.includes("⏺ MCP(orders.lookup_order · id: 4411)"), text.join("\n"));
+  assert.ok(text.includes("    Order 4411: shipped via DHL, tracking DHL-7731-AX"), "plain text results are unchanged");
+  const head = text.findIndex((row) => row.startsWith("⏺ MCP(muster.memory_write · content: \"QA team lunch is on Thursday at Saffron\""));
+  assert.ok(head >= 0, text.join("\n"));
+  const rows = text.slice(head + 2, head + 8);
+  assert.equal(rows[0], "    id: \"mem_30d2ee0f-73ab-4f5e-85f7-0184413f219f\"");
+  assert.equal(rows[1], "    content: \"QA team lunch is on Thursday at Saffron\"");
+  assert.equal(rows[4], "    scopes: [\"user:dhairya\"]");
+  assert.equal(rows[5], "    … +2 more fields (ctrl+o to expand)");
+  assert.ok(!text.some((row) => /"links": \[\]|"redactionState": "none",/.test(row)), "no raw JSON tail when collapsed");
+  chat.input("\x0f");
+  assert.ok(plain(chat.transcript()).some((row) => row.includes("\"redactionState\": \"none\"")), "ctrl+o shows the full JSON");
+}));

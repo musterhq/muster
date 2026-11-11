@@ -27,3 +27,30 @@ test("muster state in a git repo is excluded locally, once, without touching .gi
     await rm(repo, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-15-2A (docs/spec/clauses/15-workspace-hygiene.md#mus-spec-15-2a--commands-do-not-print-nodes-sqlite-experimental-warning)
+test("the SQLite experimental warning is hidden and other warnings still print", { timeout: 120_000 }, async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-warning-"));
+  const env = { ...process.env, MUSTER_ONBOARDING_HOME: join(cwd, ".test-home"), MUSTER_SKIP_ONBOARDING: "1" };
+  delete env.NODE_NO_WARNINGS;
+  try {
+    const cli = await run("tsx", [cliPath, "--version"], { cwd, env });
+    assert.match(cli.stdout, /muster \d/);
+    assert.doesNotMatch(cli.stderr, /ExperimentalWarning|SQLite|--trace-warnings/, cli.stderr);
+
+    const filterPath = resolve(import.meta.dirname, "..", "src", "warning-filter.ts");
+    const script = [
+      `const { installWarningFilter } = await import(${JSON.stringify(filterPath)});`,
+      "installWarningFilter();",
+      "process.emitWarning('SQLite is an experimental feature and might change at any time', 'ExperimentalWarning');",
+      "process.emitWarning('probe-deprecation', 'DeprecationWarning');",
+      "process.emitWarning('probe-other-experimental', 'ExperimentalWarning');",
+    ].join("\n");
+    const probe = await run("tsx", ["--input-type=module", "-e", script], { cwd, env });
+    assert.doesNotMatch(probe.stderr, /SQLite/, probe.stderr);
+    assert.match(probe.stderr, /DeprecationWarning: probe-deprecation/);
+    assert.match(probe.stderr, /ExperimentalWarning: probe-other-experimental/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

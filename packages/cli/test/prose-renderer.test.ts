@@ -56,7 +56,7 @@ test("inline prose colors ONLY code spans; links underline; the rest stays defau
 
 test("thinking owns the sole violet identity", () => {
   const line = renderReasoningLine("**Checking** `src/a.ts`");
-  assert.equal(plain(line), "✻ Checking src/a.ts");
+  assert.equal(plain(line), "∴ Checking src/a.ts");
   if (!process.env.NO_COLOR) assert.match(line, /\x1b\[3m.*183;157;219/);
 });
 

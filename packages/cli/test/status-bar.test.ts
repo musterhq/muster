@@ -99,3 +99,48 @@ test("the full header panel keeps every row inside its box", async () => {
   assert.match(footer, /…/);
   assert.ok(rows.some((row) => row.includes("Session: qa-8b ")) && rows.some((row) => row.includes("0 here · 3 total")), "session and counts each on a row, uncut");
 });
+
+// Spec: MUS-SPEC-09-3A (docs/spec/clauses/09-status-bar.md#mus-spec-09-3a--status-lines-up-its-keys-and-shows-readable-token-counts)
+test("/status keys line up and token counts are compact", { timeout: 120_000 }, async () => {
+  const { formatTokenPair } = await import("../src/chat-tui.js") as { formatTokenPair?: (input: number, output: number) => string };
+  assert.equal(typeof formatTokenPair, "function", "chat-tui exports formatTokenPair");
+  assert.equal(formatTokenPair!(732130, 1361), "732.1k in · 1.4k out");
+  assert.equal(formatTokenPair!(0, 495), "0 in · 495 out");
+
+  const cwd = await mkdtemp(join(tmpdir(), "muster-status-cmd-"));
+  const cli = join(import.meta.dirname, "..", "src", "index.ts");
+  const env = { ...process.env, NO_COLOR: "1", MUSTER_SKIP_ONBOARDING: "1", MUSTER_ONBOARDING_HOME: join(cwd, ".test-home") };
+  try {
+    await run("tsx", [cli, "init"], { cwd, env });
+    const { stdout } = await run("tsx", [cli, "chat", "--session", "status-rows", "/status"], { cwd, env, timeout: 60_000 });
+    const rows = plain(stdout).split("\n").filter((row) => /^ {2}[a-z]+ {2,}\S/.test(row));
+    assert.ok(rows.some((row) => row.startsWith("  conversation ")), `conversation has a two-space gap:\n${stdout}`);
+    const starts = rows.map((row) => row.search(/(?<=\S {2,})\S/));
+    assert.ok(rows.length >= 10 && starts.every((start) => start === starts[0]), `values start in one column:\n${stdout}`);
+    assert.match(stdout, /^ {2}tokens +0 in · 0 out$/m);
+    assert.match(stdout, /muster sessions show sess_[0-9a-f-]{12}$/m);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-09-3B (docs/spec/clauses/09-status-bar.md#mus-spec-09-3b--the-folder-reads-as-the-user-typed-it-and-the-header-does-not-repeat-the-bar)
+test("the bar shows the folder as the shell names it and the header does not repeat it", async () => {
+  const { realpath } = await import("node:fs/promises");
+  const { buildCompactHeaderLines } = await import("../src/chat-tui.js");
+  const typed = await mkdtemp("/tmp/mp-");
+  const real = await realpath(typed);
+  const previous = process.env.PWD;
+  process.env.PWD = typed;
+  try {
+    const bar = plain(formatStatusBar({ model: "gpt-6.1-terra", effort: "High", cwd: real }, 110));
+    assert.match(bar, new RegExp(`│ ${typed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} *(│|$)`), bar);
+    assert.doesNotMatch(bar, /\/private\//, bar);
+  } finally {
+    if (previous === undefined) delete process.env.PWD;
+    else process.env.PWD = previous;
+    await rm(typed, { recursive: true, force: true });
+  }
+  const header = plain(buildCompactHeaderLines({ session: "qa-1", cwd: "/private/tmp/qa-tr", scopes: "user:me", model: "gpt-6.1-terra · High", provider: "codex", runtime: "codex", speed: "session" }).join("\n"));
+  assert.equal(header, "MUSTER · qa-1 · /help");
+});

@@ -20,7 +20,8 @@ import { commandUsageLines, trimDanglingCodeFence } from "../src/output.js";
 
 const execFileAsync = promisify(execFile);
 const cliPath = resolve(import.meta.dirname, "..", "src", "index.ts");
-const helpText = await readFile(cliPath, "utf8");
+// The help table lives in main.ts; index.ts is only the entry that loads it.
+const helpText = await readFile(resolve(import.meta.dirname, "..", "src", "main.ts"), "utf8");
 
 async function runCli(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
   try {

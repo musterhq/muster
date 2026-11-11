@@ -81,3 +81,13 @@
 - **Environment:** `detectProviders` with a temp CODEX_HOME; `verifyRoute` with `MUSTER_CODEX_COMMAND` pointing at a fake codex.
 - **Known gaps:** without a profile or a same-host env model, Muster cannot know the gateway's model names, so it verifies with Codex's default and explains the fix.
 - **Evidence:** UNVERIFIED
+
+## MUS-SPEC-08-4B — A route skipped with `k` is gone from the summary, and the finish screen enables only what was picked
+
+- **Precondition:** detection finds Codex, Claude Code and an Anthropic-compatible proxy, all pre-selected; purpose "Build with code"; no integration picked.
+- **Action:** Codex fails verification; press `k` (skip) on the results, then Enter through senses, channels and memory to the finish screen.
+- **Expected result:** the finish screen neither lists Codex nor counts it: `Ready 4/4` (chat, Claude Code, proxy, memory). "Will write" enables no plugin or MCP server the user did not pick: no `github` (GitHub was never picked on the senses step), no `codex` / `codex-native-tools` (the Codex route was skipped); `developer-tools` (from the purpose) and `claude-code` stay. A failed route the user leaves with Enter instead of `k` is still listed with its fix (08-4A).
+- **Test:** `packages/cli/test/onboarding-v2.test.ts` › "a route skipped with k leaves the summary and the finish screen enables only picks"
+- **Environment:** injected `detect` and `verify`, no network.
+- **Known gaps:** Codex's own verification time (19.9 s in the QA pass) is the CLI's cold start and is not shortened here.
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, `muster onboard --no-chat` in `/tmp/polish-onb` with `MUSTER_ONBOARDING_HOME=/tmp/polish-onb/home` and the proxy pointed at a dead port: Codex replied in 8.1 s; Claude Code, the proxy and hybrow failed; after `k` the finish screen read `Ready 3/3` (chat, Codex, memory), listed none of the skipped routes, and `plugins enabled: developer-tools, codex, codex-native-tools` with no MCP line (before: `Ready 5/6` with the skipped route listed, `plugins enabled: …, github` and `MCP servers: github`, S/42-onboard-finish). Quit with `q`/`y`; nothing written. Capture: `screens/polish/qa39-after-finish.ansi`. Red→green: onboarding-v2.test.ts.

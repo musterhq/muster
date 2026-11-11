@@ -171,3 +171,43 @@ What `muster chat` paints while a turn runs. Each case names the one test that p
 - **Environment:** pure renderer (`formatToolEndLines` → `renderTranscriptLine`), NO_COLOR.
 - **Known gaps:** none.
 - **Evidence:** live, 2026-11-10, Codex turn running `python3 -c "print('abc '*60)"`: the output row is 110 columns ending `abc…`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-7A — Reasoning summaries do not wear the spinner's glyph
+
+- **Precondition:** chat TUI; the live status row is the spinner `✻ Working` / `✻ Composing`.
+- **Action:** the provider streams reasoning summaries ("Implementing now", "Waiting for next input") during a turn.
+- **Expected result:** each summary row starts with `∴ ` (violet, italic), never `✻ `, so a finished turn shows no row that looks like a stale spinner; the spinner keeps `✻`.
+- **Test:** `packages/cli/test/tui-stream-render.test.ts` › "reasoning summaries use their own glyph, not the spinner's"
+- **Environment:** narration painter, NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED live — three gpt-6.1-terra turns in tmux (`/tmp/polish-tr`, `/reasoning full`) emitted no reasoning summary, so the row could not be shown live; red→green: tui-stream-render.test.ts (painter emits `∴ Implementing now`).
+
+## MUS-SPEC-01-7B — A blank row separates a tool cell from the narration after it
+
+- **Precondition:** chat TUI; a turn narrates, runs `ls -la`, then narrates again.
+- **Action:** the cell ends and the next message delta arrives.
+- **Expected result:** one blank row sits between the cell's last row and the next `●` block (cells already have a blank row above them); consecutive narration in one block gets no extra blank row.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "the narration after a tool cell starts below a blank row"
+- **Environment:** chat harness with the narration painter, exactly as runChatTurn wires it; NO_COLOR.
+- **Known gaps:** none.
+- **Evidence:** live, 2026-11-10, tmux 110 cols, built CLI, `/tmp/polish-tr`: `⏺ Bash(ls -la …)` cell, then a blank row, then `● add subtracts b from a instead of adding them.` (before: the `●` row sat directly under the cell's last output row, S/46-narrow80). Capture: `screens/polish/qa40-after-gap.ansi`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-8A — MCP cells show the call's arguments and a summary of a JSON result
+
+- **Precondition:** chat on Codex; the model calls `orders.lookup_order` with `{"id": 4411}` and `muster.memory_write`, whose result is a pretty-printed JSON record.
+- **Action:** the provider emits `item/started` and `item/completed` for the `mcpToolCall` items.
+- **Expected result:** the headline reads `⏺ MCP(orders.lookup_order · id: 4411)` (arguments as `key: value`, strings quoted, cut to the width). A JSON result is summarised collapsed as one `key: value` row per top-level field (`id: "mem_…"`, `scopes: ["user:dhairya"]`, …, at most five rows plus `… +N more fields`), not the raw tail (`"redactionState": "none",` / `"links": []`); Ctrl+O shows the full JSON. Plain-text results are unchanged.
+- **Test:** `packages/cli/test/chat-tool-cards.test.ts` › "MCP cells show the arguments and summarise a JSON result"
+- **Environment:** `codexItemToToolEvent` on recorded item shapes; chat harness with the narration painter; NO_COLOR.
+- **Known gaps:** Claude Code and pi MCP calls carry no arguments into the cell yet.
+- **Evidence:** live, 2026-11-11, tmux 110 cols, built CLI, Codex turn calling Muster's own server: `⏺ MCP(muster.memory_write · scopes: ["user:dhairya"], summary: "Polish team lunch is on Friday at Saffr…)` / `⎿ done · 7ms` / `id: "mem_91d34fa3-…"` / `memory: {"id":…,"kind":"fact",…` (before: `MCP(muster.memory_write)` and the raw tail `"redactionState": "none",` / `"links": []`, S/31-memwrite). Capture: `screens/polish/qa33-after-mcp-cell.ansi`. Red→green: chat-tool-cards.test.ts.
+
+## MUS-SPEC-01-9A — `--history` shows local times with a zone, and each message keeps its own time
+
+- **Precondition:** a session with a turn sent at 12:52:30 local time (07:22:30 UTC, zone Asia/Kolkata) whose answer was stored at 12:52:44.
+- **Action:** `muster chat --session <name> --history` (also `/history`).
+- **Expected result:** the user row reads `user      12:52:30 GMT+5:30` and the assistant row `assistant 12:52:44 GMT+5:30`: local time with a zone marker, a date in front when the message is not from today; the user's message is stored with the time the turn started, not the time the answer arrived.
+- **Test:** `packages/cli/test/chat-tui.test.ts` › "history times are local with a zone and the prompt keeps the turn's start time"
+- **Environment:** pure `formatLocalTimestamp` with fixed zones and clock; a session store in a temp folder.
+- **Known gaps:** messages stored before this change keep the answer's time for the prompt.
+- **Evidence:** live, 2026-11-11, built CLI, `/tmp/polish-rw`, one Codex turn then `chat --session hist-1 --history`: `user      12:55:35 GMT+5:30` / `assistant 12:56:02 GMT+5:30` (before: `user      07:22:44` / `assistant 07:22:44`, UTC with no marker, same time for both). Capture: `screens/polish/qa36-after-history.txt`. Red→green: chat-tui.test.ts.

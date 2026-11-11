@@ -18,7 +18,7 @@ import {
   type Terminal,
 } from "@earendil-works/pi-tui";
 import { execFile } from "node:child_process";
-import { appendFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createCoalescer, unwrapShellCommand } from "@musterhq/core";
@@ -349,6 +349,11 @@ export function formatTimingsChip(line: string): string | undefined {
   return renderChip(`▸ ${parts.join(" · ")}`);
 }
 
+/** `732.1k in · 1.4k out` — a session's token totals at a glance. */
+export function formatTokenPair(input: number, output: number): string {
+  return `${compactCount(input)} in · ${compactCount(output)} out`;
+}
+
 export function compactCount(value: number): string {
   if (!Number.isFinite(value)) return "0";
   const abs = Math.abs(value);
@@ -404,6 +409,30 @@ export const STATUS_SPINNER_FRAMES = ["✻"] as const;
 /** `> deploy the limiter` — the gutter is dim, the user's own words are not. */
 export function formatUserLine(text: string): string {
   return `${dim(">")} ${text}`;
+}
+
+/** The composer turns a paste into a chip above these sizes; the transcript previews such a message the same way. */
+const PASTE_PREVIEW_LINES = 10;
+const PASTE_PREVIEW_CHARS = 1000;
+
+/**
+ * A submitted message as the transcript shows it: whole when short; a long
+ * paste as its first three lines plus `… +N lines (pasted)`. The model still
+ * receives the full text — this is only what is painted.
+ */
+export function formatUserTurn(text: string, width = 204): string {
+  const lines = text.split(/\r?\n/);
+  if (lines.length <= PASTE_PREVIEW_LINES && text.length <= PASTE_PREVIEW_CHARS) return formatUserLine(text);
+  // The transcript wraps at width - 2; the row also carries a two-column gutter.
+  const room = Math.max(20, width - 4);
+  const cut = (line: string) => (visibleWidth(line) > room ? `${truncateToWidth(line, room - 1, "")}…` : line);
+  if (lines.length <= 3) {
+    const head = text.replace(/\s+/g, " ").trim();
+    const shown = truncateToWidth(head, room - 1, "");
+    return `${formatUserLine(`${shown}…`)}\n  ${dim(`… +${head.length - shown.length} chars (pasted)`)}`;
+  }
+  const shown = lines.slice(0, 3).map(cut);
+  return [formatUserLine(shown[0]!), ...shown.slice(1).map((line) => `  ${line}`), `  ${dim(`… +${lines.length - 3} lines (pasted)`)}`].join("\n");
 }
 
 /**
@@ -749,6 +778,13 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
   let lastDelta = "";
   /** True while a `●` block is open, so the next delta continues it. */
   let blockOpen = false;
+  /** True right after a tool card: the next narration row needs a gap above it. */
+  let afterCard = false;
+  const gapAfterCard = (): void => {
+    if (!afterCard) return;
+    afterCard = false;
+    options.emit("");
+  };
 
   const paintMessage = (text: string): void => {
     if (!text.trim()) return;
@@ -757,6 +793,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
       options.emit(text);
       return;
     }
+    gapAfterCard();
     const lines = formatAssistantBlock(text, { continued: blockOpen });
     if (!lines.length) return;
     for (const line of lines) options.emit(line);
@@ -767,6 +804,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
     // Reasoning explains the block BELOW it, so a summary always closes the
     // open bullet: the next message delta starts its own `●`.
     blockOpen = false;
+    gapAfterCard();
     if (reasoningMode === "full") {
       for (const part of text.split(/\r?\n/)) {
         if (part.trim()) options.emit(formatReasoningLine(part));
@@ -850,6 +888,7 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
           ...formatToolEndLines(event, TOOL_RESULT_MAX_LINES, { expanded, expandable: true }),
         ].map((row) => cardRow(row, tone))]);
       }
+      afterCard = true;
       return;
     }
     if (!bullets) {
@@ -881,8 +920,10 @@ export function createNarrationPainter(options: NarrationPainterOptions): Narrat
         openCells.delete(cell.id);
         blockedCells.add(cell.id);
       }
-      if (options.block && bullets) options.block(id, () => renderPolicyBlockCard(request, block));
-      else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
+      if (options.block && bullets) {
+        options.block(id, () => renderPolicyBlockCard(request, block));
+        afterCard = true;
+      } else options.emit(`${renderActionBullet("failure")} Blocked ${unwrapShellCommand(request.title)} — ${block.reason ?? "blocked by policy"}`);
     },
     approval(request, state) {
       if (!options.block || !bullets) return;
@@ -948,7 +989,7 @@ function toolCellName(event: AgentToolEvent): string {
 
 /** One row, bounded: multi-line commands show their first line plus an ellipsis. */
 function toolCellTitle(event: AgentToolEvent, max = 96): string {
-  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.title;
+  const raw = event.kind === "command" ? unwrapShellCommand(event.title) : event.args ? `${event.title} · ${event.args}` : event.title;
   const lines = raw.split(/\r?\n/).filter((line) => line.trim());
   let title = (lines[0] ?? raw).trim();
   if (lines.length > 1) title += " …";
@@ -1003,6 +1044,18 @@ export function formatToolEndLines(
   // Codex reports 0 for commands it did not time; "0ms" reads as a lie.
   if (event.durationMs !== undefined && event.durationMs > 0) segments.push(formatDuration(event.durationMs));
   const head = `  ${dim(`${RESULT_ELBOW} ${segments.join(" · ")}`)}`;
+  // A JSON result reads as its fields, not as the last lines of pretty-printed JSON.
+  const summary = event.kind === "mcp" && !view.expanded ? jsonResultSummary(event.output) : undefined;
+  if (summary) {
+    const clip = view.expandable ? CLIP_MARK : "";
+    const shown = summary.slice(0, Math.min(maxLines, 5));
+    const more = summary.length - shown.length;
+    return [
+      head,
+      ...shown.map((row) => `${clip}    ${dim(row)}`),
+      ...(more > 0 ? [`    ${dim(`… +${more} more ${more === 1 ? "field" : "fields"}${view.expandable ? " (ctrl+o to expand)" : ""}`)}`] : []),
+    ];
+  }
   const rows = (event.output ?? "").replace(/\s+$/, "").split(/\r?\n/).filter((row, index, all) => row.trim() || index < all.length - 1);
   const output = rows.length === 1 && !rows[0]!.trim() ? [] : rows;
   const lines = [head];
@@ -1017,6 +1070,23 @@ export function formatToolEndLines(
   for (const row of output.slice(hidden)) lines.push(`${clip}    ${dim(stripAnsi(row).slice(0, view.expanded ? 2000 : 200))}`);
   if (view.expanded && view.expandable && output.length > maxLines) lines.push(`    ${dim("ctrl+o to collapse")}`);
   return lines;
+}
+
+/** One `key: value` row per top-level field of a JSON object (one row per item of an array); undefined for non-JSON text. */
+export function jsonResultSummary(output: string | undefined): string[] | undefined {
+  const trimmed = output?.trim();
+  if (!trimmed || !/^[[{]/.test(trimmed)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  const one = (value: unknown): string => JSON.stringify(value) ?? String(value);
+  if (Array.isArray(parsed)) return parsed.length ? parsed.map(one) : ["[] (no items)"];
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  return entries.length ? entries.map(([key, value]) => `${key}: ${one(value)}`) : ["{} (empty)"];
 }
 
 /** Reasoning summaries render violet + italic so they never read as the answer. */
@@ -1102,25 +1172,11 @@ export function renderFullHeaderPanel(input: {
  * `/header full` restores the full panel.
  */
 export function buildCompactHeaderLines(info: CompactHeaderInfo): string[] {
-  // ONE line of idle chrome — the Claude Code bar. Model appears here and
-  // nowhere else while idle (the status row exists only during a turn), so
-  // nothing is ever stated twice on screen.
+  // ONE line of idle chrome. Model and folder live in the status bar under
+  // the composer, so the header names only the session: nothing is stated twice.
   return [
-    `${accent("MUSTER")} ${dim(`· ${info.model} · ${info.session} · ${shortenPathForHeader(info.cwd)} · /help`)}`,
+    `${accent("MUSTER")} ${dim(`· ${info.session} · /help`)}`,
   ];
-}
-
-/** `~` for home; long foreign paths keep first and last segments around an ellipsis. */
-export function shortenPathForHeader(cwd: string, max = 48): string {
-  const home = process.env.HOME;
-  const tilded = home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
-  if (tilded.length <= max) return tilded;
-  const parts = tilded.split("/").filter(Boolean);
-  if (parts.length <= 2) return `…${tilded.slice(-max + 1)}`;
-  const tail = parts.slice(-2).join("/");
-  const head = tilded.startsWith("~") ? "~" : `/${parts[0]}`;
-  const short = `${head}/…/${tail}`;
-  return short.length <= max ? short : `…/${parts[parts.length - 1]}`.slice(0, max);
 }
 
 export function createMusterAutocompleteProvider(options: MusterAutocompleteOptions): AutocompleteProvider {
@@ -1308,9 +1364,26 @@ export interface StatusBarInfo {
  * The bar under the composer: `model · effort │ ~/repo │ ⎇ main *1 ?1 │ ctx 25% │ 128.4k tok · $0.42`.
  * Segments drop from the right (spend first, the model never) so it never wraps.
  */
-export function formatStatusBar(info: StatusBarInfo, width: number): string {
+/**
+ * The folder as the user's shell names it: `PWD` when it is the same folder as
+ * the real cwd (macOS reports `/tmp/x` as `/private/tmp/x`), then `~` for home.
+ */
+export function displayFolder(cwd: string): string {
+  let shown = cwd;
+  const pwd = process.env.PWD;
+  if (pwd && pwd !== cwd) {
+    try {
+      if (realpathSync(pwd) === realpathSync(cwd)) shown = pwd;
+    } catch {
+      // A vanished folder keeps its real path.
+    }
+  }
   const home = process.env.HOME;
-  const folder = home && info.cwd.startsWith(home) ? `~${info.cwd.slice(home.length)}` : info.cwd;
+  return home && (shown === home || shown.startsWith(`${home}/`)) ? `~${shown.slice(home.length)}` : shown;
+}
+
+export function formatStatusBar(info: StatusBarInfo, width: number): string {
+  const folder = displayFolder(info.cwd);
   const shortFolder = folder.length > 32 ? `…${folder.slice(folder.length - 31)}` : folder;
   const segments: Array<{ text: string; styled: string }> = [];
   const model = info.effort ? `${info.model} · ${info.effort}` : info.model;
@@ -1553,7 +1626,7 @@ export class RunningTurnInput {
         steered = false;
       }
       if (steered) {
-        appendLine(formatUserLine(value));
+        appendLine(formatUserTurn(value));
         appendLine(`  ${dim(`${RESULT_ELBOW} sent to the running turn`)}`);
         return;
       }
@@ -2168,10 +2241,16 @@ export function composerOverlayOptions(columns: number) {
 
 /** A picker under a dim rule, so it never reads as part of the transcript above it. */
 export class RuledOverlay implements Component {
-  constructor(private readonly inner: Component) {}
+  constructor(private readonly inner: Component, private readonly frame: { readonly title?: string; readonly hint?: string } = {}) {}
 
   render(width: number): string[] {
-    return [dim("─".repeat(Math.max(0, width))), ...this.inner.render(width)];
+    const cap = Math.max(1, width);
+    return [
+      dim("─".repeat(Math.max(0, width))),
+      ...(this.frame.title ? [truncateToWidth(highlight(this.frame.title), cap, "…")] : []),
+      ...this.inner.render(width),
+      ...(this.frame.hint ? [truncateToWidth(dim(this.frame.hint), cap, "…")] : []),
+    ];
   }
 
   handleInput(data: string): void {
@@ -2239,7 +2318,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     // Breathing room, the Claude Code rhythm: one blank row before each user
     // turn so blocks read as blocks, never as a stacked log.
     if (this.lines.length && stripAnsi(this.lines[this.lines.length - 1] ?? "").trim() !== "") this.appendLine("");
-    this.appendLine(formatUserLine(text));
+    this.appendLine(formatUserTurn(text, this.tui.terminal.columns));
   }
 
   clearTranscript(): void {
@@ -2304,7 +2383,7 @@ class MusterChatScreen implements Component, MusterChatSink {
     this.tui.requestRender(true);
   }
 
-  selectFromList(_title: string, options: readonly PickerOption[]): Promise<string | undefined> {
+  selectFromList(title: string, options: readonly PickerOption[]): Promise<string | undefined> {
     return new Promise((resolve) => {
       let settled = false;
       let handle: ReturnType<TUI["showOverlay"]> | undefined;
@@ -2330,7 +2409,7 @@ class MusterChatScreen implements Component, MusterChatSink {
       // never centered in the void, never painting over the composer's frame.
       // Full width: overlay rows must be OPAQUE across the terminal so the
       // transcript can never bleed through beside them (owner-reported).
-      handle = this.tui.showOverlay(new RuledOverlay(list), composerOverlayOptions(this.tui.terminal.columns));
+      handle = this.tui.showOverlay(new RuledOverlay(list, { title, hint: "↑↓ choose · enter select · esc cancel" }), composerOverlayOptions(this.tui.terminal.columns));
       this.tui.requestRender(true);
     });
   }
@@ -2744,7 +2823,7 @@ class HarnessSink implements MusterChatSink {
   }
 
   appendUser(text: string): void {
-    this.appendLine(formatUserLine(text));
+    this.appendLine(formatUserTurn(text));
   }
 
   upsertBlock(id: string, render: (expanded: boolean) => string[]): void {
@@ -3359,12 +3438,12 @@ function sliceAnsiRange(value: string, start: number, end: number): string {
 
 /**
  * The column a wrapped row resumes at: its own leading whitespace plus the
- * width of a gutter glyph (`●`, `⏺`, `⎿`, `>`, `✻`) when it wears one. Clamped
+ * width of a gutter glyph (`●`, `⏺`, `⎿`, `>`, `✻`, `∴`) when it wears one. Clamped
  * so a deeply indented row can never wrap itself down to a one-character
  * column.
  */
 function hangingIndent(clean: string, cleanWidth: number): string {
-  const match = clean.match(/^( *)(?:([●⏺⎿>✻▸]) )?/u);
+  const match = clean.match(/^( *)(?:([●⏺⎿>✻∴▸]) )?/u);
   const leading = match?.[1]?.length ?? 0;
   const glyph = match?.[2] ? 2 : 0;
   return " ".repeat(Math.max(0, Math.min(leading + glyph, cleanWidth - 10)));

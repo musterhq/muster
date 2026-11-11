@@ -205,7 +205,8 @@ export function renderChip(text: string): string {
 /** The one sanctioned violet identity, shared by live and replayed thinking. */
 export function renderReasoningLine(text: string): string {
   const clean = text.trim().replace(/\*\*|__|`/g, "").replace(/(^|\s)\*(\S[^*]*\S|\S)\*(?=\s|$)/g, "$1$2");
-  const body = `✻ ${clean}`;
+  // `∴`, not the spinner's `✻`: a finished summary must not read as a live status row.
+  const body = `∴ ${clean}`;
   return enabled() ? `${ITALIC}${fg(VIOLET_RGB)}${body}${RESET}` : body;
 }
 
