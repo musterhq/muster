@@ -41,4 +41,6 @@ export * from "./rpc.js";
 export * from "./channel-sdk.js";
 export * from "./channels/index.js";
 export * from "./channel-runner.js";
+export { DISCORD_GATEWAY_INTENTS, DiscordGatewayClient, runDiscordGateway } from "./channels/discord-gateway.js";
+export type { DiscordGatewayClientOptions, DiscordGatewayWorkerOptions } from "./channels/discord-gateway.js";
 export * from "./voice-notes.js";
