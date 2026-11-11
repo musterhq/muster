@@ -404,3 +404,33 @@ test("mcp add-stdio, list and test work in a folder without .muster/", { timeout
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-11-2A (docs/spec/clauses/11-plugin-bundles.md#mus-spec-11-2a--an-interpreter-running-a-bundled-script-is-not-flagged-long-descriptions-end-at-a-word)
+test("inspect does not flag an interpreter running a bundled script and cuts descriptions at a word", { timeout: 120_000 }, async () => {
+  const cwd = await workspace();
+  const marker = join(cwd, "RAN");
+  try {
+    const description = "Use when the user asks to create or update a Frappe DocType, such as adding fields or changing permissions";
+    const bundle = await put(join(cwd, "src", "flag-kit"), {
+      "plugin.json": JSON.stringify({ name: "flag-kit", version: "1.0.0", description: "Flag cases" }),
+      "mcp.json": JSON.stringify({
+        mcpServers: {
+          local: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] },
+          remote: { command: "npx", args: ["-y", "some-remote-pkg"] },
+          elsewhere: { command: "node", args: ["/etc/elsewhere.js"] },
+        },
+      }),
+      "server.mjs": tripwire(marker),
+      "skills/doctype/SKILL.md": `---\nname: doctype\ndescription: ${description}\n---\n\nBody.\n`,
+    });
+    const out = await ok(cwd, ["plugins", "inspect", bundle]);
+    assert.doesNotMatch(out, /mcp_server=flag-kit__local .*command-outside-bundle/, out);
+    assert.match(out, /mcp_server=flag-kit__remote .*flags=command-outside-bundle/);
+    assert.match(out, /mcp_server=flag-kit__elsewhere .*flags=command-outside-bundle/);
+    const shown = out.match(/skill=doctype .*description="([^"]*)"/)?.[1] ?? "";
+    assert.equal(shown, "Use when the user asks to create or update a Frappe DocType, such as adding…", out);
+    assert.equal(await exists(marker), false, "no plugin code ran");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
