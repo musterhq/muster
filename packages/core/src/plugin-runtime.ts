@@ -247,8 +247,11 @@ export function createPluginRuntime(options: PluginRuntimeOptions = {}): PluginR
       reservedTools: (options.registry?.list() ?? []).filter((tool) => tool.toolset !== PLUGIN_TOOLSET).map((tool) => tool.name),
       reservedCommands,
       onFailed: (reason) => {
-        void markCodePluginFailed(id, reason, cwd);
-        chain = chain.then(() => unload(id, "failed")).catch(() => undefined);
+        // Recorded before the unwind, so the next refresh does not load it again.
+        chain = chain.then(async () => {
+          await markCodePluginFailed(id, reason, cwd);
+          await unload(id, "failed");
+        }).catch(() => undefined);
       },
     });
     try {
