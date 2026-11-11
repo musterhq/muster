@@ -585,3 +585,38 @@ test("an undone turn has no changes left for rewind, and a second undo says it w
   assert.match(again, /already undone/i);
   assert.doesNotMatch(again, /changed no files/);
 });
+
+// Spec: MUS-SPEC-13-2A (docs/spec/clauses/13-undo.md#mus-spec-13-2a--undo-says-what-it-did-to-each-file)
+test("undo names created files removed and deleted files restored", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtemp, realpath, rm, unlink, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { createWorkspaceObserver } = await import("@musterhq/core");
+  const { undoLastTurnRows } = await import("../src/live-diff.js");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, env, encoding: "utf8" });
+  const root = await realpath(await mkdtemp(join(tmpdir(), "muster-undo-words-")));
+  try {
+    git(root, "init", "-q", "-b", "main", ".");
+    git(root, "config", "gc.auto", "0");
+    await writeFile(join(root, "a.txt"), "one\ntwo\nthree\n");
+    await writeFile(join(root, "gone.txt"), "keep me\n");
+    git(root, "add", "-A");
+    git(root, "commit", "-qm", "init");
+    const events: WorkspacePatchEvent[] = [];
+    const observer = createWorkspaceObserver({ root, watch: false, pollMs: 0, onPatch: (event) => events.push(event) });
+    await observer.start();
+    await writeFile(join(root, "a.txt"), "one\nTWO\nthree\nfour\n");
+    await writeFile(join(root, "new.txt"), "brand new\n");
+    await unlink(join(root, "gone.txt"));
+    await observer.flush();
+    await observer.stop();
+    const rows = (await undoLastTurnRows({ patches: events }, { color: false })).join("\n");
+    assert.match(rows, /a\.txt \(reverted \+2 −1\)/, rows);
+    assert.match(rows, /new\.txt \(removed\)/, rows);
+    assert.match(rows, /gone\.txt \(restored\)/, rows);
+  } finally {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
