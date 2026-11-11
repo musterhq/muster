@@ -3535,7 +3535,7 @@ test("CLI doctor --fix bootstraps a fresh workspace and status renders mission c
   const fixed = await runCli(["doctor", "--fix"], cwd);
   assert.match(fixed.stdout, /fix config/);
   assert.match(fixed.stdout, /fix data-dir/);
-  assert.match(fixed.stdout, /ok  config/);
+  assert.match(fixed.stdout, /pass config/);
 
   await runCli(["schedule", "add", "* * * * *", "daily digest"], cwd);
 

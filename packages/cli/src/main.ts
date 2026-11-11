@@ -762,7 +762,8 @@ Design rule:
 `;
 
 /** `muster --help`: one page of what most people need. `help all` is the full list. */
-const SHORT_HELP = `Muster v${CLI_MUSTER_VERSION} — one agent for code, channels, memory and automations
+const SHORT_HELP = `Muster v${CLI_MUSTER_VERSION}
+One agent for code, channels, memory and automations.
 
 Start
   muster                                  open chat (the first run sets things up)
