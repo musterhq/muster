@@ -106,6 +106,16 @@ Every adapter keeps its existing verification (ed25519, HMAC, verify token, JWT)
 - **Known gaps:** adaptive-card approvals come with buttons (24-1A); file uploads are not covered. Proactive messages to a conversation Muster has not heard from are not supported (the connector `serviceUrl` comes from a verified inbound activity).
 - **Evidence:** green 2026-11-11 on `feat/channels-sdk-2`: the test landed in `410c78b` after the implementation. Red receipt: the same test against `476aa9b` failed (401, expected 202); green at `70caa66`: `npx tsx --test --test-concurrency=1 test/teams-sdk.test.ts` 1/1 (wrong signer, wrong audience, expired, wrong or missing `serviceurl` claim and a non-JWT are all 401; HMAC mode answers in the response). Live: valid activity → 202, forged → 401, reply posted to `/v3/conversations/19%3Alive/activities/live-act-1` with `Bearer live-bf-token`.
 
+## MUS-SPEC-24-5B — Unknown signing keys cannot make the gateway refetch keys on every request
+
+- **Precondition:** Teams in Bot Framework mode; tokens whose `kid` is not in Microsoft's key set (forged or stale).
+- **Action:** five such requests in a row.
+- **Expected result:** all five are rejected. The key set is loaded once and force-refreshed at most once per 5 minutes, so the requests cause 4 fetches (OpenID config and JWKS, twice), not 2 per request.
+- **Test:** `packages/gateway/test/teams-sdk.test.ts` › "tokens with unknown key ids refresh the signing keys at most once per window"
+- **Environment:** fake OpenID and JWKS endpoints.
+- **Known gaps:** none.
+- **Evidence:** UNVERIFIED
+
 ## MUS-SPEC-24-6A — The legacy handlers are gone and every old route still answers
 
 - **Precondition:** the gateway after this slice.

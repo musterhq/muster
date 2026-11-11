@@ -160,3 +160,25 @@ test("teams bot framework activities are acknowledged and answered proactively; 
     await rm(hmacCwd, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-24-5B (docs/spec/clauses/24-channels-sdk-2.md#mus-spec-24-5b--unknown-signing-keys-cannot-make-the-gateway-refetch-keys-on-every-request)
+test("tokens with unknown key ids refresh the signing keys at most once per window", async () => {
+  const { verifyBotFrameworkToken } = await import("../src/channels/bot-framework.js");
+  let fetches = 0;
+  const openId = "https://login.example.test/openid-ratelimit";
+  const fetcher = (async (url: string | URL) => {
+    fetches += 1;
+    const href = String(url);
+    if (href === openId) return new Response(JSON.stringify({ jwks_uri: "https://login.example.test/keys-ratelimit" }));
+    return new Response(JSON.stringify({ keys: [] }));
+  }) as typeof fetch;
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const now = Date.now();
+  const token = (kid: string) => `Bearer ${b64({ alg: "RS256", kid })}.${b64({ iss: "https://api.botframework.com", aud: "app-1", exp: Math.floor(now / 1000) + 600, serviceurl: "https://smba.example.test/" })}.c2ln`;
+  for (let index = 0; index < 5; index += 1) {
+    const ok = await verifyBotFrameworkToken({ authorization: token(`forged-${index}`), appId: "app-1", serviceUrl: "https://smba.example.test/", fetcher, openIdConfigUrl: openId, now: now + index });
+    assert.equal(ok, false);
+  }
+  // First request: load the keys (2 fetches) and one forced refresh (2 more). Later unknown kids reuse the cache.
+  assert.equal(fetches, 4, `fetched ${fetches} times for 5 forged tokens`);
+});
