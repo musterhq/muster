@@ -1129,7 +1129,7 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
     await mkdir(data, { recursive: true });
     console.log(`fix data-dir          ${data}`);
   }
-  const checks: Array<[string, boolean, string]> = [];
+  const checks: Array<[string, boolean | "warn", string]> = [];
   let configLoaded = false;
   try {
     const config = await loadConfig();
@@ -1141,7 +1141,8 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
       checks.push([`provider:${provider.id}`, true, `${provider.kind} ${provider.baseUrl ?? ""}`.trim()]);
     }
   } catch (error) {
-    checks.push(["config", false, error instanceof Error ? error.message : String(error)]);
+    const missing = (error as NodeJS.ErrnoException)?.code === "ENOENT" || /ENOENT/.test(error instanceof Error ? error.message : String(error));
+    checks.push(["config", missing ? "warn" : false, missing ? "no Muster config in this folder yet" : error instanceof Error ? error.message : String(error)]);
   }
 
   if (configLoaded) {
@@ -1154,8 +1155,11 @@ async function doctor(commandArgs: string[] = []): Promise<void> {
     }
   }
 
+  // One vocabulary with the environment checks below: pass, warn, fail.
   for (const [name, ok, detail] of checks) {
-    console.log(`${ok ? "ok " : "err"} ${name.padEnd(28)} ${detail}`);
+    const status = ok === "warn" ? "warn" : ok ? "pass" : "fail";
+    console.log(`${status.padEnd(4)} ${name.padEnd(28)} ${detail}`);
+    if (name === "config" && ok === "warn") console.log(`fix  ${name.padEnd(28)} muster init (or muster doctor --fix)`);
   }
 
   for (const check of await runEnvironmentDoctorChecks()) {
