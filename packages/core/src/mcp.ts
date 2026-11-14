@@ -238,7 +238,10 @@ export async function connectMcpServer(name: string, config: McpServerConfig, cw
       transport ??= new StdioTransport(config.transport.command, config.transport.args ?? [], config.transport.env, cwd, config.transport.cwd);
       return transport.request(method, params, timeoutMs);
     }
-    const headers = { ...(config.transport.headers ?? {}) };
+    // Header values may reference env vars (`Bearer ${LINEAR_TOKEN}`), so a token never has to sit in config.
+    const headers = Object.fromEntries(
+      Object.entries(config.transport.headers ?? {}).map(([key, value]) => [key, resolveMcpRuntimeTemplate(value, { cwd })]),
+    );
     if (config.auth === "oauth") {
       const authorization = await mcpOAuthAuthorizationHeader(name, cwd);
       if (!authorization) {

@@ -21,6 +21,7 @@ import {
 import { detectProviders, type DetectedProviders } from "./onboarding-detect.js";
 import { formatSeconds, providerConfigFor, verifyRoute, verifyTargetFor, type RouteVerifier, type VerifyOutcome, type VerifyTarget } from "./onboarding-verify.js";
 import { initGatewayConfig, saveGatewayConfig, type GatewayConfig } from "@musterhq/gateway";
+import { buildPlan, detectMigrationOffers, formatPlan, offerHeadline, type MigrationOffer } from "./migrate.js";
 
 type StepId = "purpose" | "style" | "provider" | "integrations" | "channels" | "memory" | "finish";
 type Tone = "lavender" | "cyan" | "peach" | "lime";
@@ -75,6 +76,16 @@ interface OnboardingState {
    * written as the default.
    */
   verify?: VerificationState;
+  /** Another agent setup found on this machine, offered on the first step (read-only until the user applies). */
+  migration?: MigrationOfferState;
+}
+
+interface MigrationOfferState {
+  readonly offer: MigrationOffer;
+  readonly others: readonly MigrationOffer[];
+  dismissed?: boolean;
+  /** The plan from `muster migrate <source>`, while the review panel is open. */
+  review?: string[];
 }
 
 interface VerificationState {
@@ -244,7 +255,7 @@ function channelCommands(id: string): readonly string[] {
   return commands[id] ?? [];
 }
 
-export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders>; verify?: RouteVerifier } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
+export async function runMusterOnboardingTui(args: readonly string[] = [], options: { cwd?: string; input?: NodeJS.ReadStream; output?: NodeJS.WriteStream; detect?: () => Promise<DetectedProviders>; verify?: RouteVerifier; home?: string; detectMigrations?: () => Promise<MigrationOffer[]> } = {}): Promise<{ saved: boolean; handoffToChat: boolean }> {
   const output = options.output ?? process.stdout;
   const input = options.input ?? process.stdin;
   const width = Math.max(88, output.columns ?? 112);
@@ -289,12 +300,43 @@ export async function runMusterOnboardingTui(args: readonly string[] = [], optio
     preselectDetectedProviders(state);
     render();
   });
+  // Other agent setups are looked for read-only, behind the first paint like provider detection.
+  const migrationHome = options.home ?? onboardingHome();
+  const migrations = (options.detectMigrations ?? (() => detectMigrationOffers({ home: migrationHome, cwd })))().catch(() => [] as MigrationOffer[]);
+  void migrations.then((offers) => {
+    if (!offers.length || state.saved) return;
+    state.migration = { offer: offers[0]!, others: offers.slice(1) };
+    render();
+  });
   const result = await new Promise<{ saved: boolean; handoffToChat: boolean }>((resolve) => {
     const onKeypress = async (_chunk: string, key: { name?: string; ctrl?: boolean }) => {
       if (state.awaitingAck) {
         cleanup();
         resolve({ saved: true, handoffToChat: !args.includes("--no-chat") });
         return;
+      }
+      const migration = state.migration;
+      if (migration?.review) {
+        // The review panel only reads; Esc (or q) closes it.
+        if (key.name === "escape" || key.name === "q") {
+          migration.review = undefined;
+          render();
+        }
+        return;
+      }
+      if (migration && !migration.dismissed && state.stepIndex === 0 && !state.confirmQuit) {
+        if (key.name === "r") {
+          const plan = await buildPlan(migration.offer.source, { home: migrationHome, cwd }).catch(() => undefined);
+          migration.review = plan ? formatPlan(plan, { home: migrationHome, mode: "review" }) : [`Could not read the ${migration.offer.source} setup.`];
+          render();
+          return;
+        }
+        if (key.name === "k") {
+          // Skip: dismiss the offer; nothing is written.
+          migration.dismissed = true;
+          render();
+          return;
+        }
       }
       if (state.confirmQuit) {
         if (key.name === "y") {
@@ -497,6 +539,7 @@ export const ONBOARDING_OPTIONAL_HINT = "every step optional — s starts coding
 
 export function renderOnboarding(state: OnboardingState = initialState(), width = 112, useColor = false): string {
   const step = currentStep(state);
+  if (state.migration?.review) return renderMigrationReview(state.migration, width, useColor);
   if (step.id === "finish") return renderFinish(state, width, useColor);
   const choices = choicesFor(step, state);
   const selectedChoices = choices.filter((item) => state.selected[step.id].has(item.id));
@@ -512,6 +555,7 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
     ...wrap(step.title, mainWidth).map((line) => paint(line, "text", useColor)),
     ...wrap(step.body, mainWidth).map((line) => paint(line, "dim", useColor)),
     "",
+    ...migrationOfferLines(state, mainWidth, useColor),
     ...renderChoices(step, state, mainWidth, useColor),
     "",
     ...(step.id === "provider" && state.verify
@@ -536,6 +580,29 @@ export function renderOnboarding(state: OnboardingState = initialState(), width 
     ...body.map((line) => frame(line, bodyWidth, useColor)),
     frame("", bodyWidth, useColor),
     frame(`${paint("s", "lime", useColor)} start coding now (defaults)  ${paint("Space", "lime", useColor)} select  ${paint("Enter", "lime", useColor)} continue/save  ${paint("Esc", "lime", useColor)} back  ${paint("q", "lime", useColor)} quit`, bodyWidth, useColor),
+    borderBottom(bodyWidth, useColor),
+  ].join("\n");
+}
+
+function migrationOfferLines(state: OnboardingState, width: number, useColor: boolean): string[] {
+  const migration = state.migration;
+  if (!migration || migration.dismissed || state.stepIndex !== 0) return [];
+  const also = migration.others.length ? ` (also found: ${migration.others.map((offer) => offer.source).join(", ")})` : "";
+  return [
+    ...wrap(`${offerHeadline(migration.offer)}${also}`, width).map((line) => paint(line, "peach", useColor)),
+    `${paint("r", "lime", useColor)} review  ${paint("k", "lime", useColor)} skip  ${paint("(reads only; nothing is copied until you apply)", "dim", useColor)}`,
+    "",
+  ];
+}
+
+function renderMigrationReview(migration: MigrationOfferState, width: number, useColor: boolean): string {
+  const bodyWidth = Math.max(70, width - 4);
+  const inner = bodyWidth - 4;
+  return [
+    borderTop(`Bring over: ${migration.offer.source}`, bodyWidth, useColor),
+    ...migration.review!.map((line) => frame(truncate(line, inner), bodyWidth, useColor)),
+    frame("", bodyWidth, useColor),
+    frame(`${paint("Esc", "lime", useColor)} back  apply with: muster migrate ${migration.offer.source} --apply  (undo any run with muster migrate undo <run-id>)`, bodyWidth, useColor),
     borderBottom(bodyWidth, useColor),
   ].join("\n");
 }

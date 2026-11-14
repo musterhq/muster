@@ -75,6 +75,8 @@ export interface CreateAutomationInput {
   readonly cwd?: string;
   /** Agent-created jobs obey the active-job cap. */
   readonly enforceActiveCap?: boolean;
+  /** Create the job switched off (imported jobs wait for the user to enable them). */
+  readonly disabled?: boolean;
 }
 
 export function isActiveAutomation(job: ScheduleJob): boolean {
@@ -108,6 +110,7 @@ export async function createAutomation(input: CreateAutomationInput): Promise<Sc
     deliver,
     profile: input.profile,
     at: hasWhen ? parseWhen(input.when!, now) : undefined,
+    disabled: input.disabled,
   });
 }
 

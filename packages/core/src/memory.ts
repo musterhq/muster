@@ -540,6 +540,25 @@ export async function forgetTurnMemories(runIds: readonly string[], cwd = proces
   return removed;
 }
 
+/**
+ * Remove the memories with these ids (what `muster migrate undo` does for the
+ * entries a run added). Returns the ids that were present and removed.
+ */
+export async function forgetMemories(ids: readonly string[], cwd = process.cwd()): Promise<string[]> {
+  if (!ids.length) return [];
+  const wanted = new Set(ids);
+  const all = await listMemory(cwd);
+  const removed = all.filter((memory) => wanted.has(memory.id)).map((memory) => memory.id);
+  if (!removed.length) return [];
+  const keep = all.filter((memory) => !wanted.has(memory.id));
+  const path = memoryPath(cwd);
+  const temp = `${path}.${process.pid}.tmp`;
+  await writeFile(temp, keep.map((memory) => `${JSON.stringify(memory)}\n`).join(""), "utf8");
+  await rename(temp, path);
+  await rebuildMemoryIndex(cwd);
+  return removed;
+}
+
 async function appendMemory(object: ContextObject, cwd: string): Promise<void> {
   const path = memoryPath(cwd);
   await mkdir(dirname(path), { recursive: true });

@@ -167,6 +167,8 @@ export interface AddScheduleOptions {
   deliver?: string;
   /** One-off fire time; when set, `cron` must be empty. */
   at?: Date;
+  /** Create the job switched off; it never fires until enabled (imported jobs start this way). */
+  disabled?: boolean;
 }
 
 export async function addSchedule(cron: string, prompt: string, options: AddScheduleOptions = {}): Promise<ScheduleJob> {
@@ -190,6 +192,7 @@ export async function addSchedule(cron: string, prompt: string, options: AddSche
     ...(options.at ? { at: options.at.toISOString() } : {}),
     ...(options.tz ? { tz: options.tz } : {}),
     ...(options.deliver ? { deliver: options.deliver } : {}),
+    ...(options.disabled ? { disabled: true } : {}),
   };
   const store = openStore(cwd);
   try { store.insertJob(job); } finally { store.close(); }
@@ -205,6 +208,12 @@ export async function listSchedules(cwd = process.cwd()): Promise<ScheduleJob[]>
 export async function recordManualRun(id: string, result: { status: "completed" | "failed"; runId?: string; detail?: string }, options: { cwd?: string; now?: Date } = {}): Promise<void> {
   const store = openStore(options.cwd ?? process.cwd());
   try { store.recordManualRun(id, result, options.now ?? new Date()); } finally { store.close(); }
+}
+
+/** Switch a job on or off. Returns false when no job has that id. */
+export async function setScheduleDisabled(id: string, disabled: boolean, cwd = process.cwd()): Promise<boolean> {
+  const store = openStore(cwd);
+  try { return store.setDisabled(id, disabled); } finally { store.close(); }
 }
 
 export async function removeSchedule(id: string, cwd = process.cwd()): Promise<boolean> {

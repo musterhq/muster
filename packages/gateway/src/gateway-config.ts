@@ -116,7 +116,10 @@ export interface GatewayConfig {
   readonly telegram?: {
     /** Friendly bot label shown in setup/status output; not used as a secret. */
     readonly name?: string;
-    readonly botToken: string;
+    /** Inline bot token. Prefer botTokenEnv; when both are set, the env var wins and the inline value is never saved. */
+    readonly botToken?: string;
+    /** Name of the environment variable holding the bot token. */
+    readonly botTokenEnv?: string;
     /** "draft" streams replies as live-edited drafts (sendMessage + editMessageText). */
     readonly stream?: "off" | "draft";
     /** Native presence/progress behavior while a run is active. */
@@ -422,14 +425,33 @@ export async function loadGatewayConfig(cwd = process.cwd()): Promise<GatewayCon
   if (typeof parsed.token !== "string" || !parsed.token.trim()) {
     throw new Error(`Gateway config at ${gatewayConfigPath(cwd)} is missing a "token". Re-run: muster gateway init`);
   }
-  return parsed as GatewayConfig;
+  return resolveGatewayEnvRefs(parsed as GatewayConfig);
+}
+
+/**
+ * Fill in tokens that gateway.json names by env var (`telegram.botTokenEnv`),
+ * so the adapters read one field. The value lives only in memory: saving
+ * strips it again (see `stripGatewayEnvRefs`).
+ */
+export function resolveGatewayEnvRefs(config: GatewayConfig, env: NodeJS.ProcessEnv = process.env): GatewayConfig {
+  const telegram = config.telegram;
+  if (!telegram?.botTokenEnv) return config;
+  const value = env[telegram.botTokenEnv];
+  return { ...config, telegram: { ...telegram, botToken: value || undefined } };
+}
+
+function stripGatewayEnvRefs(config: GatewayConfig): GatewayConfig {
+  const telegram = config.telegram;
+  if (!telegram?.botTokenEnv || telegram.botToken === undefined) return config;
+  const { botToken: _inline, ...rest } = telegram;
+  return { ...config, telegram: rest };
 }
 
 export async function saveGatewayConfig(config: GatewayConfig, cwd = process.cwd()): Promise<string> {
   const path = gatewayConfigPath(cwd);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700).catch(() => undefined);
-  await writeJsonAtomic(path, config);
+  await writeJsonAtomic(path, stripGatewayEnvRefs(config));
   return path;
 }
 
