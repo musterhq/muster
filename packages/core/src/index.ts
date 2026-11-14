@@ -34,6 +34,7 @@ export * from "./mcp.js";
 export * from "./mcp-oauth.js";
 export * from "./media.js";
 export * from "./voice.js";
+export * from "./calls.js";
 export * from "./memory.js";
 export * from "./migration.js";
 export * from "./profiles.js";

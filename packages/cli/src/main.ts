@@ -360,6 +360,7 @@ import {
 import { runWhatsAppLoginCommand } from "./whatsapp-login.js";
 import { sdkChannelsCommand } from "./sdk-channels-command.js";
 import { loadVoiceConfig, voiceCommand } from "./voice-command.js";
+import { formatCallRecordsTable, readCallLedger } from "@musterhq/core";
 import { renderSettingsList, SettingsPanel, type SettingsChange } from "./settings-panel.js";
 import { allowedSettingValues, formatSettingValue, requireSetting, resetSetting as resetSettingValue, resolveSetting, resolveSettings, setSetting, settingsPaths, settingValues, validateSettingsFiles, type SettingScope } from "@musterhq/core";
 import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
@@ -387,7 +388,7 @@ const SHELL_COMMANDS = [
   "episodes", "feedback", "candidates", "eval", "capability", "roster", "artifacts", "plugins", "mcp", "dashboard",
   "context", "latency", "memory", "goal", "tui", "provider", "runtime", "qa", "pi", "state", "migrate", "sessions",
   "skills", "pulse", "subagents", "tasks", "board", "demo", "benchmark", "run", "tokens", "traces", "profile",
-  "schedule", "daemon", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe", "voice",
+  "schedule", "daemon", "evolve", "flow", "verify", "gateway", "channels", "integrations", "pairing", "frappe", "voice", "calls",
 ] as const;
 
 function readCliPackageVersion(): string {
@@ -588,6 +589,9 @@ async function main(): Promise<void> {
     case "voice":
       await voiceCommand(args);
       return;
+    case "calls":
+      await callsCommand(args);
+      return;
     default:
       throw new Error(unknownShellCommandMessage(command, SHELL_COMMANDS));
   }
@@ -737,6 +741,7 @@ Usage:
   muster profile create|list|use|current [name] | clone <from> <to>
   muster schedule add "*/5 * * * *" "prompt" [--tz Zone] [--kind run|reminder] [--deliver terminal|desktop|channel:<channel>/<peer>] | list | remove <id> | run-due
   muster schedule remind "in 10m" "message" [--deliver terminal|desktop|channel:<channel>/<peer>]   # one-off reminder (also: ISO time)
+  muster calls list [--json]                  # phone call records from calls.jsonl (completed, no-answer, fallbacks)
   muster voice doctor [--json]                # speech tools, whisper models, and the config line that turns local speech on
   muster voice transcribe <audio-file> [--json]
   muster voice say "text" [-o out.ogg|out.wav] [--voice Name]   # without -o it plays the speech
@@ -14614,3 +14619,15 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+
+/** `muster calls list [--json]` (docs/spec/clauses/25-calls-sms.md#mus-spec-25-2b). */
+async function callsCommand(args: string[]): Promise<void> {
+  const [action = "list"] = args;
+  if (action !== "list") throw new Error("Usage: muster calls list [--json]");
+  const entries = await readCallLedger(process.cwd());
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(entries.filter((entry) => entry.kind === "call.record"), null, 2)}\n`);
+    return;
+  }
+  process.stdout.write(formatCallRecordsTable(entries));
+}

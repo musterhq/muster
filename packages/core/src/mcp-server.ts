@@ -17,6 +17,7 @@ export const MCP_SERVE_TOOLS: readonly string[] = [
   "result_fetch",
   "schedule_manage",
   "skill_view",
+  "call_contact",
 ];
 
 export interface MusterMcpServerOptions {
@@ -69,7 +70,7 @@ export function createMusterMcpServer(options: MusterMcpServerOptions): MusterMc
         case "tools/list":
           await refresh();
           return reply(id, {
-            tools: registry.list().filter((entry) => isAllowed(entry.name)).map((entry) => ({
+            tools: registry.list().filter((entry) => isAllowed(entry.name) && (entry.available?.(ctx) ?? true)).map((entry) => ({
               name: entry.name,
               description: entry.description,
               inputSchema: entry.inputSchema ?? { type: "object", properties: {} },

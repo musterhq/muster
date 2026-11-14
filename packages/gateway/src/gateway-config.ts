@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { CallsConfig, SmsConfig } from "@musterhq/core";
 import type { FrappeOAuthConnectionConfig } from "./frappe-oauth.js";
 
 /** Gateway-local config (.muster/gateway.json): bearer token + adapter bot tokens. */
@@ -233,6 +234,10 @@ export interface GatewayConfig {
   };
   /** Channels built on the channel SDK (channel-sdk.ts). Secrets are env-var names, never values. */
   readonly channels?: GatewayChannelsConfig;
+  /** Governed outbound phone calls (docs/spec/clauses/25-calls-sms.md). Secrets are env-var names. */
+  readonly calls?: CallsConfig;
+  /** SMS on the channel SDK, through the calls provider. */
+  readonly sms?: SmsConfig;
   readonly devices?: {
     readonly entries?: Record<string, GatewayDeviceRecord>;
   };
