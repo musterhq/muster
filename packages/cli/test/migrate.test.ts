@@ -285,3 +285,90 @@ test("apply imports memory, skills, mcp, channels and schedules with secrets as 
     await rm(envDir, { recursive: true, force: true });
   }
 });
+
+// Spec: MUS-SPEC-26-1C (docs/spec/clauses/26-migrate.md#mus-spec-26-1c--conflicts-are-never-overwritten-silently)
+test("conflicting skills and servers are skipped or renamed, never overwritten", async () => {
+  const home = await makeFakeHome();
+  const cwd = await workspace();
+  try {
+    const { ensureDefaultConfig, loadConfig, saveConfig, writeBundledSkill } = await import("@musterhq/core");
+    await writeBundledSkill({ name: "figma", description: "My own figma skill", body: "Do it my way." }, cwd);
+    await ensureDefaultConfig(cwd);
+    const config = await loadConfig(cwd);
+    await saveConfig({ ...config, tools: { ...(config.tools ?? {}), mcp: { servers: { github: { transport: { kind: "stdio", command: "gh-mcp" } } } } } }, cwd);
+    const mineSkill = await readFile(join(cwd, ".muster", "skills", "figma", "SKILL.md"), "utf8");
+    const mineServer = JSON.stringify((await loadConfig(cwd)).tools?.mcp?.servers?.github);
+
+    const skipped = await runCli(["migrate", "openclaw", "--apply", "--yes"], { cwd, home });
+    assert.equal(skipped.code, 0, skipped.stderr);
+    assert.match(skipped.stdout, /conflict\s+figma — Muster has a different figma; skipped \(--rename imports it as figma-openclaw\)/);
+    assert.match(skipped.stdout, /conflict\s+github — Muster has a different github; skipped \(--rename imports it as github-openclaw\)/);
+    assert.equal(await readFile(join(cwd, ".muster", "skills", "figma", "SKILL.md"), "utf8"), mineSkill, "the existing skill is untouched");
+    assert.equal(JSON.stringify((await loadConfig(cwd)).tools?.mcp?.servers?.github), mineServer, "the existing server is untouched");
+    assert.equal(existsSync(join(cwd, ".muster", "skills", "figma-openclaw")), false);
+
+    const renamed = await runCli(["migrate", "openclaw", "--apply", "--yes", "--rename"], { cwd, home });
+    assert.equal(renamed.code, 0, renamed.stderr);
+    assert.match(renamed.stdout, /added \(renamed\)\s+figma-openclaw \(from figma\)/);
+    assert.match(renamed.stdout, /added \(renamed\)\s+github-openclaw \(from github\)/);
+    assert.match(await readFile(join(cwd, ".muster", "skills", "figma-openclaw", "SKILL.md"), "utf8"), /Export the frame, then build it\./);
+    const after = (await loadConfig(cwd)).tools?.mcp?.servers;
+    assert.ok(after?.["github-openclaw"]);
+    assert.equal(JSON.stringify(after?.github), mineServer);
+    assert.equal(await readFile(join(cwd, ".muster", "skills", "figma", "SKILL.md"), "utf8"), mineSkill);
+
+    const again = await runCli(["migrate", "openclaw"], { cwd, home });
+    assert.match(again.stdout, /already in Muster\s+figma-openclaw \(from figma\)/, "a renamed import is recognised on the next run");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-26-1D (docs/spec/clauses/26-migrate.md#mus-spec-26-1d--undo-removes-exactly-what-a-migration-added)
+test("migrate undo removes only what the run added and keeps later edits", async () => {
+  const home = await makeFakeHome();
+  const cwd = await workspace();
+  try {
+    const { addMemory, listMemory, listSchedules, loadConfig, saveConfig, writeBundledSkill } = await import("@musterhq/core");
+    await writeBundledSkill({ name: "keepme", description: "Was here first", body: "Mine." }, cwd);
+    await addMemory({ summary: "A fact from before the run", provenance: ["user"], scopes: [{ kind: "user", id: "tester" }], explicitUserRequest: true }, cwd);
+
+    const applied = await runCli(["migrate", "openclaw", "--apply", "--yes"], { cwd, home });
+    assert.equal(applied.code, 0, applied.stderr);
+    const runId = applied.stdout.match(/run (mig_[A-Za-z0-9_]+)/)![1]!;
+
+    // The user edits two imported items after the run.
+    const config = await loadConfig(cwd);
+    const servers = { ...(config.tools?.mcp?.servers ?? {}) };
+    servers.github = { transport: { kind: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github", "--read-only"], env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" } } };
+    await saveConfig({ ...config, tools: { ...(config.tools ?? {}), mcp: { ...(config.tools?.mcp ?? {}), servers } } }, cwd);
+    await writeFile(join(cwd, ".muster", "rules", "openclaw-agents.md"), "Always run the tests, and lint too.\n");
+
+    const undo = await runCli(["migrate", "undo", runId], { cwd, home });
+    assert.equal(undo.code, 0, undo.stderr);
+    assert.match(undo.stdout, /kept: edited after migration\s+mcp github/);
+    assert.match(undo.stdout, /kept: edited after migration\s+rule openclaw-agents\.md/);
+    assert.match(undo.stdout, /removed\s+skill figma/);
+    assert.match(undo.stdout, /removed\s+channel telegram/);
+    assert.match(undo.stdout, /removed\s+schedule morning-brief/);
+
+    const memories = await listMemory(cwd);
+    assert.equal(memories.filter((memory) => memory.provenance.includes(`migrate:${runId}`)).length, 0, "the run's memory entries are gone");
+    assert.ok(memories.some((memory) => memory.summary === "A fact from before the run"), "earlier memory is kept");
+    assert.equal(existsSync(join(cwd, ".muster", "skills", "figma")), false);
+    assert.ok(existsSync(join(cwd, ".muster", "skills", "keepme", "SKILL.md")), "a skill from before the run is kept");
+    const after = await loadConfig(cwd);
+    assert.ok(after.tools?.mcp?.servers?.github, "the edited server is kept");
+    assert.equal(after.tools?.mcp?.servers?.frappe, undefined);
+    assert.equal(existsSync(join(cwd, ".muster", "gateway.json")), false, "the gateway file the run created is gone with its channels");
+    assert.equal((await listSchedules(cwd)).length, 0);
+    assert.equal(await readFile(join(cwd, ".muster", "rules", "openclaw-agents.md"), "utf8"), "Always run the tests, and lint too.\n");
+
+    const twice = await runCli(["migrate", "undo", runId], { cwd, home });
+    assert.match(twice.stdout, /Already undone/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
