@@ -23,6 +23,7 @@ import {
   parseCapabilityConfirmation,
 } from "./capabilities-overlay.js";
 import { hasCompletedMusterOnboarding, runMusterOnboardingTui } from "./onboarding-tui.js";
+import { runMigrateCommand } from "./migrate.js";
 import { formatWorkspaceMismatchBanner, isParallelWorkPrompt, parallelTaskChoiceForKey, workspaceMismatchChoiceForKey, workspaceOverrideForMismatchChoice } from "./directory-awareness.js";
 import { runFrappe2RealPromptsQa } from "./qa-frappe2.js";
 import { runFrappeConnectCommand } from "./frappe-connect-command.js";
@@ -233,6 +234,7 @@ import {
   addSchedule,
   listSchedules,
   removeSchedule,
+  setScheduleDisabled,
   runDueSchedules,
   createAutomation,
   daemonJobFilter,
@@ -725,8 +727,8 @@ Usage:
   muster pi ask "prompt" [--provider openai] [--model gpt-4o-mini] [--transport sdk|cli] [--session memory|create|continue] [--session-dir path] [--timeout-ms 30000]
   muster state export [--output packages/ui/public/muster-state.json]
   muster state show
-  muster migrate openclaw --dry-run [--profile <channel-name>]
-  muster migrate hermes --dry-run
+  muster migrate <openclaw|hermes|claude|codex> [--apply --yes] [--rename] [--write-env <file>]
+  muster migrate undo <run-id>
   muster migrate pi --dry-run
   muster sessions search "query" | show <id> | recent [--all]
   muster skills list | catalog | enable <id> | disable <id> | view <name> | index | curate
@@ -11432,6 +11434,12 @@ async function migrate(args: string[]): Promise<void> {
   const source = args[0];
   const dryRun = args.includes("--dry-run");
   const apply = args.includes("--apply");
+  // The profile-scoped channel import (--profile/--out) and the pi archive scan keep their own paths.
+  const legacy = source === "pi" || (source === "openclaw" && apply && (args.includes("--profile") || args.includes("--out")));
+  if (!legacy) {
+    await runMigrateCommand(args);
+    return;
+  }
   if (!isMigrationSource(source)) {
     throw new Error("Usage: muster migrate <openclaw|hermes|pi> --dry-run [--profile <name>] | muster migrate openclaw --apply --profile <name> --out <name>");
   }
@@ -12037,12 +12045,17 @@ async function scheduleCommand(commandArgs: string[]): Promise<void> {
     console.log(removed ? `Removed ${rest[0]}` : `No schedule found: ${rest[0]}`);
     return;
   }
+  if ((action === "enable" || action === "disable") && rest[0]) {
+    const changed = await setScheduleDisabled(rest[0], action === "disable");
+    console.log(changed ? `${action === "enable" ? "Enabled" : "Disabled"} ${rest[0]}` : `No schedule found: ${rest[0]}`);
+    return;
+  }
   if (action === "run-due") {
     const results = await tickAutomationsOnce({ log: (line) => console.log(line) });
     if (!results.length) console.log("No jobs due.");
     return;
   }
-  throw new Error("Usage: muster schedule add|remind|list|remove|run-due");
+  throw new Error("Usage: muster schedule add|remind|list|remove|enable|disable|run-due");
 }
 
 const DAEMON_HELP = `muster daemon — run due reminders and routines
@@ -13193,7 +13206,7 @@ function simulationFromSurface(message: { readonly surfaceId: string; readonly c
 }
 
 function channelMissingSetup(channel: ChannelId, config: GatewayConfig, override?: "socket" | "http"): string[] {
-  if (channel === "telegram") return [config.telegram?.botToken ? "" : "telegram.botToken"].filter(Boolean);
+  if (channel === "telegram") return [config.telegram?.botToken ? "" : config.telegram?.botTokenEnv ? `env ${config.telegram.botTokenEnv}` : "telegram.botToken"].filter(Boolean);
   if (channel === "slack") {
     const mode = slackMode(config, override);
     return [
@@ -13588,6 +13601,8 @@ function applyChannelSetup(channel: ChannelId, config: GatewayConfig, args: read
       telegram: {
         name: name ?? config.telegram?.name,
         botToken: botToken ?? config.telegram?.botToken ?? "",
+        // A token given here replaces an env reference (one imported by `muster migrate`, for example).
+        botTokenEnv: botToken ? undefined : config.telegram?.botTokenEnv,
         secretToken: secretToken ?? config.telegram?.secretToken,
         stream: stream ?? config.telegram?.stream,
         status: status ?? config.telegram?.status ?? (botToken ? "typing" : undefined),

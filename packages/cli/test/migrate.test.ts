@@ -171,7 +171,7 @@ test("migrate plans each source read-only and never shows a secret", async () =>
     assert.match(openclaw, /new\s+.*Deploys go through staging first/);
     assert.match(openclaw, /new\s+.*Prefers concise answers/, "USER.md facts are profile items");
     assert.match(openclaw, /new\s+figma — Turn Figma frames into components/);
-    assert.match(openclaw, /new\s+y — Review a pull request/, "a linked skill is read through the link");
+    assert.match(openclaw, /new\s+y-skill — Review a pull request/, "a linked skill is read through the link");
     assert.match(openclaw, /new\s+github\b/);
     assert.match(openclaw, /new\s+frappe\b/);
     assert.match(openclaw, /new\s+telegram\b/);
@@ -187,19 +187,19 @@ test("migrate plans each source read-only and never shows a secret", async () =>
     const hermes = plans.hermes!;
     assert.match(hermes, /new\s+.*Uses pnpm for every repo/);
     assert.match(hermes, /new\s+.*Works in IST/);
-    assert.match(hermes, /new\s+x — Post a thread/);
+    assert.match(hermes, /new\s+x-skill — Post a thread/);
     assert.match(hermes, /new\s+fs\b/);
     assert.ok(hermes.includes("•••• (from .env TELEGRAM_BOT_TOKEN) → set TELEGRAM_BOT_TOKEN"), hermes);
 
     const claude = plans.claude!;
     assert.match(claude, /new\s+linear\b/);
-    assert.match(claude, /new\s+y — Review a pull request/);
+    assert.match(claude, /new\s+y-skill — Review a pull request/);
     assert.match(claude, /new\s+CLAUDE\.md\b/);
     assert.match(claude, /→ set LINEAR_TOKEN/);
 
     const codex = plans.codex!;
     assert.match(codex, /new\s+z\b/);
-    assert.match(codex, /new\s+w — Write release notes/);
+    assert.match(codex, /new\s+w-skill — Write release notes/);
     assert.match(codex, /new\s+AGENTS\.md\b/);
     assert.ok(codex.includes("•••• (from config.toml mcp_servers.z.env.Z_API_KEY) → set Z_API_KEY"), codex);
 

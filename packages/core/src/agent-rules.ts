@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { activeProfile, musterRoot, profilesRoot } from "./profiles.js";
 
@@ -30,13 +30,35 @@ export async function loadAgentRules(cwd = process.cwd()): Promise<AgentRules> {
     { path: join(musterRoot(cwd), "AGENTS.md"), source: "workspace" as const },
     { path: join(cwd, "AGENTS.md"), source: "workspace" as const },
   ];
+  const imported = await importedRules(cwd);
   for (const candidate of candidates) {
     try {
       const text = (await readFile(candidate.path, "utf8")).trim();
-      if (text) return { text, source: candidate.source };
+      if (text) return { text: [text, ...imported].join("\n\n"), source: candidate.source };
     } catch {
       // try the next location
     }
   }
+  if (imported.length) return { text: [DEFAULT_AGENT_RULES, ...imported].join("\n\n"), source: "workspace" };
   return { text: DEFAULT_AGENT_RULES, source: "default" };
+}
+
+/** Rule files brought in by `muster migrate` (`.muster/rules/*.md`), in name order. */
+export function importedRulesDir(cwd = process.cwd()): string {
+  return join(musterRoot(cwd), "rules");
+}
+
+async function importedRules(cwd: string): Promise<string[]> {
+  let names: string[];
+  try {
+    names = (await readdir(importedRulesDir(cwd))).filter((name) => name.endsWith(".md")).sort();
+  } catch {
+    return [];
+  }
+  const texts: string[] = [];
+  for (const name of names) {
+    const text = (await readFile(join(importedRulesDir(cwd), name), "utf8").catch(() => "")).trim();
+    if (text) texts.push(text);
+  }
+  return texts;
 }

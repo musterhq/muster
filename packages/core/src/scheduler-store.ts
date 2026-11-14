@@ -317,12 +317,16 @@ export class SchedulerStore {
 
   insertJob(job: ScheduleJob): void {
     this.db.prepare(
-      `INSERT INTO jobs (id, cron, prompt, flow_id, profile, created_at, next_run_at, kind, at, tz, deliver)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO jobs (id, cron, prompt, flow_id, profile, created_at, next_run_at, kind, at, tz, deliver, disabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       job.id, job.cron, job.prompt, job.flowId ?? null, job.profile ?? null, job.createdAt, job.nextRunAt ?? null,
-      job.kind ?? null, job.at ?? null, job.tz ?? null, job.deliver ?? null,
+      job.kind ?? null, job.at ?? null, job.tz ?? null, job.deliver ?? null, job.disabled === true ? 1 : 0,
     );
+  }
+
+  setDisabled(id: string, disabled: boolean): boolean {
+    return this.db.prepare("UPDATE jobs SET disabled = ? WHERE id = ?").run(disabled ? 1 : 0, id).changes > 0;
   }
 
   recordManualRun(id: string, result: { status: "completed" | "failed"; runId?: string; detail?: string }, at: Date): void {

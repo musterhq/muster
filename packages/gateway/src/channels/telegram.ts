@@ -16,7 +16,7 @@ function constantTimeEquals(presented: string | undefined, expected: string): bo
 
 function botToken(context: ChannelContext): string {
   const token = context.gateway.telegram?.botToken;
-  if (!token) throw new Error("Telegram adapter not configured. Add telegram.botToken to .muster/gateway.json.");
+  if (!token) throw new Error(context.gateway.telegram?.botTokenEnv ? `Telegram bot token is not available: set the environment variable ${context.gateway.telegram.botTokenEnv}.` : "Telegram adapter not configured. Add telegram.botToken to .muster/gateway.json.");
   return token;
 }
 
@@ -43,7 +43,7 @@ export const telegramChannel: ChannelAdapter = {
   id: "telegram",
   label: "Telegram",
   capabilities: { buttons: true, edit: true, media: true, threads: false, maxTextLength: 4_096 },
-  configured: (gateway) => Boolean(gateway.telegram?.botToken),
+  configured: (gateway) => Boolean(gateway.telegram?.botToken || gateway.telegram?.botTokenEnv),
   surfaceId: () => TELEGRAM_SURFACE_ID,
   hasPlatformAuth: (gateway) => Boolean(gateway.telegram?.secretToken),
   verifyInbound({ headers, gateway }) {
@@ -134,8 +134,10 @@ export const telegramChannel: ChannelAdapter = {
     const checks: ChannelDoctorCheck[] = [];
     const telegram = context.gateway.telegram;
     checks.push(telegram?.botToken
-      ? { id: "bot_token", status: "ok", detail: "configured" }
-      : { id: "bot_token", status: "fail", detail: "add telegram.botToken (muster channels setup telegram)" });
+      ? { id: "bot_token", status: "ok", detail: telegram.botTokenEnv ? `env ${telegram.botTokenEnv}` : "configured" }
+      : telegram?.botTokenEnv
+        ? { id: "bot_token", status: "fail", detail: `set the environment variable ${telegram.botTokenEnv}` }
+        : { id: "bot_token", status: "fail", detail: "add telegram.botToken (muster channels setup telegram)" });
     checks.push(telegram?.secretToken
       ? { id: "webhook_secret", status: "ok", detail: "configured" }
       : { id: "webhook_secret", status: "warn", detail: "webhook requests are not authenticated; long-poll is unaffected" });

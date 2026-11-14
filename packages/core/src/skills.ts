@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -407,6 +408,8 @@ export async function writeBundledSkill(
     tags?: string[];
     frontmatter?: SkillFrontmatter;
     openclaw?: OpenClawSkillMetadata;
+    /** The run that brought this skill in (a migration run id, for example). */
+    sourceRunId?: string;
   },
   cwd = process.cwd(),
 ): Promise<SkillRecord> {
@@ -418,13 +421,35 @@ export async function writeBundledSkill(
     version: "0.1.0",
     tags: input.tags ?? [],
     status: "active",
-    provenance: { createdBy: "user", createdAt: new Date().toISOString() },
+    provenance: { createdBy: "user", ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {}), createdAt: new Date().toISOString() },
     frontmatter: input.frontmatter ?? {},
     openclaw: input.openclaw,
     body: input.body,
   };
   await writeSkill(skill, cwd);
   return skill;
+}
+
+/**
+ * Delete an active skill's directory and its index entry. Used by
+ * `muster migrate undo`; returns false when there was nothing to remove.
+ */
+export async function removeSkill(name: string, cwd = process.cwd()): Promise<boolean> {
+  if (!NAME_PATTERN.test(name)) throw new Error(`Invalid skill name "${name}" (lowercase, digits, ._- only).`);
+  const dir = join(skillsDir(cwd), name);
+  const existed = existsSync(dir);
+  await rm(dir, { recursive: true, force: true });
+  const path = skillsIndexPath(cwd);
+  const current = await readJsonFile<SkillIndex | undefined>(path, undefined);
+  if (current?.skills?.[name]) {
+    const skills = { ...current.skills };
+    delete skills[name];
+    const temp = `${path}.${process.pid}.tmp`;
+    await writeFile(temp, `${JSON.stringify({ ...current, generatedAt: new Date().toISOString(), skills }, null, 2)}\n`);
+    await rename(temp, path);
+  }
+  clearSkillCatalogSnapshots();
+  return existed;
 }
 
 export async function archiveSkill(name: string, cwd = process.cwd()): Promise<SkillRecord> {
