@@ -359,7 +359,7 @@ async function scanJobs(ctx: ScanContext, path: string, from: string): Promise<v
   }
 }
 
-/** OpenClaw's memory index (`chunks` table); any other schema is listed as skipped, never guessed. */
+/** The `openclaw` memory index (`chunks` table); any other schema is listed as skipped, never guessed. */
 async function scanMemoryDb(ctx: ScanContext, path: string, from: string, alreadyRead: ReadonlySet<string>): Promise<void> {
   if (!existsSync(path)) return;
   // Read a private copy so the source database (and its -wal/-shm) is never opened for writing or locked.

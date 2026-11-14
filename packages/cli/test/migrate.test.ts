@@ -17,7 +17,7 @@ const SECRETS = {
   github: "ghp_FAKEgithubTOKEN1234567890abcdefXYZ",
   frappe: "frappe-FAKE-api-secret-7777",
   gatewayAuth: "gw-FAKE-gateway-auth-token-0001",
-  hermesTelegram: "987654321:HermesFakeTelegramToken_qrstuvwxyz0123",
+  hermesTelegram: "987654321:SecondFakeTelegramToken_qrstuvwxyz0123",
   hermesOpenrouter: "sk-or-FAKE-openrouter-key-5555aaaa",
   linear: "lin_FAKE_api_token_1234567890abcd",
   codexZ: "z-FAKE-codex-key-4242-abcdef",

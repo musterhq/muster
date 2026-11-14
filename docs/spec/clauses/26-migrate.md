@@ -20,10 +20,10 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
 ## MUS-SPEC-26-1A — The plan lists what each source has, read-only
 
 - **Precondition:** fixture trees for each source under a fake HOME:
-  - OpenClaw: `openclaw.json` with `channels.telegram.botToken` and `channels.discord`; `workspace/USER.md` and `MEMORY.md`; `skills/figma/SKILL.md`; `cron/jobs.json` with one job; an MCP server.
-  - Hermes: `config.yaml`, `memories/MEMORY.md` and `USER.md`, `skills/x/SKILL.md`, `.env`.
-  - Claude: `~/.claude.json` mcpServers, `~/.claude/skills/y`, `CLAUDE.md`.
-  - Codex: `config.toml` `[mcp_servers.z]`, `AGENTS.md`, `skills/w`.
+  - `openclaw`: `openclaw.json` with `channels.telegram.botToken` and `channels.discord`; `workspace/USER.md` and `MEMORY.md`; `skills/figma/SKILL.md`; `cron/jobs.json` with one job; an MCP server.
+  - `hermes`: `config.yaml`, `memories/MEMORY.md` and `USER.md`, `skills/x/SKILL.md`, `.env`.
+  - `claude`: `~/.claude.json` mcpServers, `~/.claude/skills/y`, `CLAUDE.md`.
+  - `codex`: `config.toml` `[mcp_servers.z]`, `AGENTS.md`, `skills/w`.
 - **Action:** `muster migrate <source>` for each (dry run), then hash every file under the fake HOME.
 - **Expected result:**
   - For each source a plan grouped as Memory / Profile / Skills / MCP servers / Channels / Schedules / Rules. Each item has a short description and its status: `new`, `already in Muster`, or `conflict` (same name, different content).
@@ -31,12 +31,12 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
   - No file under the fake HOME changed (hashes equal), and nothing was written to Muster.
 - **Test:** `packages/cli/test/migrate.test.ts` › "migrate plans each source read-only and never shows a secret"
 - **Environment:** a fake HOME with fixtures.
-- **Known gaps:** OpenClaw's `memory/main.sqlite` is read through `node:sqlite` read-only (`readOnly: true`); unknown schemas are listed as `skipped: unknown memory schema` rather than guessed.
+- **Known gaps:** The `openclaw` source's `memory/main.sqlite` is read through `node:sqlite` read-only (`readOnly: true`); unknown schemas are listed as `skipped: unknown memory schema` rather than guessed.
 - **Evidence:** real run 2026-11-14, `muster migrate openclaw` (dry run) from /tmp/migrate-live against the real `~/.openclaw` (86 439 entries): exit 0; 22 items (20 new, 2 skipped) in all seven groups; `•••• (from openclaw.json channels.telegram.botToken) → set TELEGRAM_BOT_TOKEN`; 0 of 3 secret values from openclaw.json in the output; hash of names+sizes+mtimes+modes of `~/.openclaw` and `~/.claude/skills` c4b9c63a8d53b9a9 before and after; nothing written to /tmp/migrate-live. Test: 4/4 pass in migrate.test.ts.
 
 ## MUS-SPEC-26-1B — Applying brings items in as Muster-native, with secrets as env references
 
-- **Precondition:** the OpenClaw fixture.
+- **Precondition:** the `openclaw` fixture.
 - **Action:** `muster migrate openclaw --apply --yes`.
 - **Expected result:**
   - Memory entries are added through Muster's memory API with scope `user` and the tag `migrated:openclaw`. USER.md facts go into the profile.
