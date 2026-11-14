@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { createToolRegistry, formatCallRecordsTable, readCallLedger, registerBuiltinTools } from "@musterhq/core";
 import type { CallApprovalCard, CallsConfig } from "@musterhq/core";
 import { approvePairing, CallManager, gatewayConfigPath, requestPairing, startGatewayServer, twilioSignature } from "../src/index.js";
-import type { CallTurnInput, CallTurnResult, GatewayConfig } from "../src/index.js";
+import type { CallTurnInput, CallTurnResult, GatewayConfig, SurfaceMessage } from "../src/index.js";
 import { postSigned, startFakeTwilio } from "./fakes/twilio.js";
 import type { FakeTwilio } from "./fakes/twilio.js";
 import { startStubModel, stubModelConfig } from "./fakes/stub-model.js";
@@ -123,7 +123,7 @@ test("call_contact dials only named contacts after approval", async () => {
 // Spec: MUS-SPEC-25-1B (docs/spec/clauses/25-calls-sms.md#mus-spec-25-1b--approvals-during-a-call-fail-closed)
 test("approvals during a call are declined and routed to the text channel", async () => {
   const twilio = await startFakeTwilio();
-  const { cwd, gateway, env } = await workspace("1b", twilio);
+  const { cwd, gateway, env } = await workspace("1b", twilio, { allowSmsApprovals: true });
   await requestPairing(`sms:${FROM}`, OWNER, cwd).then((pending) => approvePairing(pending.code, cwd));
   const llm = await startStubModel("model should not run");
   const turns = scriptedTurns((input) => {
@@ -165,6 +165,84 @@ test("approvals during a call are declined and routed to the text channel", asyn
     await llm.close();
     await twilio.close();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// Spec: MUS-SPEC-25-1C (docs/spec/clauses/25-calls-sms.md#mus-spec-25-1c--sms-cannot-approve-or-steer-a-call-by-default)
+test("sms cannot approve or steer a call unless allowSmsApprovals is set", async () => {
+  const twilio = await startFakeTwilio();
+  const sms = (text: string): SurfaceMessage => ({ surfaceId: `sms:${FROM}`, conversationId: OWNER, senderId: OWNER, text });
+  const telegram = (text: string): SurfaceMessage => ({ surfaceId: "telegram:bot", conversationId: "T1", senderId: "T1", text });
+  const refusal = (where: string) => `SMS can't approve or steer calls (caller ID can be spoofed). Answer on ${where}, or set calls.allowSmsApprovals in gateway.json if you accept that risk.`;
+  const cleanup: Array<() => Promise<void>> = [];
+  const managerFor = async (name: string, calls: Partial<CallsConfig>, approve?: () => Promise<"approve" | "deny">) => {
+    const { cwd, gateway, env } = await workspace(name, twilio, calls);
+    const notices: string[] = [];
+    const manager = new CallManager({
+      cwd,
+      gateway,
+      env,
+      publicUrl: () => "https://muster.example.test",
+      turnRunner: async () => ({ say: "unused" }),
+      notifyOwner: async (reply) => { notices.push(reply.text); },
+      ...(approve ? { approve } : {}),
+    });
+    cleanup.push(async () => { await manager.close(); await rm(cwd, { recursive: true, force: true }); });
+    return { cwd, manager, notices };
+  };
+  try {
+    // 1. Default config: the owner's SMS "y" is refused, nothing is dialled, the card stays pending.
+    const plain = await managerFor("1c-default", {});
+    const asked = await plain.manager.requestCall({ contact: "dentist", brief: BRIEF });
+    assert.equal(asked.status, "awaiting_approval");
+    assert.match(asked.message, /SMS replies can't approve calls/);
+    assert.match(asked.message, /non-SMS channel/);
+    assert.match(plain.notices[0].split("\n").at(-1)!, /^Reply y on a paired chat channel such as Telegram/, plain.notices[0]);
+    const refused = await plain.manager.interceptOwnerMessage(sms("y"));
+    assert.equal(refused?.text, refusal("a paired chat channel such as Telegram"));
+    assert.equal(twilio.calls.length, 0, "an SMS y dials nothing");
+    const again = await plain.manager.requestCall({ contact: "dentist", brief: BRIEF });
+    assert.equal(again.status, "refused");
+    assert.match(again.message, /waiting for approval/, "the card is still pending");
+    const entries = (await readCallLedger(plain.cwd)).filter((entry) => entry.kind === "call.sms-approval-refused");
+    assert.equal(entries.length, 1, JSON.stringify(entries));
+
+    // 2. An SMS steer during a call is refused; the call never hears it.
+    const live = await managerFor("1c-steer", {}, async () => "approve");
+    const placed = await live.manager.requestCall({ contact: "dentist", brief: BRIEF });
+    assert.equal(placed.status, "placed");
+    const steer = await live.manager.interceptOwnerMessage(sms("Tell them Friday also works"));
+    assert.equal(steer?.text, refusal("a paired chat channel such as Telegram"));
+    const session = (live.manager as unknown as { sessions: Map<string, { steers: string[] }> }).sessions.get(placed.callId!)!;
+    assert.deepEqual(session.steers, []);
+    assert.ok(!live.manager.transcript(placed.callId!).some((line) => line.speaker === "owner"));
+    const steerEntries = (await readCallLedger(live.cwd)).filter((entry) => entry.kind === "call.sms-approval-refused");
+    assert.equal(steerEntries.length, 1);
+    assert.ok(JSON.stringify(steerEntries[0]).length < 400, "no message content beyond 80 chars");
+    const callsBefore = twilio.calls.length;
+
+    // 3. allowSmsApprovals: true restores SMS approvals.
+    const opted = await managerFor("1c-opt-in", { allowSmsApprovals: true });
+    const optAsked = await opted.manager.requestCall({ contact: "dentist", brief: BRIEF });
+    assert.equal(optAsked.message, "Sent the call card to the owner. Nothing is dialled until they reply y.");
+    assert.equal(opted.notices[0].split("\n").at(-1), "y call · n cancel");
+    const dialled = await opted.manager.interceptOwnerMessage(sms("y"));
+    assert.match(dialled?.text ?? "", /^Calling dentist now/);
+    assert.equal(twilio.calls.length, callsBefore + 1);
+
+    // 4. calls.notify names Telegram: a y there dials; an SMS y is refused.
+    const chat = await managerFor("1c-telegram", { notify: { channel: "telegram", peer: "T1" } });
+    const chatAsked = await chat.manager.requestCall({ contact: "dentist", brief: BRIEF });
+    assert.equal(chatAsked.message, "Sent the call card to the owner. Nothing is dialled until they reply y.");
+    const smsTry = await chat.manager.interceptOwnerMessage(sms("y"));
+    assert.equal(smsTry?.text, refusal("telegram"));
+    assert.equal(twilio.calls.length, callsBefore + 1, "the SMS y dials nothing");
+    const viaTelegram = await chat.manager.interceptOwnerMessage(telegram("y"));
+    assert.match(viaTelegram?.text ?? "", /^Calling dentist now/);
+    assert.equal(twilio.calls.length, callsBefore + 2);
+  } finally {
+    for (const done of cleanup) await done();
+    await twilio.close();
   }
 });
 
