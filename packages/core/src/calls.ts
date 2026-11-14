@@ -45,6 +45,14 @@ export interface CallsConfig {
   readonly apiBaseUrl?: string;
   /** Where approval cards, summaries and in-call notices go. Defaults to SMS to the contact "owner". */
   readonly notify?: { readonly channel: string; readonly peer: string };
+  /**
+   * Let an SMS from the owner's number approve a call card (y/n) or steer a
+   * call in progress. Off by default: SMS caller ID can be spoofed, so anyone
+   * who fakes the owner's number could approve a call or put words into one.
+   * Without it, SMS still carries cards and summaries, but decisions and
+   * steers must come from a non-SMS `notify` channel (e.g. Telegram).
+   */
+  readonly allowSmsApprovals?: boolean;
   /** Realtime speech provider. Not implemented in this slice: calls use Gather/Say. */
   readonly realtime?: CallsRealtimeConfig;
 }
@@ -168,14 +176,14 @@ export interface CallApprovalCard {
   readonly text: string;
 }
 
-export function callApprovalCard(input: { readonly contact: string; readonly number: string; readonly brief: string; readonly caps: CallCaps; readonly smsFallback?: boolean }): CallApprovalCard {
+export function callApprovalCard(input: { readonly contact: string; readonly number: string; readonly brief: string; readonly caps: CallCaps; readonly smsFallback?: boolean; readonly keys?: string }): CallApprovalCard {
   const smsFallback = input.smsFallback === true;
   const text = [
     `☎ Call ${input.contact} (${formatPhoneNumber(input.number)})?`,
     `Brief: ${input.brief}`,
     `Cap: ${formatCallCaps(input.caps)}`,
     `If no answer: ${smsFallback ? "text them the brief" : "tell you"}`,
-    "y call · n cancel",
+    input.keys ?? "y call · n cancel",
   ].join("\n");
   return { contact: input.contact, number: input.number, brief: input.brief, caps: input.caps, smsFallback, text };
 }
@@ -198,6 +206,18 @@ export type CallLedgerEntry =
     readonly contact: string;
     readonly brief?: string;
     readonly approvedBy?: "owner" | "auto-owner";
+  }
+  | {
+    /** An SMS tried to approve, decline or steer a call without calls.allowSmsApprovals (spec 25-1C). */
+    readonly kind: "call.sms-approval-refused";
+    readonly id: string;
+    readonly at: string;
+    readonly action: "approve" | "decline" | "steer";
+    readonly contact: string;
+    /** The sender's number. */
+    readonly from: string;
+    /** The message, truncated to 80 characters. */
+    readonly text: string;
   }
   | CallRecord;
 

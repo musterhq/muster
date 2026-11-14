@@ -155,6 +155,7 @@ const FILLERS = ["One moment.", "Still on it.", "Just a moment more."];
 const MAX_WAITS = 25;
 const CAP_GOODBYE = "I have to wrap up this call now. Thank you, goodbye.";
 const DEFAULT_REPLY_BUDGET_MS = 1_200;
+const NON_SMS_CHANNEL = "a paired chat channel such as Telegram";
 
 function webhookResult(status: number, body: string, contentType = "text/xml"): TwilioWebhookResult {
   return { status, contentType, body };
@@ -242,7 +243,10 @@ export class CallManager implements CallToolHost {
       return refuseCallRequest(cwd, request.contact, `A call to ${this.pendingApproval.card.contact} is waiting for approval.`);
     }
     const caps = callCaps(this.calls);
-    const card = callApprovalCard({ contact: resolved.name, number: resolved.number, brief, caps, smsFallback: request.smsFallback });
+    // With only SMS to reach the owner and SMS approvals off, say up front where a y counts (spec 25-1C).
+    const smsOnly = !this.options.approve && this.smsOnlyApprovals();
+    const keys = smsOnly ? `Reply y on ${NON_SMS_CHANNEL} (set calls.notify); SMS replies can't approve calls.` : undefined;
+    const card = callApprovalCard({ contact: resolved.name, number: resolved.number, brief, caps, smsFallback: request.smsFallback, keys });
     const normalized: CallRequest = { contact: resolved.name, brief, smsFallback: request.smsFallback === true };
     await appendCallLedger(cwd, { kind: "call.requested", id: newCallLedgerId("request"), at: new Date(this.now()).toISOString(), contact: resolved.name, brief });
 
@@ -260,6 +264,12 @@ export class CallManager implements CallToolHost {
     const ttlMs = Math.min(3600, Math.max(60, this.options.gateway.approvals?.ttlSeconds ?? 600)) * 1000;
     this.pendingApproval = { card, request: normalized, expiresAt: this.now() + ttlMs };
     await this.notifyOwner({ text: card.text });
+    if (smsOnly) {
+      return {
+        status: "awaiting_approval",
+        message: `Sent the call card to the owner by SMS, but SMS replies can't approve calls (caller ID can be spoofed). The owner must reply y on a non-SMS channel: set calls.notify to ${NON_SMS_CHANNEL}, or set calls.allowSmsApprovals in gateway.json to accept SMS approvals. Nothing is dialled until then.`,
+      };
+    }
     return { status: "awaiting_approval", message: `Sent the call card to the owner. Nothing is dialled until they reply y.` };
   }
 
@@ -319,6 +329,67 @@ export class CallManager implements CallToolHost {
     return this.calls?.notify ?? (this.options.gateway.sms?.enabled ? { channel: "sms", peer: "owner" } : undefined);
   }
 
+  /** SMS may approve and steer calls only when the owner opted in: caller ID can be spoofed (spec 25-1C). */
+  private smsApprovalsAllowed(): boolean {
+    return this.calls?.allowSmsApprovals === true;
+  }
+
+  /** The owner can only be reached by SMS, and SMS may not decide. */
+  private smsOnlyApprovals(): boolean {
+    return !this.smsApprovalsAllowed() && this.notifyTarget()?.channel === "sms";
+  }
+
+  /** Where a refused SMS should answer instead: the non-SMS notify channel, if one is set. */
+  private approvalChannelLabel(): string {
+    const channel = this.calls?.notify?.channel;
+    return channel && channel !== "sms" ? channel : NON_SMS_CHANNEL;
+  }
+
+  /** Is this an SMS from the owner's number (the SMS notify peer, else the contact "owner")? */
+  private isOwnerSms(message: SurfaceMessage): boolean {
+    if (message.surfaceId.split(":")[0] !== "sms") return false;
+    const target = this.notifyTarget();
+    const resolved = resolveCallContact(this.calls, target?.channel === "sms" ? target.peer : "owner");
+    if (!resolved.ok) return false;
+    return message.senderId === resolved.number || (message.conversationId === resolved.number && message.senderId === message.conversationId);
+  }
+
+  /** What an owner message would do: answer the pending card, steer the call in progress, or nothing. */
+  private ownerDecision(text: string):
+    | { readonly action: "approve" | "decline"; readonly pending: PendingApproval }
+    | { readonly action: "steer"; readonly session: CallSession }
+    | undefined {
+    const pending = this.pendingApproval;
+    if (pending && pending.expiresAt > this.now()) {
+      const answer = /^(y|yes|n|no)[.!]?$/i.exec(text)?.[1]?.toLowerCase();
+      if (answer) return { action: answer.startsWith("n") ? "decline" : "approve", pending };
+    }
+    if (!text) return undefined;
+    for (const session of this.sessions.values()) {
+      if (session.state === "in-progress" || session.state === "dialing") return { action: "steer", session };
+    }
+    return undefined;
+  }
+
+  /** Refuse an SMS decision or steer: one reply, a ledger entry, and nothing else changes. */
+  private async refuseSmsDecision(message: SurfaceMessage): Promise<SurfaceReply | undefined> {
+    const text = message.text.trim();
+    const decision = this.ownerDecision(text);
+    if (!decision) return undefined;
+    await appendCallLedger(this.options.cwd, {
+      kind: "call.sms-approval-refused",
+      id: newCallLedgerId("refusal"),
+      at: new Date(this.now()).toISOString(),
+      action: decision.action,
+      contact: decision.action === "steer" ? decision.session.contact : decision.pending.card.contact,
+      from: message.senderId.slice(0, 32),
+      text: text.slice(0, 80),
+    }).catch((error: unknown) => this.log(`calls: ledger write failed: ${error instanceof Error ? error.message : String(error)}`));
+    return {
+      text: `SMS can't approve or steer calls (caller ID can be spoofed). Answer on ${this.approvalChannelLabel()}, or set calls.allowSmsApprovals in gateway.json if you accept that risk.`,
+    };
+  }
+
   private async notifyOwner(reply: SurfaceReply): Promise<void> {
     try {
       if (this.options.notifyOwner) {
@@ -365,6 +436,7 @@ export class CallManager implements CallToolHost {
 
   /** y/n on a pending card, or a steer for the call in progress. Runs after pairing. */
   async interceptOwnerMessage(message: SurfaceMessage): Promise<SurfaceReply | undefined> {
+    if (!this.smsApprovalsAllowed() && this.isOwnerSms(message)) return this.refuseSmsDecision(message);
     if (!this.isOwnerMessage(message)) return undefined;
     const text = message.text.trim();
     const pending = this.pendingApproval;

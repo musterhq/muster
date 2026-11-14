@@ -2,6 +2,7 @@
 
 Muster can place outbound phone calls and send or receive SMS through Twilio, with Telnyx as the second provider. Calls are **governed**:
 - every call needs an approval card, unless the call is to the owner's own number and the owner opted into `calls.autoApproveOwner`;
+- SMS can carry cards and summaries, but an SMS cannot approve a card or steer a call unless the owner opts into `calls.allowSmsApprovals` (SMS caller ID can be spoofed). Decisions come from a non-SMS `calls.notify` channel, such as Telegram, or from the chat harness;
 - calls go only to numbers on the allowlist;
 - the agent says it is an AI in its first sentence;
 - every call has a written brief (purpose, what it may agree to, when to hang up) and a spend cap;
@@ -25,6 +26,8 @@ Config (`gateway.json`):
     "maxMinutes": 5,
     "maxUsdPerCall": 0.5,
     "autoApproveOwner": false,
+    "notify": { "channel": "telegram", "peer": "123456789" },
+    "allowSmsApprovals": false,
     "realtime": { "provider": "openai", "apiKeyEnv": "OPENAI_API_KEY" }
   },
   "sms": { "enabled": true }
@@ -49,11 +52,30 @@ Config (`gateway.json`):
 - **Action:** the tool request arrives.
 - **Expected result:**
   - The request is declined without prompting on the call. A text message goes to the owner's channel: "During the call with dentist the agent asked to edit notes.md; approve it here after the call".
-  - Texts the owner sends during a call go into the call's context, as a steer, not into a second reply.
+  - Texts the owner sends during a call go into the call's context, as a steer, not into a second reply. Over SMS this needs `calls.allowSmsApprovals` (MUS-SPEC-25-1C).
 - **Test:** `packages/gateway/test/calls.test.ts` › "approvals during a call are declined and routed to the text channel"
 - **Environment:** fake call session.
 - **Known gaps:** none.
 - **Evidence:** green 2026-11-11: red `12e53c0` → green `03fcba1`; `test/calls.test.ts` 5/5. The in-call turn's approval request was declined, the owner got "During the call with dentist the agent asked to edit notes.md; approve it here after the call" by SMS, and an owner text during the call reached the next turn as a steer with no model turn of its own (reply "Passed to the call with dentist."). Not run live (it needs a model that requests a gated tool).
+
+## MUS-SPEC-25-1C — SMS cannot approve or steer a call by default
+
+- **Precondition:** the config above without `calls.notify`, so cards go to the owner by SMS; `calls.allowSmsApprovals` unset; a fake Twilio API.
+- **Action:**
+  1. `call_contact` for `dentist` with no in-process approver, then an SMS `y` from the owner's number;
+  2. during a call, an SMS steer from the owner's number;
+  3. the same `y` with `calls.allowSmsApprovals: true`;
+  4. with `calls.notify` = `{ "channel": "telegram", "peer": "T1" }`, a `y` from Telegram sender T1, and an SMS `y`.
+- **Expected result:**
+  - `call_contact` returns `awaiting_approval` with a message that SMS replies can't approve calls and the owner must reply on a non-SMS channel. The card ends "Reply y on a paired chat channel such as Telegram (set calls.notify); SMS replies can't approve calls."
+  - An SMS `y`/`n` on a pending card, or an SMS steer, gets one reply: "SMS can't approve or steer calls (caller ID can be spoofed). Answer on <the non-SMS `calls.notify` channel, else 'a paired chat channel such as Telegram'>, or set calls.allowSmsApprovals in gateway.json if you accept that risk." The card stays pending, nothing is dialled, and the call does not get the steer. Each refusal writes a `call.sms-approval-refused` ledger entry with the action, contact, sender and at most 80 characters of the message.
+  - With `calls.allowSmsApprovals: true`, SMS approvals and steers work as before.
+  - With a Telegram `calls.notify`, the owner's `y` on Telegram places the call; an SMS `y` is refused.
+  - Cards, summaries and notices are still texted over SMS. Only decisions and steers are gated.
+- **Test:** `packages/gateway/test/calls.test.ts` › "sms cannot approve or steer a call unless allowSmsApprovals is set"
+- **Environment:** fake Twilio REST; owner messages as `SurfaceMessage`s straight to the call manager.
+- **Known gaps:** with SMS as the only notify channel and no opt-in, nothing can approve a card until `calls.notify` names a chat channel (the card and the tool message say so).
+- **Evidence:** UNVERIFIED (filled in by the next commit).
 
 ## MUS-SPEC-25-2A — The first sentence discloses the AI, and the cap ends the call
 
