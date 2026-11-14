@@ -500,7 +500,7 @@ test("a route skipped with k leaves the summary and the finish screen enables on
 async function waitForFrame(read: () => string, predicate: (frame: string) => boolean, what: string, timeoutMs = 10_000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const frame = read();
+    const frame = read().replace(/\x1b\[[0-9;]*m/g, "");
     if (predicate(frame)) return frame;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}; last frame:\n${frame}`);
     await new Promise((resolveTick) => setImmediate(resolveTick));
