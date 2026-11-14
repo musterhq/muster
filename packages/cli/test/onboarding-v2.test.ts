@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer, type IncomingHttpHeaders } from "node:http";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
@@ -494,4 +495,77 @@ test("a route skipped with k leaves the summary and the finish screen enables on
   await press(input, "q");
   await press(input, "y");
   await running;
+});
+
+async function waitForFrame(read: () => string, predicate: (frame: string) => boolean, what: string, timeoutMs = 10_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const frame = read();
+    if (predicate(frame)) return frame;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}; last frame:\n${frame}`);
+    await new Promise((resolveTick) => setImmediate(resolveTick));
+  }
+}
+
+async function treeHashes(root: string): Promise<Record<string, string>> {
+  const { createHash } = await import("node:crypto");
+  const { lstat, readdir, readlink } = await import("node:fs/promises");
+  const out: Record<string, string> = {};
+  const visit = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir)) {
+      const path = join(dir, entry);
+      const info = await lstat(path);
+      if (info.isSymbolicLink()) out[path] = `link:${await readlink(path)}`;
+      else if (info.isDirectory()) await visit(path);
+      else out[path] = createHash("sha256").update(await readFile(path)).digest("hex");
+    }
+  };
+  await visit(root);
+  return out;
+}
+
+// Spec: MUS-SPEC-26-2A (docs/spec/clauses/26-migrate.md#mus-spec-26-2a--onboarding-offers-migration-when-it-finds-another-setup)
+test("onboarding offers migration when another agent setup is found", async () => {
+  const home = await mkdtemp(join(tmpdir(), "muster-onb-migrate-home-"));
+  const cwd = await mkdtemp(join(tmpdir(), "muster-onb-migrate-ws-"));
+  const token = "123456789:AAOnboardingFakeTelegramToken_abcdefghij";
+  const files: Record<string, string> = {
+    ".openclaw/openclaw.json": JSON.stringify({ channels: { telegram: { botToken: token }, discord: { enabled: true } } }),
+    ".openclaw/workspace/MEMORY.md": "- Deploys go through staging first\n",
+  };
+  for (const name of ["figma", "deploy", "review"]) files[`.openclaw/skills/${name}/SKILL.md`] = `---\nname: ${name}\ndescription: The ${name} skill\n---\n\nSteps.\n`;
+  for (const [relative, content] of Object.entries(files)) {
+    await mkdir(join(home, relative, ".."), { recursive: true });
+    await writeFile(join(home, relative), content);
+  }
+  const before = await treeHashes(home);
+  const input = fakeTtyInput();
+  const { output, read, lastFrame } = fakeTtyOutput();
+  const done = runMusterOnboardingTui([], { cwd, input, output, detect: async () => laptopDetection(), verify: async () => ({ ok: true, ms: 1 }) as unknown as VerifyOutcome, home });
+
+  const offer = await waitForFrame(lastFrame, (frame) => frame.includes("bring it over?"), "the migration offer");
+  assert.ok(offer.includes("Found an openclaw setup: 3 skills, 2 channels, memory — bring it over?"), offer);
+  assert.match(offer, /r\s+review/);
+  assert.match(offer, /k\s+skip/);
+
+  input.write("r");
+  const plan = await waitForFrame(lastFrame, (frame) => frame.includes("MCP servers"), "the review plan");
+  for (const heading of ["Memory", "Profile", "Skills", "Channels", "Schedules", "Rules"]) assert.match(plan, new RegExp(`│ ${heading}\\s`));
+  assert.ok(plan.includes("•••• (from openclaw.json channels.telegram.botToken) → set TELEGRAM_BOT_TOKEN"), plan);
+  assert.match(plan, /new\s+figma — The figma skill/);
+
+  input.write("\x1b");
+  await waitForFrame(lastFrame, (frame) => frame.includes("bring it over?") && !frame.includes("MCP servers"), "back from review");
+  input.write("k");
+  await waitForFrame(lastFrame, (frame) => !frame.includes("bring it over?") && frame.includes("Welcome to Muster."), "the offer dismissed");
+  input.write("q");
+  input.write("y");
+  const result = await done;
+  assert.equal(result.saved, false);
+  assert.ok(!read().includes(token), "the token never reaches the screen");
+  assert.equal(existsSync(join(cwd, ".muster")), false, "skip writes nothing to the workspace");
+  assert.equal(existsSync(join(home, ".muster")), false, "skip writes nothing to the home directory");
+  assert.deepEqual(await treeHashes(home), before, "the other setup is untouched");
+  await rm(home, { recursive: true, force: true });
+  await rm(cwd, { recursive: true, force: true });
 });
