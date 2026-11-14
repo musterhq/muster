@@ -32,7 +32,7 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
 - **Test:** `packages/cli/test/migrate.test.ts` › "migrate plans each source read-only and never shows a secret"
 - **Environment:** a fake HOME with fixtures.
 - **Known gaps:** OpenClaw's `memory/main.sqlite` is read through `node:sqlite` read-only (`readOnly: true`); unknown schemas are listed as `skipped: unknown memory schema` rather than guessed.
-- **Evidence:** UNVERIFIED
+- **Evidence:** real run 2026-11-14, `muster migrate openclaw` (dry run) from /tmp/migrate-live against the real `~/.openclaw` (86 439 entries): exit 0; 22 items (20 new, 2 skipped) in all seven groups; `•••• (from openclaw.json channels.telegram.botToken) → set TELEGRAM_BOT_TOKEN`; 0 of 3 secret values from openclaw.json in the output; hash of names+sizes+mtimes+modes of `~/.openclaw` and `~/.claude/skills` c4b9c63a8d53b9a9 before and after; nothing written to /tmp/migrate-live. Test: 4/4 pass in migrate.test.ts.
 
 ## MUS-SPEC-26-1B — Applying brings items in as Muster-native, with secrets as env references
 
@@ -48,7 +48,7 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
 - **Test:** `packages/cli/test/migrate.test.ts` › "apply imports memory, skills, mcp, channels and schedules with secrets as env references, idempotently"
 - **Environment:** a fake HOME; temp workspace.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** real run 2026-11-14 against a fixture HOME copy: `--apply --yes --write-env` run mig_20261114T151440_801d added 8 of 8 items (2 memory/profile, 1 skill, 1 MCP server, 2 channels, 1 automation disabled until `muster schedule enable sched_26b3116d`, 1 rule); gateway.json `telegram.botTokenEnv: "TELEGRAM_BOT_TOKEN"` with no inline token; 0 token strings in output or in the workspace; env file mode 600 with TELEGRAM_BOT_TOKEN and GITHUB_TOKEN; a second apply printed `Nothing to apply`; source tree hash ecb8d3810b1d0061 before and after.
 
 ## MUS-SPEC-26-1C — Conflicts are never overwritten silently
 
@@ -58,7 +58,7 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
 - **Test:** `packages/cli/test/migrate.test.ts` › "conflicting skills and servers are skipped or renamed, never overwritten"
 - **Environment:** as 26-1B.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** test run 2026-11-14: conflict lines for figma and github with the existing files byte-identical; `--rename` added figma-openclaw and github-openclaw; the next plan reports them `already in Muster`.
 
 ## MUS-SPEC-26-1D — Undo removes exactly what a migration added
 
@@ -68,14 +68,14 @@ Sources in this slice: `openclaw` (`~/.openclaw`), `hermes` (`~/.hermes`), `clau
 - **Test:** `packages/cli/test/migrate.test.ts` › "migrate undo removes only what the run added and keeps later edits"
 - **Environment:** as 26-1B.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** real run 2026-11-14 on the fixture HOME copy: `muster migrate undo mig_20261114T151440_801d` → `Undone: 8 removed · 0 kept`, gateway.json (created by the run) removed, memory.jsonl empty; the test proves edited items are listed `kept: edited after migration` and items from before the run stay.
 
 ## MUS-SPEC-26-2A — Onboarding offers migration when it finds another setup
 
 - **Precondition:** a fake HOME with `~/.openclaw/openclaw.json`; first run of `muster onboard`.
 - **Action:** open onboarding.
-- **Expected result:** the detect step shows `Found an OpenClaw setup: 3 skills, 2 channels, memory — bring it over?` with keys to review or skip. Review opens the same plan as 26-1A. Skip writes nothing.
+- **Expected result:** the detect step shows `Found an openclaw setup: 3 skills, 2 channels, memory — bring it over?` (sources are named by their command id) with keys `r` review and `k` skip. Review opens the same plan as 26-1A. Skip writes nothing.
 - **Test:** `packages/cli/test/onboarding-v2.test.ts` › "onboarding offers migration when another agent setup is found"
 - **Environment:** fake HOME.
 - **Known gaps:** none.
-- **Evidence:** UNVERIFIED
+- **Evidence:** test run 2026-11-14: the first step shows `Found an openclaw setup: 3 skills, 2 channels, memory — bring it over?` with `r review  k skip`; `r` opens the same plan as the dry run (secret masked), Esc returns, `k` dismisses; after quitting, no `.muster` in the workspace or HOME and the fixture tree hashes are unchanged.

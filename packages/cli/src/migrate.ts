@@ -304,7 +304,7 @@ function addMemoryItems(ctx: ScanContext, kind: "memory" | "profile", text: stri
 
 function addRule(ctx: ScanContext, fileName: string, text: string | undefined, from: string): void {
   if (!text?.trim()) return;
-  ctx.items.push({ kind: "rule", name: fileName, description: `${text.trim().split("\n").length} lines`, from, secrets: [], ruleText: `${ctx.clean(text).trim()}\n` });
+  ctx.items.push({ kind: "rule", name: fileName, description: ((n) => `${n} line${n === 1 ? "" : "s"}`)(text.trim().split("\n").length), from, secrets: [], ruleText: `${ctx.clean(text).trim()}\n` });
 }
 
 const EVERY_UNITS: ReadonlyArray<[number, (n: number) => string | undefined]> = [
