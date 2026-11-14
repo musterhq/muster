@@ -75,7 +75,7 @@ Config (`gateway.json`):
 - **Test:** `packages/gateway/test/calls.test.ts` › "sms cannot approve or steer a call unless allowSmsApprovals is set"
 - **Environment:** fake Twilio REST; owner messages as `SurfaceMessage`s straight to the call manager.
 - **Known gaps:** with SMS as the only notify channel and no opt-in, nothing can approve a card until `calls.notify` names a chat channel (the card and the tool message say so).
-- **Evidence:** UNVERIFIED (filled in by the next commit).
+- **Evidence:** green 2026-11-14 on `feat/calls-sms`: red `3562d73` (`/SMS replies can't approve calls/` did not match "Sent the call card to the owner. Nothing is dialled until they reply y.") → green `2e80fca`; `npx tsx --test --test-concurrency=1 test/calls.test.ts test/calls-sim.test.ts test/sms-channel.test.ts` 8/8. Default config: the SMS `y` got the refusal reply, fake Twilio `Calls.json` count stayed 0, a second `call_contact` was refused as "waiting for approval", and one `call.sms-approval-refused` entry was written; an SMS steer during a call was refused with the call's steers still empty; `allowSmsApprovals: true` dialled on the same `y`; with Telegram `calls.notify`, the SMS `y` was refused ("Answer on telegram") and the Telegram `y` dialled. The 1B steer test without the opt-in fails, so the gate holds on the real SMS webhook path. Not run live.
 
 ## MUS-SPEC-25-2A — The first sentence discloses the AI, and the cap ends the call
 
