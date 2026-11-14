@@ -678,10 +678,15 @@ function secretLine(secret: SecretRef): string {
     : `(no value in ${file}) → set ${secret.env}`;
 }
 
+function clip(text: string, max = 100): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 export function formatItemLine(item: PlanItem, statusText?: string): string {
-  const status = statusText ?? (item.status === "skipped" ? `skipped: ${item.reason}` : item.status);
   const name = item.target !== item.name && item.kind !== "rule" ? `${item.target} (from ${item.name})` : item.name;
-  const detail = item.status === "conflict" ? item.reason : item.description;
+  if (!statusText && item.status === "skipped") return `  skipped: ${item.reason} — ${name}`;
+  const status = statusText ?? item.status;
+  const detail = item.status === "conflict" ? item.reason : item.description ? clip(item.description) : undefined;
   return `  ${status.padEnd(18)} ${name}${detail ? ` — ${detail}` : ""}`;
 }
 
